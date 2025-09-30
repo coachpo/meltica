@@ -1,0 +1,15 @@
+{
+  "balances": [
+    {
+      "asset": "BTC",
+      "available": "1/2",
+      "time": "2024-02-02T10:00:00Z"
+    },
+    {
+      "asset": "USDT",
+      "available": "1000000/1",
+      "time": "2024-02-02T10:00:00Z"
+    }
+  ]
+}
+

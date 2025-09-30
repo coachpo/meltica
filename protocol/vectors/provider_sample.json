@@ -1,0 +1,9 @@
+{
+  "name": "binance",
+  "capabilities": [
+    "spot_public_rest",
+    "spot_trading_rest",
+    "ws_public",
+    "ws_private"
+  ]
+}

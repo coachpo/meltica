@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OrderEvent",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["symbol", "order_id", "status", "time"],
+  "properties": {
+    "symbol": {
+      "type": "string",
+      "pattern": "^[A-Z0-9-]{3,}$"
+    },
+    "order_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "new",
+        "part_filled",
+        "filled",
+        "canceled",
+        "rejected"
+      ]
+    },
+    "filled_qty": {
+      "$ref": "#/definitions/decimalOrNull"
+    },
+    "avg_price": {
+      "$ref": "#/definitions/decimalOrNull"
+    },
+    "time": {
+      "$ref": "#/definitions/timestamp"
+    }
+  },
+  "definitions": {
+    "decimal": {
+      "type": "string",
+      "pattern": "^-?[0-9]+(?:/[0-9]+)?$"
+    },
+    "decimalOrNull": {
+      "oneOf": [
+        {"$ref": "#/definitions/decimal"},
+        {"type": "null"}
+      ]
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}
+

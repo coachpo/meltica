@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Provider Descriptor",
+  "type": "object",
+  "required": ["name", "capabilities"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Canonical provider identifier"
+    },
+    "capabilities": {
+      "type": "array",
+      "description": "List of capability strings advertised by the provider",
+      "items": {
+        "type": "string",
+        "enum": [
+          "spot_public_rest",
+          "spot_trading_rest",
+          "linear_public_rest",
+          "linear_trading_rest",
+          "inverse_public_rest",
+          "inverse_trading_rest",
+          "ws_public",
+          "ws_private"
+        ]
+      },
+      "uniqueItems": true
+    }
+  },
+  "additionalProperties": false
+}

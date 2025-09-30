@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DepthEvent",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["symbol", "bids", "asks", "time"],
+  "properties": {
+    "symbol": {
+      "type": "string",
+      "pattern": "^[A-Z0-9-]{3,}$"
+    },
+    "bids": {
+      "type": "array",
+      "items": {"$ref": "#/definitions/level"}
+    },
+    "asks": {
+      "type": "array",
+      "items": {"$ref": "#/definitions/level"}
+    },
+    "time": {
+      "$ref": "#/definitions/timestamp"
+    }
+  },
+  "definitions": {
+    "decimal": {
+      "type": "string",
+      "pattern": "^-?[0-9]+(?:/[0-9]+)?$"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "level": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["price", "qty"],
+      "properties": {
+        "price": {"$ref": "#/definitions/decimal"},
+        "qty": {"$ref": "#/definitions/decimal"}
+      }
+    }
+  }
+}
+
