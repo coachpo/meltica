@@ -1,7 +1,7 @@
 package okx
 
 import (
-	"github.com/yourorg/meltica/errs"
+	"github.com/coachpo/meltica/errs"
 )
 
 func mapOKXCode(httpStatus int, rawCode, rawMsg string) *errs.E {

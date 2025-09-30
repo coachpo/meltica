@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/yourorg/meltica/providers/binance"
+	"github.com/coachpo/meltica/providers/binance"
 )
 
 func main() {

@@ -10,7 +10,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/yourorg/meltica/core"
+	"github.com/coachpo/meltica/core"
 )
 
 type ws struct {

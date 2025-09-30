@@ -11,8 +11,8 @@ import (
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
-	"github.com/yourorg/meltica/core"
-	"github.com/yourorg/meltica/protocol"
+	"github.com/coachpo/meltica/core"
+	"github.com/coachpo/meltica/protocol"
 )
 
 // ProviderFactory constructs a provider for testing.

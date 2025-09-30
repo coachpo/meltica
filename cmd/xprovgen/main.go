@@ -28,8 +28,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/yourorg/meltica/core"
-	"github.com/yourorg/meltica/protocol"
+	"github.com/coachpo/meltica/core"
+	"github.com/coachpo/meltica/protocol"
 )
 
 type Provider struct{}
@@ -138,9 +138,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/yourorg/meltica/conformance"
-	"github.com/yourorg/meltica/core"
-	"github.com/yourorg/meltica/providers/{{.Package}}"
+	"github.com/coachpo/meltica/conformance"
+	"github.com/coachpo/meltica/core"
+	"github.com/coachpo/meltica/providers/{{.Package}}"
 )
 
 func TestConformance(t *testing.T) {

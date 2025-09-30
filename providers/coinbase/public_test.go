@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/yourorg/meltica/core"
+	"github.com/coachpo/meltica/core"
 )
 
 func Test_TestOnlyParseTicker(t *testing.T) {

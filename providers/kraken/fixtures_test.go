@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yourorg/meltica/core"
+	"github.com/coachpo/meltica/core"
 )
 
 func Test_Fixtures_Balances(t *testing.T) {

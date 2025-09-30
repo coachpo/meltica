@@ -1,6 +1,6 @@
 package kraken
 
-import "github.com/yourorg/meltica/core"
+import "github.com/coachpo/meltica/core"
 
 // mapStatus normalizes Kraken order status strings.
 func mapStatus(state string) core.OrderStatus {

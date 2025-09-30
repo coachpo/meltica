@@ -3,7 +3,7 @@ package kraken
 import (
 	"encoding/json"
 
-	"github.com/yourorg/meltica/errs"
+	"github.com/coachpo/meltica/errs"
 )
 
 // mapHTTPError normalizes Kraken REST error envelopes.

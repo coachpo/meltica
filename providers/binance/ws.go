@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/coachpo/meltica/core"
 	"github.com/gorilla/websocket"
-	"github.com/yourorg/meltica/core"
 )
 
 type wsSub struct {

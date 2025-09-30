@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	okx "github.com/yourorg/meltica/providers/okx"
+	okx "github.com/coachpo/meltica/providers/okx"
 )
 
 func TestGolden_OKX_Ticker(t *testing.T) {

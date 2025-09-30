@@ -13,10 +13,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yourorg/meltica/core"
-	"github.com/yourorg/meltica/errs"
-	"github.com/yourorg/meltica/protocol"
-	"github.com/yourorg/meltica/transport"
+	"github.com/coachpo/meltica/core"
+	"github.com/coachpo/meltica/errs"
+	"github.com/coachpo/meltica/protocol"
+	"github.com/coachpo/meltica/transport"
 )
 
 // capability bitset for Kraken features.

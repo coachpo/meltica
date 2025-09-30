@@ -3,7 +3,7 @@ package kraken
 import (
 	"testing"
 
-	"github.com/yourorg/meltica/core"
+	"github.com/coachpo/meltica/core"
 )
 
 func Test_TestOnlyParseTrades(t *testing.T) {

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yourorg/meltica/transport"
+	"github.com/coachpo/meltica/transport"
 )
 
 func newSigner(apiKey, secret, passphrase string) (transport.Signer, error) {

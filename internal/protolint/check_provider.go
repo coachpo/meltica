@@ -21,7 +21,7 @@ type providerChecks struct {
 }
 
 func checkProviderPackage(pkg *packages.Package) []Issue {
-	if !strings.HasPrefix(pkg.PkgPath, "github.com/yourorg/meltica/providers/") {
+	if !strings.HasPrefix(pkg.PkgPath, "github.com/coachpo/meltica/providers/") {
 		return nil
 	}
 	checks := collectProviderInfo(pkg)

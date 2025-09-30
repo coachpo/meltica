@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yourorg/meltica/providers/coinbase"
+	"github.com/coachpo/meltica/providers/coinbase"
 )
 
 func TestCoinbaseCaptureFixtures(t *testing.T) {

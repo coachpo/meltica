@@ -9,7 +9,7 @@ import (
 	"net/url"
 	"strconv"
 
-	"github.com/yourorg/meltica/transport"
+	"github.com/coachpo/meltica/transport"
 )
 
 // newSigner returns a transport.Signer compatible with Kraken's HMAC-SHA512 requirements.

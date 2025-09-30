@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/yourorg/meltica/internal/protolint"
+	"github.com/coachpo/meltica/internal/protolint"
 )
 
 func main() {

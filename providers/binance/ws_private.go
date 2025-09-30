@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/coachpo/meltica/core"
 	"github.com/gorilla/websocket"
-	"github.com/yourorg/meltica/core"
 )
 
 func (p *Provider) createListenKey(ctx context.Context) (string, error) {

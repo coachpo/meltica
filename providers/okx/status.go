@@ -1,6 +1,6 @@
 package okx
 
-import "github.com/yourorg/meltica/core"
+import "github.com/coachpo/meltica/core"
 
 func mapOKXStatus(s string) core.OrderStatus {
 	switch s {

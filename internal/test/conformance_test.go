@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yourorg/meltica/core"
+	"github.com/coachpo/meltica/core"
 )
 
 func TestConformance_SpotTime(t *testing.T) {

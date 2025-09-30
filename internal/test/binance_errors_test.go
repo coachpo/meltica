@@ -3,8 +3,8 @@ package test
 import (
 	"testing"
 
-	"github.com/yourorg/meltica/errs"
-	"github.com/yourorg/meltica/providers/binance"
+	"github.com/coachpo/meltica/errs"
+	"github.com/coachpo/meltica/providers/binance"
 )
 
 func Test_Binance_ErrorMapping_PreciseCodes(t *testing.T) {

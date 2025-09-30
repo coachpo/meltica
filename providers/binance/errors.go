@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/yourorg/meltica/errs"
+	"github.com/coachpo/meltica/errs"
 )
 
 // Map Binance error body to unified error

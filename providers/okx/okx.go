@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yourorg/meltica/core"
-	"github.com/yourorg/meltica/protocol"
-	"github.com/yourorg/meltica/transport"
+	"github.com/coachpo/meltica/core"
+	"github.com/coachpo/meltica/protocol"
+	"github.com/coachpo/meltica/transport"
 )
 
 type Provider struct {

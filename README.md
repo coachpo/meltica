@@ -29,7 +29,7 @@ Provider-agnostic cryptocurrency exchange SDK with pluggable adapters for unifie
 ## Installation
 
 ```bash
-go get github.com/yourorg/meltica
+go get github.com/coachpo/meltica
 ```
 
 ## Quick Start
@@ -44,7 +44,7 @@ import (
     "fmt"
     "time"
     
-    "github.com/yourorg/meltica/providers/binance"
+    "github.com/coachpo/meltica/providers/binance"
 )
 
 func main() {
@@ -124,9 +124,9 @@ order, _ := spot.PlaceOrder(ctx, core.OrderRequest{
 
 ```go
 import (
-    "github.com/yourorg/meltica/core"
-    "github.com/yourorg/meltica/providers/binance"
-    "github.com/yourorg/meltica/providers/okx"
+    "github.com/coachpo/meltica/core"
+    "github.com/coachpo/meltica/providers/binance"
+    "github.com/coachpo/meltica/providers/okx"
 )
 
 func comparePrices() {

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/yourorg/meltica/providers/okx"
+	"github.com/coachpo/meltica/providers/okx"
 )
 
 func main() {

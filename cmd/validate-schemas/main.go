@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/yourorg/meltica/conformance"
+	"github.com/coachpo/meltica/conformance"
 )
 
 func main() {

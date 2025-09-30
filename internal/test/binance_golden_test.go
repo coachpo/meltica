@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/yourorg/meltica/providers/binance"
+	"github.com/coachpo/meltica/providers/binance"
 )
 
 func TestGolden_TickerBookTicker(t *testing.T) {

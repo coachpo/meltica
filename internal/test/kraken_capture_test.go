@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yourorg/meltica/providers/kraken"
+	"github.com/coachpo/meltica/providers/kraken"
 )
 
 func TestKrakenCaptureFixtures(t *testing.T) {
