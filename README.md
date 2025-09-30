@@ -169,6 +169,18 @@ go run ./examples/ws_public
 go run ./examples/okx/spot
 ```
 
+### Market Data Stream CLI
+
+```bash
+# Stream Binance trades for BTC-USDT
+go run ./cmd/market-stream --exchange binance --symbol BTC-USDT --channel trades
+
+# Subscribe to OKX top-of-book quotes
+go run ./cmd/market-stream --exchange okx --symbol ETH-USDT --channel ticker
+```
+
+Available channels depend on the provider. Common options are `ticker`, `trades`, and `depth`.
+
 ### Testing
 
 ```bash

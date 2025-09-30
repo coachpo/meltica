@@ -1,21 +1,32 @@
-# Binaries
-meltilint
+# Allowlisting gitignore template for GO projects prevents us
+# from adding various unwanted local files, such as generated
+# files, developer configurations or IDE-specific files etc.
+#
+# Recommended: Go.AllowList.gitignore
 
-# Go binary outputs
-out/
+# Ignore everything
+*
 
-# Go build artifacts
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
+# But not these files...
+!/.gitignore
 
-# Test binary
-*.test
+!*.go
+!go.sum
+!go.mod
 
-# Output of the go coverage tool
-*.out
+# Documentation
+!*.md
+!README.md
+!LICENSE
 
-# Dependency directories
-vendor/
+# Makefile
+!Makefile
+
+# ...even if they are in subdirectories
+!*/
+
+# Protocol vectors and schemas
+!protocol/vectors/*.json
+!protocol/schemas/*.json
+# Test data
+!*/test/testdata/*.json
