@@ -19,7 +19,7 @@ Highlights:
 ## CI Definition of Done
 1. `make test` passes with race detector.
 2. `go build ./...` passes.
-3. `./protolint ./core ./providers/...` passes.
+3. `./meltilint ./core ./providers/...` passes.
 4. `go run ./cmd/validate-schemas` passes, vectors validate.
 5. `go test ./conformance/...` passes offline suites.
 6. Protocol changes bump `protocol/version.go` (semver).

@@ -29,7 +29,7 @@
      ```bash
      go build ./...
      go test ./... -race -count=1
-     go build ./internal/protolint/cmd/protolint && ./protolint ./core ./providers/...
+     go build ./internal/meltilint/cmd/meltilint && ./meltilint ./core ./providers/...
      go test ./conformance -run TestOffline
      ```
    - Add protocol version guard (fail if protocol files change without bump).
@@ -54,7 +54,7 @@
 1) **All green locally:**
    ```bash
    make test || go test ./... -race -count=1
-   go build ./internal/protolint/cmd/protolint && ./protolint ./core ./providers/<name>
+   go build ./internal/meltilint/cmd/meltilint && ./meltilint ./core ./providers/<name>
    go run ./cmd/validate-schemas
    go test ./conformance -run TestOffline
    ```

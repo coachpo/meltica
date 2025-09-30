@@ -52,7 +52,7 @@
 
 ### Phase 6: Static Checks and Linting
 - Steps
-  - Add `internal/protolint` with checks:
+  - Add `internal/meltilint` with checks:
     - `Capabilities()` present and consistent with implemented APIs.
     - Complete enum mappings (`OrderStatus`, `TimeInForce`) with no fallthrough.
     - No `float32/float64` usage in critical paths.

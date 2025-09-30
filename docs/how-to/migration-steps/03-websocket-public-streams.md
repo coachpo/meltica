@@ -29,7 +29,7 @@
 ## How to validate that it is complete
 1) **Static analysis (typed decoders, no floats, symbol normalization present):**
    ```bash
-   ./protolint ./providers/<name>
+   ./meltilint ./providers/<name>
    ```
 2) **Offline WS decoder tests:**
    ```bash

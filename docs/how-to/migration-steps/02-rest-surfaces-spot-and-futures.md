@@ -38,7 +38,7 @@
 ## How to validate that it is complete
 1) **Static analysis (no floats, enums exhaustive, symbols canonical, marshaling uses FormatDecimal):**
    ```bash
-   ./protolint ./providers/<name>
+   ./meltilint ./providers/<name>
    ```
 2) **Build & unit tests:**
    ```bash

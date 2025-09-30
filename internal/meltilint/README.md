@@ -1,10 +1,10 @@
-# protolint
+# meltilint
 
 Static analysis tool for enforcing meltica protocol compliance.
 
 ## Overview
 
-`protolint` performs compile-time checks to ensure provider adapters conform to the meltica protocol specification. It validates:
+`meltilint` performs compile-time checks to ensure provider adapters conform to the meltica protocol specification. It validates:
 
 - **Capability ↔ API Alignment**: Declared capabilities match implemented APIs
 - **Protocol Version Compliance**: `SupportedProtocolVersion()` returns canonical version
@@ -14,16 +14,16 @@ Static analysis tool for enforcing meltica protocol compliance.
 
 ```bash
 # Build the tool
-go build ./internal/protolint/cmd/protolint
+go build ./internal/meltilint/cmd/meltilint
 
 # Run on all providers
-./protolint ./providers/...
+./meltilint ./providers/...
 
 # Run on specific provider
-./protolint ./providers/binance
+./meltilint ./providers/binance
 
 # Default behavior (providers/...)
-./protolint
+./meltilint
 ```
 
 ## Checks

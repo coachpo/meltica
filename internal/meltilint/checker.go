@@ -1,4 +1,4 @@
-package protolint
+package meltilint
 
 import (
 	"context"
@@ -31,4 +31,4 @@ func Run(ctx context.Context, patterns []string) ([]Issue, error) {
 }
 
 // ErrFailed indicates that lint issues were detected.
-var ErrFailed = errors.New("protolint: issues found")
+var ErrFailed = errors.New("meltilint: issues found")

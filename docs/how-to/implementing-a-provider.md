@@ -18,7 +18,7 @@ This guide walks through the minimal files, API checkpoints, and validation step
 
 - `Provider.Capabilities()` returns a coherent bitset covering features exposed by the adapter
 - `Provider.SupportedProtocolVersion()` returns `protocol.ProtocolVersion`
-- Static analysis: `protolint ./providers/...` passes (no capability ↔ API mismatches)
+- Static analysis: `meltilint ./providers/...` passes (no capability ↔ API mismatches)
 - Schema validation: `go run ./cmd/validate-schemas` passes
 - All REST surfaces return canonical models (`core.Instrument`, `core.Ticker`, `core.Order`, etc.)
 - Numeric quantities, prices, and balances use `*big.Rat`
@@ -55,7 +55,7 @@ This guide walks through the minimal files, API checkpoints, and validation step
 ## Promotion Checklist
 
 1. `go test ./...` (unit + offline conformance)
-2. `protolint ./providers/<name>` (static analysis - capability ↔ API alignment)
+2. `meltilint ./providers/<name>` (static analysis - capability ↔ API alignment)
 3. `go run ./cmd/validate-schemas` (schema validation)
 4. `go test ./internal/test -run <Provider>Conformance` (optional live)
 5. `go run ./cmd/xprovgen --name <provider>` (ensure scaffolding is up to date)

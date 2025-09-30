@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/coachpo/meltica/internal/protolint"
+	"github.com/coachpo/meltica/internal/meltilint"
 )
 
 func main() {
 	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), "Usage: protolint [patterns]\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "Usage: meltilint [patterns]\n")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
@@ -20,9 +20,9 @@ func main() {
 		patterns = []string{"./providers/..."}
 	}
 	ctx := context.Background()
-	issues, err := protolint.Run(ctx, patterns)
+	issues, err := meltilint.Run(ctx, patterns)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "protolint:", err)
+		fmt.Fprintln(os.Stderr, "meltilint:", err)
 		os.Exit(1)
 	}
 	if len(issues) > 0 {

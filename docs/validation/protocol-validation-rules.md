@@ -7,7 +7,7 @@ This document defines deterministic validation rules derived from `ABSTRACTIONS_
   - SHOULD: failing warns; may block in strict mode.
   - INFO: advisory.
 - Unless noted, rules apply to production code (excluding `**/test/**`, `**/*_test.go`).
-- Paths use a hypothetical Go-based layout: `core/`, `protocol/`, `providers/<name>/`, `conformance/`, `internal/protolint/`, `cmd/xprovgen/`. Adjust globs if your repo differs.
+- Paths use a hypothetical Go-based layout: `core/`, `protocol/`, `providers/<name>/`, `conformance/`, `internal/meltilint/`, `cmd/xprovgen/`. Adjust globs if your repo differs.
 
 ---
 
@@ -326,7 +326,7 @@ This document defines deterministic validation rules derived from `ABSTRACTIONS_
 
 ### How to Implement These Checks
 
-- AST-based checks: build a small linter under `internal/protolint` using `go/ast` and `go/types`.
+- AST-based checks: build a small linter under `internal/meltilint` using `go/ast` and `go/types`.
 - Schema validation: use `ajv` or `gojsonschema` in CI to verify `protocol/vectors` against `protocol/schemas`.
 - CI rules: encode in your CI config (GitHub Actions, GitLab CI) to detect path changes and enforce version bump coupling.
 

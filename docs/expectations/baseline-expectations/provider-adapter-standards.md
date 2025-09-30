@@ -13,7 +13,7 @@ This document defines what every provider adapter must ship.
 - Must have: Correct capability bits, `SupportedProtocolVersion()`, validated schemas, canonical models, *big.Rat numerics, canonical symbols, exhaustive enums, typed WS events.
 - Validate:
   ```bash
-  ./protolint ./providers/<name> &&   go run ./cmd/validate-schemas &&   go test ./conformance -run TestOffline
+  ./meltilint ./providers/<name> &&   go run ./cmd/validate-schemas &&   go test ./conformance -run TestOffline
   ```
 
 ## STD-A3: Error & status mapping
@@ -24,7 +24,7 @@ This document defines what every provider adapter must ship.
 ## STD-A4: WS decoding rules
 - Must have: Public → Trade/Ticker/DepthEvent, Private → Order/BalanceEvent, raw payload attached, symbols canonicalized.
 - Must not have: Passing native symbols or `any`.
-- Validate: Offline WS tests + `./protolint`
+- Validate: Offline WS tests + `./meltilint`
 
 ## STD-A5: Offline & live conformance
 - Must have: Offline suite green, live tests gated by `MELTICA_CONFORMANCE=1` with documented env vars.

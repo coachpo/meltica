@@ -20,7 +20,7 @@ Use this index to implement or migrate a provider in the right order. Links are 
    - Step 06: [Conformance, schemas, CI, release](how-to/migration-steps/06-conformance-schemas-ci-release.md)
 4. Validate (before merge/release)
    - [Protocol validation rules](validation/protocol-validation-rules.md)
-   - Optional helpers: run `go run ./cmd/validate-schemas` and `./protolint ./core ./providers/...`
+   - Optional helpers: run `go run ./cmd/validate-schemas` and `./meltilint ./core ./providers/...`
 
 ### When to use what
 - New provider from scratch: start with [Implementing a provider](how-to/implementing-a-provider.md), then Steps 01 → 06.

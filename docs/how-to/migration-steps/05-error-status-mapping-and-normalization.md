@@ -27,7 +27,7 @@
 ## How to validate that it is complete
 1) **Static analysis:**
    ```bash
-   ./protolint ./providers/<name>
+   ./meltilint ./providers/<name>
    ```
    Confirms:
    - No floats in exported fields or public APIs.

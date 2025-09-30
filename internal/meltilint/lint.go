@@ -1,4 +1,4 @@
-package protolint
+package meltilint
 
 import "go/token"
 

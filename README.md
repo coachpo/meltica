@@ -192,8 +192,8 @@ go test ./providers/binance -v
 
 ```bash
 # Validate provider conformance
-go build ./internal/protolint/cmd/protolint
-./protolint ./providers/...
+go build ./internal/meltilint/cmd/meltilint
+./meltilint ./providers/...
 
 # Validate JSON schemas and vectors
 go test ./conformance
@@ -239,7 +239,7 @@ type Provider interface {
 The project enforces protocol compliance through:
 
 - **JSON Schema validation** for WebSocket events and data structures
-- **Static analysis** via `protolint` to ensure capability alignment
+- **Static analysis** via `meltilint` to ensure capability alignment
 - **Conformance testing** to validate provider implementations
 - **Golden file testing** for consistent API responses
 
@@ -252,4 +252,4 @@ The project enforces protocol compliance through:
 
 ## License
 
-This project is licensed under the MIT License.
+This project is licensed under the MIT [LICENSE](LICENSE).

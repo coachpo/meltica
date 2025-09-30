@@ -56,8 +56,8 @@
    ```
 3) Static checks (capabilities/API alignment, interface surface, no floats, etc.):
    ```bash
-   go build ./internal/protolint/cmd/protolint
-   ./protolint ./core ./providers/<name>
+   go build ./internal/meltilint/cmd/meltilint
+   ./meltilint ./core ./providers/<name>
    ```
 4) Protocol version alignment is exact:
    ```bash

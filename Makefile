@@ -1,6 +1,6 @@
 GO111MODULE=on
 
-.PHONY: test lint tidy build protolint validate-schemas conformance conformance-offline standards ci
+.PHONY: test lint tidy build meltilint validate-schemas conformance conformance-offline standards ci
 
 lint:
 	golangci-lint run || true
@@ -11,8 +11,8 @@ test:
 build:
 	go build ./...
 
-protolint:
-	go run ./internal/protolint/cmd/protolint ./core ./providers/...
+meltilint:
+	go run ./internal/meltilint/cmd/meltilint ./core ./providers/...
 
 validate-schemas:
 	go run ./cmd/validate-schemas
@@ -26,12 +26,12 @@ conformance-offline:
 ci:
 	$(MAKE) test
 	$(MAKE) build
-	$(MAKE) protolint
+	$(MAKE) meltilint
 	$(MAKE) validate-schemas
 	$(MAKE) conformance
 
 standards:
-	$(MAKE) protolint
+	$(MAKE) meltilint
 	$(MAKE) validate-schemas
 	$(MAKE) conformance-offline
 

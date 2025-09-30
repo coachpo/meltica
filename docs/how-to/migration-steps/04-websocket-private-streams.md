@@ -26,7 +26,7 @@
 ## How to validate that it is complete
 1) **Static analysis:**
    ```bash
-   ./protolint ./providers/<name>
+   ./meltilint ./providers/<name>
    ```
 2) **Offline conformance (private topics):**
    ```bash
