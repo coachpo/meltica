@@ -9,12 +9,13 @@ jobs:
         with:
           go-version: '1.22'
       - run: go version
-      - run: go build ./...
+      - run: make build
       - run: go test ./... -race -count=1
       - run: go test ./conformance -count=1
-      - run: go build ./internal/protolint/cmd/protolint
-      - run: ./protolint ./providers/...
-      - run: go run ./cmd/validate-schemas
+      - run: make build-meltilint
+      - run: ./out/meltilint ./providers/...
+      - run: make build-validate-schemas
+      - run: ./out/validate-schemas
       - name: Ensure protocol version bump
         run: |
           git fetch origin main --depth=1 || true

@@ -1,6 +1,9 @@
 # Binaries
 meltilint
-protolint
+
+# Go binary outputs
+out/
+
 # Go build artifacts
 *.exe
 *.exe~
