@@ -17,7 +17,7 @@ func main() {
 	flag.Parse()
 	patterns := flag.Args()
 	if len(patterns) == 0 {
-		patterns = []string{"./providers/..."}
+		patterns = []string{"./..."}
 	}
 	ctx := context.Background()
 	issues, err := meltilint.Run(ctx, patterns)

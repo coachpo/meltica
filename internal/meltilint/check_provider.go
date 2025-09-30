@@ -28,6 +28,7 @@ func checkProviderPackage(pkg *packages.Package) []Issue {
 	var issues []Issue
 	issues = append(issues, checkCapabilitiesAlignment(pkg, checks)...)
 	issues = append(issues, checkSupportedProtocolVersion(pkg, checks)...)
+	issues = append(issues, checkNoFloatUsage(pkg, "STD-26")...)
 	return issues
 }
 
@@ -149,7 +150,7 @@ func checkCapabilitiesAlignment(pkg *packages.Package, info providerChecks) []Is
 		issues = append(issues, Issue{
 			Position: fset.Position(pos),
 			Package:  pkg.Name,
-			Message:  msg,
+			Message:  "STD-24 " + msg,
 		})
 	}
 	checkCap := func(capName string, supported bool) {
@@ -180,7 +181,7 @@ func checkSupportedProtocolVersion(pkg *packages.Package, info providerChecks) [
 	return []Issue{{
 		Position: pos,
 		Package:  pkg.Name,
-		Message:  "SupportedProtocolVersion must return protocol.ProtocolVersion",
+		Message:  "STD-38 SupportedProtocolVersion must return protocol.ProtocolVersion",
 	}}
 }
 

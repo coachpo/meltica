@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"go/token"
+	"strings"
 )
 
 // Run executes all available lint checks for the provided package patterns.
@@ -13,6 +14,8 @@ func Run(ctx context.Context, patterns []string) ([]Issue, error) {
 		return nil, err
 	}
 	var allIssues []Issue
+	root, rootErr := projectRoot()
+	checkedProtocolDocs := false
 	for _, pkg := range pkgList {
 		for _, pkgErr := range pkg.Errors {
 			allIssues = append(allIssues, Issue{
@@ -24,8 +27,26 @@ func Run(ctx context.Context, patterns []string) ([]Issue, error) {
 		if pkg.Types == nil || pkg.Fset == nil {
 			continue
 		}
-		issues := checkProviderPackage(pkg)
-		allIssues = append(allIssues, issues...)
+		path := pkg.PkgPath
+		switch {
+		case path == "github.com/coachpo/meltica/core":
+			allIssues = append(allIssues, checkCorePackage(pkg)...)
+		case path == "github.com/coachpo/meltica/errs":
+			allIssues = append(allIssues, checkErrsPackage(pkg)...)
+		case path == "github.com/coachpo/meltica/protocol":
+			allIssues = append(allIssues, checkProtocolPackage(pkg)...)
+		case strings.HasPrefix(path, "github.com/coachpo/meltica/conformance"):
+			allIssues = append(allIssues, checkConformancePackage(pkg)...)
+		case strings.HasPrefix(path, "github.com/coachpo/meltica/providers/"):
+			allIssues = append(allIssues, checkProviderPackage(pkg)...)
+		}
+		if !checkedProtocolDocs && rootErr == nil && (path == "github.com/coachpo/meltica/protocol" || strings.HasPrefix(path, "github.com/coachpo/meltica/providers/") || path == "github.com/coachpo/meltica/core") {
+			allIssues = append(allIssues, checkProtocolArtifacts(root)...)
+			checkedProtocolDocs = true
+		}
+	}
+	if rootErr == nil {
+		allIssues = append(allIssues, checkDocumentationSet(root)...)
 	}
 	return allIssues, nil
 }
