@@ -14,10 +14,9 @@ import (
 
 type Provider struct {
 	name       string
-	rest       *transport.Client
-	sapi       *transport.Client
-	fapi       *transport.Client
-	dapi       *transport.Client
+	sapi       *transport.Client // Spot API (SAPI): https://api.binance.com - Spot + account/user operations
+	fapi       *transport.Client // Futures API (FAPI): https://fapi.binance.com - USD-stablecoins-M Futures
+	dapi       *transport.Client // Delivery API (DAPI): https://dapi.binance.com - Coin-margined Futures
 	apiKey     string
 	secret     string
 	instCache  map[string]core.Instrument
@@ -37,11 +36,13 @@ var capabilities = core.Capabilities(
 
 func New(apiKey, secret string) (*Provider, error) {
 	httpClient := &http.Client{Timeout: 10 * time.Second}
-	rest := &transport.Client{HTTP: httpClient, BaseURL: "https://api.binance.com"}
+	// SAPI: Spot API - https://api.binance.com (Spot + account/user operations)
 	sapi := &transport.Client{HTTP: httpClient, BaseURL: "https://api.binance.com"}
+	// FAPI: Futures API - https://fapi.binance.com (USD-stablecoins-M Futures)
 	fapi := &transport.Client{HTTP: httpClient, BaseURL: "https://fapi.binance.com"}
+	// DAPI: Delivery API - https://dapi.binance.com (Coin-margined Futures)
 	dapi := &transport.Client{HTTP: httpClient, BaseURL: "https://dapi.binance.com"}
-	p := &Provider{name: "binance", rest: rest, sapi: sapi, fapi: fapi, dapi: dapi, apiKey: apiKey, secret: secret}
+	p := &Provider{name: "binance", sapi: sapi, fapi: fapi, dapi: dapi, apiKey: apiKey, secret: secret}
 	signer := func(method, path string, q map[string]string, body []byte, ts int64) (http.Header, error) {
 		hdr, err := signHMAC(p.secret, method, path, q, body, ts)
 		if hdr == nil {
@@ -52,12 +53,10 @@ func New(apiKey, secret string) (*Provider, error) {
 		}
 		return hdr, err
 	}
-	rest.Signer = signer
 	sapi.Signer = signer
 	fapi.Signer = signer
 	dapi.Signer = signer
 	// Attach error mapper for REST
-	rest.OnHTTPError = mapHTTPError
 	sapi.OnHTTPError = mapHTTPError
 	fapi.OnHTTPError = mapHTTPError
 	dapi.OnHTTPError = mapHTTPError
@@ -97,7 +96,7 @@ func (s spotAPI) ServerTime(ctx context.Context) (time.Time, error) {
 	var resp struct {
 		ServerTime int64 `json:"serverTime"`
 	}
-	if err := s.p.rest.Do(ctx, http.MethodGet, "/api/v3/time", nil, nil, false, &resp); err != nil {
+	if err := s.p.sapi.Do(ctx, http.MethodGet, "/api/v3/time", nil, nil, false, &resp); err != nil {
 		return time.Time{}, err
 	}
 	return time.UnixMilli(resp.ServerTime), nil
@@ -116,7 +115,7 @@ func (s spotAPI) Instruments(ctx context.Context) ([]core.Instrument, error) {
 			} `json:"filters"`
 		} `json:"symbols"`
 	}
-	if err := s.p.rest.Do(ctx, http.MethodGet, "/api/v3/exchangeInfo", nil, nil, false, &resp); err != nil {
+	if err := s.p.sapi.Do(ctx, http.MethodGet, "/api/v3/exchangeInfo", nil, nil, false, &resp); err != nil {
 		return nil, err
 	}
 	out := make([]core.Instrument, 0, len(resp.Symbols))
@@ -150,7 +149,7 @@ func (s spotAPI) Ticker(ctx context.Context, symbol string) (core.Ticker, error)
 		Bid string `json:"bidPrice"`
 		Ask string `json:"askPrice"`
 	}
-	if err := s.p.rest.Do(ctx, http.MethodGet, "/api/v3/ticker/bookTicker", map[string]string{"symbol": core.CanonicalToBinance(symbol)}, nil, false, &resp); err != nil {
+	if err := s.p.sapi.Do(ctx, http.MethodGet, "/api/v3/ticker/bookTicker", map[string]string{"symbol": core.CanonicalToBinance(symbol)}, nil, false, &resp); err != nil {
 		return core.Ticker{}, err
 	}
 	bid, _ := parseDecimalToRat(resp.Bid)
@@ -164,7 +163,7 @@ func (s spotAPI) Balances(ctx context.Context) ([]core.Balance, error) {
 		Free   string `json:"free"`
 		Locked string `json:"locked"`
 	}
-	if err := s.p.rest.Do(ctx, http.MethodGet, "/api/v3/account", nil, nil, true, &resp); err != nil {
+	if err := s.p.sapi.Do(ctx, http.MethodGet, "/api/v3/account", nil, nil, true, &resp); err != nil {
 		return nil, err
 	}
 	out := make([]core.Balance, 0, len(resp))
@@ -187,7 +186,7 @@ func (s spotAPI) Trades(ctx context.Context, symbol string, since int64) ([]core
 		IsBuyer bool   `json:"isBuyer"`
 		Time    int64  `json:"time"`
 	}
-	if err := s.p.rest.Do(ctx, http.MethodGet, "/api/v3/myTrades", params, nil, true, &resp); err != nil {
+	if err := s.p.sapi.Do(ctx, http.MethodGet, "/api/v3/myTrades", params, nil, true, &resp); err != nil {
 		return nil, err
 	}
 	out := make([]core.Trade, 0, len(resp))
@@ -234,7 +233,7 @@ func (s spotAPI) PlaceOrder(ctx context.Context, req core.OrderRequest) (core.Or
 		Symbol  string `json:"symbol"`
 		Status  string `json:"status"`
 	}
-	if err := s.p.rest.Do(ctx, http.MethodPost, "/api/v3/order", q, nil, true, &resp); err != nil {
+	if err := s.p.sapi.Do(ctx, http.MethodPost, "/api/v3/order", q, nil, true, &resp); err != nil {
 		return core.Order{}, err
 	}
 	return core.Order{ID: fmt.Sprintf("%d", resp.OrderId), Symbol: req.Symbol, Status: mapBStatus(resp.Status)}, nil
@@ -252,7 +251,7 @@ func (s spotAPI) GetOrder(ctx context.Context, symbol, id, clientID string) (cor
 		Symbol  string `json:"symbol"`
 		Status  string `json:"status"`
 	}
-	if err := s.p.rest.Do(ctx, http.MethodGet, "/api/v3/order", q, nil, true, &resp); err != nil {
+	if err := s.p.sapi.Do(ctx, http.MethodGet, "/api/v3/order", q, nil, true, &resp); err != nil {
 		return core.Order{}, err
 	}
 	return core.Order{ID: fmt.Sprintf("%d", resp.OrderId), Symbol: symbol, Status: mapBStatus(resp.Status)}, nil
@@ -265,7 +264,7 @@ func (s spotAPI) CancelOrder(ctx context.Context, symbol, id, clientID string) e
 	if clientID != "" {
 		q["origClientOrderId"] = clientID
 	}
-	return s.p.rest.Do(ctx, http.MethodDelete, "/api/v3/order", q, nil, true, nil)
+	return s.p.sapi.Do(ctx, http.MethodDelete, "/api/v3/order", q, nil, true, nil)
 }
 
 func (f fapi) Instruments(ctx context.Context) ([]core.Instrument, error) {
