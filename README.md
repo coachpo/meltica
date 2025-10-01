@@ -2,6 +2,13 @@
 
 Provider-agnostic cryptocurrency exchange SDK with pluggable adapters for unified trading across multiple exchanges.
 
+## About the Name
+
+**meltica** comes from "melting coffee" ☕ - representing the idea of blending different exchange APIs into a single, unified, smooth experience. Just like melting coffee dissolves and combines flavors, meltica dissolves the differences between exchanges, giving you one consistent interface to trade across multiple platforms.
+
+This coffee inspiration extends to our tools:
+- **`barista`** - Our code generator that brews fresh exchange provider scaffolds
+
 ## Features
 
 - **Unified API**: Single interface for trading across multiple exchanges
@@ -211,13 +218,45 @@ go build ./internal/meltilint/cmd/meltilint
 go test ./conformance
 ```
 
-### Makefile Commands
+### Building & Tools
+
+All compiled binaries are output to the `out/` directory in the project root.
 
 ```bash
+# Build all binaries
+make build
+
+# Build specific tools
+make build-meltilint        # Protocol linter
+make build-validate-schemas # Schema validator
+make build-barista          # Provider scaffold generator
+
+# Development commands
 make test      # Run tests with race detection
-make tidy      # Clean up Go modules
 make lint      # Run linter (if golangci-lint is installed)
+make tidy      # Clean up Go modules
+
+# Clean build artifacts
+rm -rf out/
 ```
+
+**Available Tools:**
+
+- **`out/meltilint`** - Static analysis tool for provider protocol compliance
+- **`out/validate-schemas`** - JSON schema validation against golden vectors
+- **`out/barista`** - Code generator to brew fresh exchange provider scaffolds
+
+**Directory Structure:**
+```
+meltica/
+├── out/                 # Build output directory
+│   ├── meltilint
+│   ├── validate-schemas
+│   └── barista
+└── ...
+```
+
+The `out/` directory is automatically ignored by git.
 
 ## Architecture
 
