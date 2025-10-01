@@ -1,6 +1,6 @@
 GO111MODULE=on
 
-.PHONY: test lint tidy build build-meltilint build-validate-schemas build-xprovgen meltilint validate-schemas conformance conformance-offline standards ci
+.PHONY: test lint tidy build build-meltilint build-validate-schemas build-barista meltilint validate-schemas conformance conformance-offline standards ci
 
 lint:
 	golangci-lint run || true
@@ -17,8 +17,8 @@ build-meltilint:
 build-validate-schemas:
 	go build -o out/validate-schemas ./cmd/validate-schemas
 
-build-xprovgen:
-	go build -o out/xprovgen ./cmd/xprovgen
+build-barista:
+	go build -o out/barista ./cmd/barista
 
 meltilint:
 	go run ./internal/meltilint/cmd/meltilint ./core ./providers/...

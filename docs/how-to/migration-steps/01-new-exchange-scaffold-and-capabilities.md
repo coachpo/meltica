@@ -13,7 +13,7 @@
 ## How to do it (follow exactly)
 1) **Generate files**
    ```bash
-   go run ./cmd/xprovgen --name <name>
+   go run ./cmd/barista --name <name>
    tree providers/<name>
    ```
    Expected files: `<name>.go`, `sign.go`, `errors.go`, `status.go`, `ws.go`, `ws_private.go` (if supported), `conformance_test.go`, `golden_test.go`, `README.md`.

@@ -56,13 +56,13 @@ validate-schemas
 All schemas validated successfully
 ```
 
-### xprovgen
+### barista
 
-Generate scaffold code for new cryptocurrency exchange providers.
+Brew fresh scaffold code for new cryptocurrency exchange providers. Like a skilled barista crafting the perfect cup, this tool expertly prepares all the essential ingredients for your exchange integration.
 
 **Usage:**
 ```bash
-xprovgen -name <provider> [-out <directory>]
+barista -name <provider> [-out <directory>]
 ```
 
 **Flags:**
@@ -71,11 +71,11 @@ xprovgen -name <provider> [-out <directory>]
 
 **Examples:**
 ```bash
-# Generate provider scaffold in default location
-xprovgen -name bybit
+# Brew a provider scaffold in default location
+barista -name bybit
 
-# Generate provider scaffold in custom directory
-xprovgen -name ftx -out custom-providers/ftx
+# Brew a provider scaffold in custom directory
+barista -name ftx -out custom-providers/ftx
 ```
 
 **Generated Files:**
@@ -103,14 +103,14 @@ Or build individual tools:
 ```bash
 go build -o market-stream ./cmd/market-stream
 go build -o validate-schemas ./cmd/validate-schemas
-go build -o xprovgen ./cmd/xprovgen
+go build -o barista ./cmd/barista
 ```
 
 ## Development Workflow
 
 1. **Adding a new exchange provider:**
    ```bash
-   xprovgen -name myexchange
+   barista -name myexchange
    cd providers/myexchange
    # Implement the TODO sections in generated files
    ```
@@ -129,7 +129,7 @@ go build -o xprovgen ./cmd/xprovgen
 
 These tools are designed to work together:
 
-- Use `xprovgen` to create new provider scaffolds
+- Use `barista` to brew new provider scaffolds
 - Use `validate-schemas` to ensure protocol compliance
 - Use `market-stream` to test live data connectivity
 

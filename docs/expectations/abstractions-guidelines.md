@@ -43,7 +43,7 @@
 
 ### Phase 5: Adapter Scaffolding Tool
 - Steps
-  - Implement `cmd/xprovgen` to generate `providers/<name>/`:
+  - Implement `cmd/barista` to generate `providers/<name>/`:
     - Files: `<name>.go`, `sign.go`, `errors.go`, `status.go`, `ws.go`, `ws_private.go`, `README.md`, `conformance_test.go`, `golden_test.go`.
     - Stubs for symbol conversion, error/status mapping, `instCache`, `Capabilities()`, `Register()`.
 - Outcomes
@@ -111,7 +111,7 @@
 - Phase 1–2: `core/` types/interfaces frozen; adapters compile without changes; enums/scales documented.
 - Phase 3: Schemas validate current payloads; vectors cover all event/model variants.
 - Phase 4: Conformance suite fails meaningfully on deliberate violations; both Binance/OKX pass.
-- Phase 5: `xprovgen` generates an adapter that passes offline suites with minimal edits.
+- Phase 5: `barista` generates an adapter that passes offline suites with minimal edits.
 - Phase 6: Lint fails on protocol violations; no false positives on current adapters.
 - Phase 7: CI blocks protocol changes without version bump; capability mismatches fail.
 - Phase 8: Version bump process proven with a simulated breaking change.

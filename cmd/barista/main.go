@@ -274,6 +274,6 @@ func sanitizePackage(name string) string {
 }
 
 func fatal(err error) {
-	fmt.Fprintln(os.Stderr, "xprovgen:", err)
+	fmt.Fprintln(os.Stderr, "barista:", err)
 	os.Exit(1)
 }

@@ -58,7 +58,7 @@ This guide walks through the minimal files, API checkpoints, and validation step
 2. `meltilint ./providers/<name>` (static analysis - capability ↔ API alignment)
 3. `go run ./cmd/validate-schemas` (schema validation)
 4. `go test ./internal/test -run <Provider>Conformance` (optional live)
-5. `go run ./cmd/xprovgen --name <provider>` (ensure scaffolding is up to date)
+5. `go run ./cmd/barista --name <provider>` (ensure scaffolding is up to date)
 6. Update `README.md` adapter table with capability status
 7. Submit PR with updated fixtures, schemas, and protocol version bump when required
 

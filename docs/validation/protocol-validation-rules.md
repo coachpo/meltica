@@ -7,7 +7,7 @@ This document defines deterministic validation rules derived from `ABSTRACTIONS_
   - SHOULD: failing warns; may block in strict mode.
   - INFO: advisory.
 - Unless noted, rules apply to production code (excluding `**/test/**`, `**/*_test.go`).
-- Paths use a hypothetical Go-based layout: `core/`, `protocol/`, `providers/<name>/`, `conformance/`, `internal/meltilint/`, `cmd/xprovgen/`. Adjust globs if your repo differs.
+- Paths use a hypothetical Go-based layout: `core/`, `protocol/`, `providers/<name>/`, `conformance/`, `internal/meltilint/`, `cmd/barista/`. Adjust globs if your repo differs.
 
 ---
 
@@ -173,7 +173,7 @@ This document defines deterministic validation rules derived from `ABSTRACTIONS_
 
 22) SCAFF-CMD-PRESENT (SHOULD)
 - Intent: Generator exists.
-- Scope: `cmd/xprovgen/`.
+- Scope: `cmd/barista/`.
 - Validation standard:
   - A `main.go` exists that writes files into `providers/<name>/` when invoked with `--name`.
 
