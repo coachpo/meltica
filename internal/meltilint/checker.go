@@ -15,6 +15,14 @@ func Run(ctx context.Context, patterns []string) ([]Issue, error) {
 	}
 	var allIssues []Issue
 	root, rootErr := projectRoot()
+	// Only run protocol artifact checks if the invocation explicitly includes protocol paths
+	includeProtocolArtifacts := false
+	for _, p := range patterns {
+		if strings.Contains(p, "/protocol") || p == "./protocol" || strings.HasPrefix(p, "protocol") {
+			includeProtocolArtifacts = true
+			break
+		}
+	}
 	checkedProtocolDocs := false
 	for _, pkg := range pkgList {
 		for _, pkgErr := range pkg.Errors {
@@ -40,7 +48,7 @@ func Run(ctx context.Context, patterns []string) ([]Issue, error) {
 		case strings.HasPrefix(path, "github.com/coachpo/meltica/providers/"):
 			allIssues = append(allIssues, checkProviderPackage(pkg)...)
 		}
-		if !checkedProtocolDocs && rootErr == nil && (path == "github.com/coachpo/meltica/protocol" || strings.HasPrefix(path, "github.com/coachpo/meltica/providers/") || path == "github.com/coachpo/meltica/core") {
+		if !checkedProtocolDocs && rootErr == nil && includeProtocolArtifacts && (path == "github.com/coachpo/meltica/protocol" || strings.HasPrefix(path, "github.com/coachpo/meltica/providers/") || path == "github.com/coachpo/meltica/core") {
 			allIssues = append(allIssues, checkProtocolArtifacts(root)...)
 			checkedProtocolDocs = true
 		}
