@@ -38,9 +38,10 @@ var capabilities = core.Capabilities(
 func New(apiKey, secret string) (*Provider, error) {
 	httpClient := &http.Client{Timeout: 10 * time.Second}
 	rest := &transport.Client{HTTP: httpClient, BaseURL: "https://api.binance.com"}
+	sapi := &transport.Client{HTTP: httpClient, BaseURL: "https://api.binance.com"}
 	fapi := &transport.Client{HTTP: httpClient, BaseURL: "https://fapi.binance.com"}
 	dapi := &transport.Client{HTTP: httpClient, BaseURL: "https://dapi.binance.com"}
-	p := &Provider{name: "binance", rest: rest, fapi: fapi, dapi: dapi, apiKey: apiKey, secret: secret}
+	p := &Provider{name: "binance", rest: rest, sapi: sapi, fapi: fapi, dapi: dapi, apiKey: apiKey, secret: secret}
 	signer := func(method, path string, q map[string]string, body []byte, ts int64) (http.Header, error) {
 		hdr, err := signHMAC(p.secret, method, path, q, body, ts)
 		if hdr == nil {
@@ -52,10 +53,12 @@ func New(apiKey, secret string) (*Provider, error) {
 		return hdr, err
 	}
 	rest.Signer = signer
+	sapi.Signer = signer
 	fapi.Signer = signer
 	dapi.Signer = signer
 	// Attach error mapper for REST
 	rest.OnHTTPError = mapHTTPError
+	sapi.OnHTTPError = mapHTTPError
 	fapi.OnHTTPError = mapHTTPError
 	dapi.OnHTTPError = mapHTTPError
 	return p, nil
