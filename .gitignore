@@ -30,3 +30,7 @@
 !protocol/schemas/*.json
 # Test data
 !*/test/testdata/*.json
+
+# Github Actions
+!.github/workflows/ci.yml
+!.github/workflows/release.yml
