@@ -15,7 +15,7 @@ func (p *Provider) createListenKey(ctx context.Context) (string, error) {
 	var resp struct {
 		ListenKey string `json:"listenKey"`
 	}
-	if err := p.rest.Do(ctx, http.MethodPost, "/api/v3/userDataStream", nil, nil, false, &resp); err != nil {
+	if err := p.sapi.Do(ctx, http.MethodPost, "/api/v3/userDataStream", nil, nil, false, &resp); err != nil {
 		return "", err
 	}
 	return resp.ListenKey, nil
@@ -23,12 +23,12 @@ func (p *Provider) createListenKey(ctx context.Context) (string, error) {
 
 func (p *Provider) keepaliveListenKey(ctx context.Context, key string) error {
 	q := map[string]string{"listenKey": key}
-	return p.rest.Do(ctx, http.MethodPut, "/api/v3/userDataStream", q, nil, false, nil)
+	return p.sapi.Do(ctx, http.MethodPut, "/api/v3/userDataStream", q, nil, false, nil)
 }
 
 func (p *Provider) closeListenKey(ctx context.Context, key string) error {
 	q := map[string]string{"listenKey": key}
-	return p.rest.Do(ctx, http.MethodDelete, "/api/v3/userDataStream", q, nil, false, nil)
+	return p.sapi.Do(ctx, http.MethodDelete, "/api/v3/userDataStream", q, nil, false, nil)
 }
 
 func (w ws) SubscribePrivate(ctx context.Context, topics ...string) (core.Subscription, error) {
