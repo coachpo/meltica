@@ -28,7 +28,7 @@ func main() {
 	var (
 		exchangeFlag    = flag.String("exchange", "binance", "Exchange to connect to (binance, okx, coinbase, kraken)")
 		symbolFlag      = flag.String("symbol", "BTC-USDT", "Trading symbol in canonical BASE-QUOTE form")
-		channelFlag     = flag.String("channel", "ticker", "Market data stream to subscribe to (ticker, trades, depth)")
+		channelFlag     = flag.String("channel", "ticker", "Market data stream to subscribe to (ticker, trade, book)")
 		interactiveFlag = flag.Bool("interactive", true, "Launch interactive guide to confirm exchange, symbol, and channel")
 	)
 
@@ -140,44 +140,44 @@ func resolveTopic(providerName, channel, symbol string) (string, error) {
 	switch strings.ToLower(providerName) {
 	case "binance":
 		switch ch {
-		case "trade":
+		case corews.TopicTrade:
 			return corews.TopicTrade + ":" + symbol, nil
-		case "ticker":
+		case corews.TopicTicker:
 			return corews.TopicTicker + ":" + symbol, nil
-		case "depth":
+		case corews.TopicBook:
 			return corews.TopicBook + ":" + symbol, nil
 		default:
 			return ch + ":" + symbol, nil
 		}
 	case "okx":
 		switch ch {
-		case "trade":
+		case corews.TopicTrade:
 			return corews.TopicTrade + ":" + symbol, nil
-		case "ticker":
+		case corews.TopicTicker:
 			return corews.TopicTicker + ":" + symbol, nil
-		case "depth":
+		case corews.TopicBook:
 			return corews.TopicBook + ":" + symbol, nil
 		default:
 			return ch + ":" + symbol, nil
 		}
 	case "coinbase":
 		switch ch {
-		case "trade":
+		case corews.TopicTrade:
 			return corews.TopicTrade + ":" + symbol, nil
-		case "ticker":
+		case corews.TopicTicker:
 			return corews.TopicTicker + ":" + symbol, nil
-		case "depth":
+		case corews.TopicBook:
 			return corews.TopicBook + ":" + symbol, nil
 		default:
 			return ch + ":" + symbol, nil
 		}
 	case "kraken":
 		switch ch {
-		case "trade":
+		case corews.TopicTrade:
 			return corews.TopicTrade + ":" + symbol, nil
-		case "ticker":
+		case corews.TopicTicker:
 			return corews.TopicTicker + ":" + symbol, nil
-		case "depth":
+		case corews.TopicBook:
 			return corews.TopicBook + ":" + symbol, nil
 		default:
 			return ch + ":" + symbol, nil
@@ -336,7 +336,7 @@ func formatEventMessage(msg core.Message) (string, bool) {
 		if len(evt.Asks) > 0 {
 			ask = fmt.Sprintf("%s@%s", formatRat(evt.Asks[0].Price), formatRat(evt.Asks[0].Qty))
 		}
-		return fmt.Sprintf("[%s] %s depth bid=%s ask=%s", ts, evt.Symbol, bid, ask), true
+		return fmt.Sprintf("[%s] %s book bid=%s ask=%s", ts, evt.Symbol, bid, ask), true
 	case *corews.OrderEvent:
 		return fmt.Sprintf("[%s] %s order id=%s status=%s filled=%s avg=%s", ts, evt.Symbol, evt.OrderID, evt.Status, formatRat(evt.FilledQty), formatRat(evt.AvgPrice)), true
 	case *corews.BalanceEvent:
