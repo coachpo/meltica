@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/coachpo/meltica/core"
-	"github.com/coachpo/meltica/protocol"
 	okxws "github.com/coachpo/meltica/providers/okx/ws"
 	"github.com/coachpo/meltica/transport"
 )
@@ -69,7 +68,7 @@ func (p *Provider) Name() string { return p.name }
 
 func (p *Provider) Capabilities() core.ProviderCapabilities { return capabilities }
 
-func (p *Provider) SupportedProtocolVersion() string { return protocol.ProtocolVersion }
+func (p *Provider) SupportedProtocolVersion() string { return core.ProtocolVersion }
 
 func (p *Provider) Spot(ctx context.Context) core.SpotAPI              { return spotAPI{p} }
 func (p *Provider) LinearFutures(ctx context.Context) core.FuturesAPI  { return futAPI{p} }

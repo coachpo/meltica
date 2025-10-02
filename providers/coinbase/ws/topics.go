@@ -2,10 +2,9 @@ package ws
 
 import (
 	"github.com/coachpo/meltica/core"
-	"github.com/coachpo/meltica/protocol"
 )
 
-var mapper = protocol.NewChannelMapper(protocol.ChannelMappingConfig{
+var mapper = core.NewChannelMapper(core.ChannelMappingConfig{
 	ProtocolToProvider: map[string]string{
 		core.TopicTrade:     "matches",
 		core.TopicTicker:    "ticker",

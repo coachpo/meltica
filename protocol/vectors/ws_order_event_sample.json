@@ -1,9 +1,0 @@
-{
-  "symbol": "ETH-USD",
-  "order_id": "abc123",
-  "status": "part_filled",
-  "filled_qty": "3/10",
-  "avg_price": "2500000/100",
-  "time": "2024-02-02T10:00:00Z"
-}
-

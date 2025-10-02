@@ -15,7 +15,6 @@ import (
 
 	"github.com/coachpo/meltica/core"
 	"github.com/coachpo/meltica/errs"
-	"github.com/coachpo/meltica/protocol"
 	krakenws "github.com/coachpo/meltica/providers/kraken/ws"
 	"github.com/coachpo/meltica/transport"
 )
@@ -92,7 +91,7 @@ func (p *Provider) Name() string { return p.name }
 // Capabilities reports the supported feature matrix.
 func (p *Provider) Capabilities() core.ProviderCapabilities { return capabilities }
 
-func (p *Provider) SupportedProtocolVersion() string { return protocol.ProtocolVersion }
+func (p *Provider) SupportedProtocolVersion() string { return core.ProtocolVersion }
 
 // Spot exposes Kraken spot REST endpoints.
 func (p *Provider) Spot(ctx context.Context) core.SpotAPI { return spotAPI{p} }

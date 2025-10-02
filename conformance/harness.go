@@ -12,7 +12,6 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
 	"github.com/coachpo/meltica/core"
-	"github.com/coachpo/meltica/protocol"
 )
 
 // ProviderFactory constructs a provider for testing.
@@ -139,8 +138,8 @@ func runProvider(ctx context.Context, pc ProviderCase) error {
 		return fmt.Errorf("factory: %w", err)
 	}
 	defer p.Close()
-	if v := p.SupportedProtocolVersion(); v != protocol.ProtocolVersion {
-		return fmt.Errorf("protocol version mismatch: provider=%s core=%s", v, protocol.ProtocolVersion)
+	if v := p.SupportedProtocolVersion(); v != core.ProtocolVersion {
+		return fmt.Errorf("protocol version mismatch: provider=%s core=%s", v, core.ProtocolVersion)
 	}
 	caps := p.Capabilities()
 	for _, cap := range pc.Capabilities {

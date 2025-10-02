@@ -1,9 +1,7 @@
-package protocol
+package core
 
 import (
 	"strings"
-
-	"github.com/coachpo/meltica/core"
 )
 
 // ChannelMapper provides bidirectional conversion between protocol topics and provider-specific channels.
@@ -82,20 +80,20 @@ func (m *ChannelMapper) TopicFromChannelName(providerChannel, symbol string) str
 
 	// Use the appropriate topic constructor based on protocol topic
 	switch protocolTopic {
-	case core.TopicTrade:
-		return core.TradeTopic(symbol)
-	case core.TopicTicker:
-		return core.TickerTopic(symbol)
-	case core.TopicDepth:
-		return core.DepthTopic(symbol)
-	case core.TopicOrder:
-		return core.OrderTopic(symbol)
-	case core.TopicFullBook:
-		return core.BookTopic(symbol)
-	case core.TopicSnapshot5:
-		return core.Book5Topic(symbol)
-	case core.TopicBalance:
-		return core.BalanceTopic()
+	case TopicTrade:
+		return TradeTopic(symbol)
+	case TopicTicker:
+		return TickerTopic(symbol)
+	case TopicDepth:
+		return DepthTopic(symbol)
+	case TopicOrder:
+		return OrderTopic(symbol)
+	case TopicFullBook:
+		return BookTopic(symbol)
+	case TopicSnapshot5:
+		return Book5Topic(symbol)
+	case TopicBalance:
+		return BalanceTopic()
 	default:
 		return protocolTopic + ":" + symbol
 	}

@@ -15,7 +15,6 @@ import (
 
 	"github.com/coachpo/meltica/core"
 	"github.com/coachpo/meltica/errs"
-	"github.com/coachpo/meltica/protocol"
 	cbws "github.com/coachpo/meltica/providers/coinbase/ws"
 	"github.com/coachpo/meltica/transport"
 )
@@ -91,7 +90,7 @@ func (p *Provider) Name() string { return p.name }
 
 func (p *Provider) Capabilities() core.ProviderCapabilities { return capabilities }
 
-func (p *Provider) SupportedProtocolVersion() string { return protocol.ProtocolVersion }
+func (p *Provider) SupportedProtocolVersion() string { return core.ProtocolVersion }
 
 func (p *Provider) Spot(ctx context.Context) core.SpotAPI { return spotAPI{p} }
 

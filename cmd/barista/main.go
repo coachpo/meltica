@@ -29,7 +29,6 @@ import (
 	"time"
 
 	"github.com/coachpo/meltica/core"
-	"github.com/coachpo/meltica/protocol"
 )
 
 type Provider struct{}
@@ -40,7 +39,7 @@ func (p *Provider) Name() string { return "{{.Provider}}" }
 
 func (p *Provider) Capabilities() core.ProviderCapabilities { return 0 }
 
-func (p *Provider) SupportedProtocolVersion() string { return protocol.ProtocolVersion }
+func (p *Provider) SupportedProtocolVersion() string { return core.ProtocolVersion }
 
 func (p *Provider) Spot(ctx context.Context) core.SpotAPI { return unsupportedSpot{} }
 

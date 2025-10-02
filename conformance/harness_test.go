@@ -6,7 +6,6 @@ import (
 
 	"github.com/coachpo/meltica/conformance"
 	"github.com/coachpo/meltica/core"
-	"github.com/coachpo/meltica/protocol"
 )
 
 func TestRunAll_NoProviders(t *testing.T) {
@@ -35,7 +34,7 @@ type fakeProvider struct {
 
 func (f fakeProvider) Name() string                                       { return "fake" }
 func (f fakeProvider) Capabilities() core.ProviderCapabilities            { return f.caps }
-func (f fakeProvider) SupportedProtocolVersion() string                   { return protocol.ProtocolVersion }
+func (f fakeProvider) SupportedProtocolVersion() string                   { return core.ProtocolVersion }
 func (f fakeProvider) Spot(ctx context.Context) core.SpotAPI              { return nil }
 func (f fakeProvider) LinearFutures(ctx context.Context) core.FuturesAPI  { return nil }
 func (f fakeProvider) InverseFutures(ctx context.Context) core.FuturesAPI { return nil }
