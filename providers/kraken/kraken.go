@@ -33,24 +33,26 @@ var capabilities = core.Capabilities(
 
 // Provider implements core.Provider for Kraken.
 type Provider struct {
-	name          string
-	rest          *transport.Client
-	apiKey        string
-	secret        string
-	instCache     map[string]core.Instrument
-	canonToKraken map[string]string
-	nativeToCanon map[string]string
-	tokenMu       sync.Mutex
-	wsToken       string
-	wsTokenExpiry time.Time
+	name            string
+	rest            *transport.Client
+	apiKey          string
+	secret          string
+	instCache       map[string]core.Instrument
+	canonToKraken   map[string]string
+	canonToKrakenWS map[string]string
+	nativeToCanon   map[string]string
+	tokenMu         sync.Mutex
+	wsToken         string
+	wsTokenExpiry   time.Time
 }
 
 // TestOnlyNewProvider constructs a provider instance for tests.
 func TestOnlyNewProvider() *Provider {
 	return &Provider{
-		name:          "kraken",
-		instCache:     map[string]core.Instrument{},
-		canonToKraken: map[string]string{},
+		name:            "kraken",
+		instCache:       map[string]core.Instrument{},
+		canonToKraken:   map[string]string{},
+		canonToKrakenWS: map[string]string{},
 	}
 }
 
@@ -222,6 +224,9 @@ func (s spotAPI) Instruments(ctx context.Context) ([]core.Instrument, error) {
 	if s.p.canonToKraken == nil {
 		s.p.canonToKraken = map[string]string{}
 	}
+	if s.p.canonToKrakenWS == nil {
+		s.p.canonToKrakenWS = map[string]string{}
+	}
 	if s.p.nativeToCanon == nil {
 		s.p.nativeToCanon = map[string]string{}
 	}
@@ -242,7 +247,13 @@ func (s spotAPI) Instruments(ctx context.Context) ([]core.Instrument, error) {
 		}
 		s.p.instCache[symbol] = inst
 		s.p.canonToKraken[symbol] = pair.AltName
+		wsName := pair.WSName
+		if wsName == "" {
+			wsName = pair.AltName
+		}
+		s.p.canonToKrakenWS[symbol] = wsName
 		s.p.nativeToCanon[strings.ToUpper(pair.AltName)] = symbol
+		s.p.nativeToCanon[strings.ToUpper(wsName)] = symbol
 		out = append(out, inst)
 	}
 	return out, nil
@@ -599,6 +610,7 @@ func (p *Provider) ensureInstruments(ctx context.Context) error {
 
 type assetPair struct {
 	AltName      string `json:"altname"`
+	WSName       string `json:"wsname"`
 	Base         string `json:"base"`
 	Quote        string `json:"quote"`
 	PairDecimals int    `json:"pair_decimals"`

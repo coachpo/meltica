@@ -74,7 +74,13 @@ func (w ws) SubscribePublic(ctx context.Context, topics ...string) (core.Subscri
 		if ch == "" || canon == "" {
 			continue
 		}
-		native := w.p.canonToKraken[canon]
+		native := ""
+		if w.p != nil {
+			native = w.p.canonToKrakenWS[canon]
+			if native == "" {
+				native = w.p.canonToKraken[canon]
+			}
+		}
 		if native == "" {
 			native = canon
 		}
