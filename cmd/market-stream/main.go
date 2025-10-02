@@ -139,47 +139,45 @@ func resolveTopic(providerName, channel, symbol string) (string, error) {
 	switch strings.ToLower(providerName) {
 	case "binance":
 		switch ch {
-		case "trade", "trades":
-			return "trades:" + symbol, nil
-		case "ticker", "tickers":
-			return "tickers:" + symbol, nil
-		case "depth", "book", "books5", "depth5":
-			return "depth:" + symbol, nil
+		case "trade":
+			return core.TopicTrade + ":" + symbol, nil
+		case "ticker":
+			return core.TopicTicker + ":" + symbol, nil
+		case "depth":
+			return core.TopicDepth + ":" + symbol, nil
 		default:
 			return ch + ":" + symbol, nil
 		}
 	case "okx":
 		switch ch {
-		case "trade", "trades":
-			return "trades:" + symbol, nil
-		case "ticker", "tickers":
-			return "tickers:" + symbol, nil
-		case "depth", "book":
-			return "books:" + symbol, nil
-		case "books5", "depth5":
-			return "books5:" + symbol, nil
+		case "trade":
+			return core.TopicTrade + ":" + symbol, nil
+		case "ticker":
+			return core.TopicTicker + ":" + symbol, nil
+		case "depth":
+			return core.TopicDepth + ":" + symbol, nil
 		default:
 			return ch + ":" + symbol, nil
 		}
 	case "coinbase":
 		switch ch {
-		case "trade", "trades":
+		case "trade":
 			return core.TopicTrade + ":" + symbol, nil
-		case "ticker", "tickers":
+		case "ticker":
 			return core.TopicTicker + ":" + symbol, nil
-		case "depth", "book", "level2":
+		case "depth":
 			return core.TopicDepth + ":" + symbol, nil
 		default:
 			return ch + ":" + symbol, nil
 		}
 	case "kraken":
 		switch ch {
-		case "trade", "trades":
-			return "trade:" + symbol, nil
-		case "ticker", "tickers":
-			return "ticker:" + symbol, nil
-		case "depth", "book":
-			return "book:" + symbol, nil
+		case "trade":
+			return core.TopicTrade + ":" + symbol, nil
+		case "ticker":
+			return core.TopicTicker + ":" + symbol, nil
+		case "depth":
+			return core.TopicDepth + ":" + symbol, nil
 		default:
 			return ch + ":" + symbol, nil
 		}
