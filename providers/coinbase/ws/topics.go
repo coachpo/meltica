@@ -20,7 +20,7 @@ var mapper = corews.NewChannelMapper(corews.ChannelMappingConfig{
 		"user":     corews.TopicUserBalance,
 		"match":    corews.TopicTrade,
 		"l2update": corews.TopicDepth,
-		"snapshot": corews.TopicDepth,
+		"snapshot": corews.TopicBook, // Snapshots map to BookTopic
 		"received": corews.TopicUserOrder,
 		"open":     corews.TopicUserOrder,
 		"done":     corews.TopicUserOrder,

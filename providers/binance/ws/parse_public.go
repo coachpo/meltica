@@ -29,7 +29,7 @@ func (w *WS) parsePublicMessage(msg *core.Message, raw []byte) error {
 	symbol := w.canonicalSymbol(meta.Symbol)
 	stream := envelope.Stream
 	switch meta.Event {
-	case "trade":
+	case "aggTrade":
 		return w.parseTradeEvent(msg, payload, symbol, stream)
 	case "bookTicker":
 		return w.parseBookTicker(msg, payload, symbol, stream)
@@ -118,7 +118,11 @@ func (w *WS) parseDepthUpdate(msg *core.Message, payload []byte, symbol, stream 
 		msg.Topic = stream
 	}
 	msg.Event = "depth"
-	de := corews.DepthEvent{Symbol: sym, Time: time.UnixMilli(rec.Time)}
+	de := corews.DepthEvent{
+		Symbol:     sym,
+		Time:       time.UnixMilli(rec.Time),
+		UpdateType: corews.DepthUpdateDelta, // Binance depthUpdate is incremental
+	}
 	de.Bids = append(de.Bids, depthLevelsFromPairs(rec.Bids)...)
 	de.Asks = append(de.Asks, depthLevelsFromPairs(rec.Asks)...)
 	msg.Parsed = &de

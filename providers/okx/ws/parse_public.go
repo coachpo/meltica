@@ -106,10 +106,14 @@ func (w *WS) parseBookSnapshot(msg *core.Message, payload []json.RawMessage, ins
 	if err := json.Unmarshal(payload[len(payload)-1], &rec); err != nil {
 		return err
 	}
-	de := corews.DepthEvent{Symbol: instrument, Time: parseMillis(rec.Ts)}
+	de := corews.DepthEvent{
+		Symbol:     instrument,
+		Time:       parseMillis(rec.Ts),
+		UpdateType: corews.DepthUpdateSnapshot, // OKX books channel provides full snapshots
+	}
 	de.Bids = append(de.Bids, depthLevelsFromPairs(rec.Bids)...)
 	de.Asks = append(de.Asks, depthLevelsFromPairs(rec.Asks)...)
-	msg.Event = "depth"
+	msg.Event = "book"
 	msg.Parsed = &de
 	return nil
 }

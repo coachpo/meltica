@@ -71,7 +71,11 @@ func (w *WS) parseL2(msg *core.Message, env map[string]any) error {
 	msg.Topic = corews.DepthTopic(symbol)
 	msg.Event = "depth"
 	changes, _ := env["changes"].([]any)
-	event := &corews.DepthEvent{Symbol: symbol, Time: parseTime(fmt.Sprint(env["time"]))}
+	event := &corews.DepthEvent{
+		Symbol:     symbol,
+		Time:       parseTime(fmt.Sprint(env["time"])),
+		UpdateType: corews.DepthUpdateDelta, // Coinbase l2update is incremental
+	}
 	for _, change := range changes {
 		row, _ := change.([]any)
 		if len(row) < 3 {
@@ -93,9 +97,13 @@ func (w *WS) parseL2(msg *core.Message, env map[string]any) error {
 
 func (w *WS) parseSnapshot(msg *core.Message, env map[string]any) error {
 	symbol := w.canonicalSymbol(fmt.Sprint(env["product_id"]))
-	msg.Topic = corews.DepthTopic(symbol)
-	msg.Event = "depth"
-	event := &corews.DepthEvent{Symbol: symbol, Time: parseTime(fmt.Sprint(env["time"]))}
+	msg.Topic = corews.BookTopic(symbol) // Use BookTopic for snapshots
+	msg.Event = "book"
+	event := &corews.DepthEvent{
+		Symbol:     symbol,
+		Time:       parseTime(fmt.Sprint(env["time"])),
+		UpdateType: corews.DepthUpdateSnapshot, // Coinbase snapshot is full book
+	}
 	if bids, ok := env["bids"].([]any); ok {
 		event.Bids = append(event.Bids, buildLevels(bids)...)
 	}
