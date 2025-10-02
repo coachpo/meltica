@@ -1,7 +1,6 @@
 package ws
 
 import (
-	"context"
 	"encoding/json"
 	"strings"
 	"time"
@@ -25,6 +24,7 @@ func (w *WS) parsePublicMessage(msg *core.Message, raw []byte) error {
 	var meta struct {
 		Event  string `json:"e"`
 		Symbol string `json:"s"`
+		Time   int64  `json:"E"`
 	}
 	if err := json.Unmarshal(payload, &meta); err != nil {
 		return nil
@@ -39,6 +39,18 @@ func (w *WS) parsePublicMessage(msg *core.Message, raw []byte) error {
 		parts := strings.Split(stream, "@")
 		if len(parts) >= 2 {
 			channel := parts[1]
+			// If symbol is not set, try to extract it from the stream name
+			if symbol == "" {
+				binanceSymbol := parts[0]
+				if binanceSymbol != "" {
+					canonical := w.canonicalSymbol(strings.ToUpper(binanceSymbol))
+					if canonical != "" {
+						symbol = canonical
+					} else {
+						symbol = strings.ToUpper(binanceSymbol)
+					}
+				}
+			}
 			if strings.HasPrefix(channel, "depth") {
 				return w.parsePartialDepthStream(msg, payload, symbol, stream)
 			}
@@ -46,7 +58,7 @@ func (w *WS) parsePublicMessage(msg *core.Message, raw []byte) error {
 	}
 
 	switch meta.Event {
-	case "aggTrade":
+	case "trade":
 		return w.parseTradeEvent(msg, payload, symbol, stream)
 	case "bookTicker":
 		return w.parseBookTicker(msg, payload, symbol, stream)
@@ -133,34 +145,55 @@ func (w *WS) parseDepthUpdate(msg *core.Message, payload []byte, symbol, stream 
 		sym = rec.Symbol
 	}
 
-	// Use order book management with Binance guidelines
-	orderBook := w.orderBooks.GetOrCreateOrderBook(sym)
+	// Parse depth levels directly without local order book management
 	updateTime := time.UnixMilli(rec.Time)
+	bids := make([]corews.DepthLevel, 0, len(rec.Bids))
+	asks := make([]corews.DepthLevel, 0, len(rec.Asks))
 
-	// Process the depth update according to Binance guidelines
-	err := orderBook.ProcessBookUpdate(rec.FirstUpdateID, rec.LastUpdateID, rec.Bids, rec.Asks, updateTime)
-	if err != nil {
-		// If there's a sequence mismatch or other error, we need to request a snapshot
-		go w.handleOrderBookError(context.Background(), sym)
-		return nil
+	// Parse bids
+	for _, bid := range rec.Bids {
+		if len(bid) < 2 {
+			continue
+		}
+		if price, ok := parseDecimalToRat(bid[0]); ok {
+			if qty, ok := parseDecimalToRat(bid[1]); ok && qty.Sign() > 0 {
+				bids = append(bids, corews.DepthLevel{
+					Price: price,
+					Qty:   qty,
+				})
+			}
+		}
 	}
 
-	// Check if we need to request a snapshot
-	if orderBook.IsSnapshotPending() {
-		go w.requestSnapshot(context.Background(), sym)
-		return nil
+	// Parse asks
+	for _, ask := range rec.Asks {
+		if len(ask) < 2 {
+			continue
+		}
+		if price, ok := parseDecimalToRat(ask[0]); ok {
+			if qty, ok := parseDecimalToRat(ask[1]); ok && qty.Sign() > 0 {
+				asks = append(asks, corews.DepthLevel{
+					Price: price,
+					Qty:   qty,
+				})
+			}
+		}
 	}
 
-	// Get the complete order book snapshot
-	completeSnapshot := orderBook.GetSnapshot()
+	// Create book event with partial depth data
+	bookEvent := corews.BookEvent{
+		Symbol: sym,
+		Bids:   bids,
+		Asks:   asks,
+		Time:   updateTime,
+	}
 
-	// Use the correct topic mapping for depthUpdate events
 	msg.Topic = corews.BookTopic(sym)
 	if msg.Topic == "" {
 		msg.Topic = stream
 	}
 	msg.Event = "book"
-	msg.Parsed = &completeSnapshot
+	msg.Parsed = &bookEvent
 	return nil
 }
 
@@ -206,6 +239,21 @@ func (w *WS) parsePartialDepthStream(msg *core.Message, payload []byte, symbol, 
 		return err
 	}
 
+	// If symbol is not set, try to extract it from the stream name
+	if symbol == "" && stream != "" {
+		parts := strings.Split(stream, "@")
+		if len(parts) > 0 {
+			binanceSymbol := parts[0]
+			if binanceSymbol != "" {
+				if canonical := w.canonicalSymbol(strings.ToUpper(binanceSymbol)); canonical != "" {
+					symbol = canonical
+				} else {
+					symbol = strings.ToUpper(binanceSymbol)
+				}
+			}
+		}
+	}
+
 	// Parse depth levels
 	bids := depthLevelsFromPairs(rec.Bids)
 	asks := depthLevelsFromPairs(rec.Asks)
@@ -234,45 +282,4 @@ func hasString(m map[string]any, key string) bool {
 	}
 	_, isString := v.(string)
 	return isString
-}
-
-// handleOrderBookError handles order book synchronization errors
-func (w *WS) handleOrderBookError(ctx context.Context, symbol string) {
-	// Mark the order book as needing a snapshot
-	orderBook := w.orderBooks.GetOrCreateOrderBook(symbol)
-	orderBook.mu.Lock()
-	orderBook.SnapshotPending = true
-	orderBook.mu.Unlock()
-
-	// Request a fresh snapshot
-	w.requestSnapshot(ctx, symbol)
-}
-
-// requestSnapshot requests a fresh snapshot from the Binance API
-func (w *WS) requestSnapshot(ctx context.Context, symbol string) {
-	// Retry logic with exponential backoff
-	maxRetries := 3
-	baseDelay := time.Second
-
-	for attempt := 0; attempt < maxRetries; attempt++ {
-		book, err := w.orderBooks.GetSnapshotFromAPI(ctx, symbol)
-		if err == nil && book != nil {
-			// Successfully got snapshot, process any buffered events
-			book.mu.Lock()
-			if len(book.Buffer) > 0 {
-				book.processBufferedEvents()
-			}
-			book.mu.Unlock()
-			return
-		}
-
-		// If we've exhausted retries, give up
-		if attempt == maxRetries-1 {
-			return
-		}
-
-		// Exponential backoff
-		delay := baseDelay * time.Duration(1<<attempt)
-		time.Sleep(delay)
-	}
 }

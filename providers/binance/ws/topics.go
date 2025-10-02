@@ -10,14 +10,12 @@ var mapper = corews.NewChannelMapper(corews.ChannelMappingConfig{
 	ProtocolToProvider: map[string]string{
 		corews.TopicTrade:  "trade",
 		corews.TopicTicker: "bookTicker",
-		corews.TopicBook:   "depth20",
+		corews.TopicBook:   "depth20@100ms",
 	},
 	AdditionalProviderMappings: map[string]string{
-		"trade":       corews.TopicTrade,
-		"aggTrade":    corews.TopicTrade,
-		"bookTicker":  corews.TopicTicker,
-		"depth20":     corews.TopicBook,
-		"depthUpdate": corews.TopicBook,
+		"trade":         corews.TopicTrade,
+		"bookTicker":    corews.TopicTicker,
+		"depth20@100ms": corews.TopicBook,
 	},
 })
 
