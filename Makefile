@@ -1,6 +1,6 @@
 GO111MODULE=on
 
-.PHONY: test lint tidy build build-meltilint build-validate-schemas build-barista meltilint validate-schemas conformance conformance-offline standards ci
+.PHONY: test lint tidy build build-meltilint build-validate-schemas build-barista meltilint validate-schemas conformance conformance-offline standards ci clean
 
 lint:
 	golangci-lint run || true
@@ -44,5 +44,8 @@ standards:
 	$(MAKE) validate-schemas
 	$(MAKE) conformance-offline
 
- tidy:
+tidy:
 	go mod tidy
+
+clean:
+	rm -rf out/
