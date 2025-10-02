@@ -1,4 +1,4 @@
-package kraken
+package ws
 
 import (
 	"encoding/json"
@@ -8,7 +8,7 @@ import (
 	"github.com/coachpo/meltica/core"
 )
 
-func (w ws) parseMessage(msg *core.Message, data []byte, requested []string) error {
+func (w *WS) parseMessage(msg *core.Message, data []byte, requested []string) error {
 	if len(data) == 0 {
 		return nil
 	}
@@ -30,7 +30,7 @@ func (w ws) parseMessage(msg *core.Message, data []byte, requested []string) err
 	return nil
 }
 
-func (w ws) parseV2Channel(msg *core.Message, channel string, env map[string]any, requested []string) error {
+func (w *WS) parseV2Channel(msg *core.Message, channel string, env map[string]any, requested []string) error {
 	normalized := normalizePublicChannel(channel)
 	if normalized == "" {
 		msg.Topic = channel
@@ -60,7 +60,7 @@ func (w ws) parseV2Channel(msg *core.Message, channel string, env map[string]any
 			}
 		}
 	}
-	canon := w.canonicalSymbol(symbol, requested)
+	canon := w.p.CanonicalSymbol(symbol, requested)
 	msg.Topic = topicFromChannelName(normalized, canon)
 	switch normalized {
 	case "trade":
@@ -85,7 +85,7 @@ func (w ws) parseV2Channel(msg *core.Message, channel string, env map[string]any
 	}
 }
 
-func (w ws) parseTrades(msg *core.Message, payload any, symbol string) error {
+func (w *WS) parseTrades(msg *core.Message, payload any, symbol string) error {
 	rows, ok := payload.([]any)
 	if !ok || len(rows) == 0 {
 		return nil
@@ -99,7 +99,7 @@ func (w ws) parseTrades(msg *core.Message, payload any, symbol string) error {
 		sym := symbol
 		if sym == "" {
 			if raw := valueString(rec["symbol"]); raw != "" {
-				sym = w.canonicalSymbol(raw, nil)
+				sym = w.p.CanonicalSymbol(raw, nil)
 			}
 		}
 		price := parseDecimalStr(valueString(firstPresent(rec, "price", "px")))
@@ -117,7 +117,7 @@ func (w ws) parseTrades(msg *core.Message, payload any, symbol string) error {
 	return nil
 }
 
-func (w ws) parseTicker(msg *core.Message, payload any, symbol string) error {
+func (w *WS) parseTicker(msg *core.Message, payload any, symbol string) error {
 	row, ok := payload.(map[string]any)
 	if !ok {
 		return nil
@@ -129,7 +129,7 @@ func (w ws) parseTicker(msg *core.Message, payload any, symbol string) error {
 	return nil
 }
 
-func (w ws) parseBook(msg *core.Message, payload any, symbol string) error {
+func (w *WS) parseBook(msg *core.Message, payload any, symbol string) error {
 	row, ok := payload.(map[string]any)
 	if !ok {
 		return nil
@@ -146,7 +146,7 @@ func (w ws) parseBook(msg *core.Message, payload any, symbol string) error {
 	return nil
 }
 
-func (w ws) parseLevel3(msg *core.Message, payload any, symbol string) error {
+func (w *WS) parseLevel3(msg *core.Message, payload any, symbol string) error {
 	rows, ok := payload.([]any)
 	if !ok || len(rows) == 0 {
 		return nil

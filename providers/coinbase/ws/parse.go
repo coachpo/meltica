@@ -1,4 +1,4 @@
-package coinbase
+package ws
 
 import (
 	"encoding/json"
@@ -9,7 +9,7 @@ import (
 	"github.com/coachpo/meltica/core"
 )
 
-func (w ws) parseMessage(msg *core.Message, payload []byte, private bool) error {
+func (w *WS) parseMessage(msg *core.Message, payload []byte, private bool) error {
 	var env map[string]any
 	if err := json.Unmarshal(payload, &env); err != nil {
 		return err
@@ -45,7 +45,7 @@ func (w ws) parseMessage(msg *core.Message, payload []byte, private bool) error 
 	}
 }
 
-func (w ws) parseTicker(msg *core.Message, env map[string]any) error {
+func (w *WS) parseTicker(msg *core.Message, env map[string]any) error {
 	symbol := w.canonicalSymbol(fmt.Sprint(env["product_id"]))
 	msg.Topic = core.TickerTopic(symbol)
 	msg.Event = "ticker"
@@ -55,7 +55,7 @@ func (w ws) parseTicker(msg *core.Message, env map[string]any) error {
 	return nil
 }
 
-func (w ws) parseMatch(msg *core.Message, env map[string]any) error {
+func (w *WS) parseMatch(msg *core.Message, env map[string]any) error {
 	symbol := w.canonicalSymbol(fmt.Sprint(env["product_id"]))
 	price := parseDecimal(fmt.Sprint(env["price"]))
 	qty := parseDecimal(fmt.Sprint(env["size"]))
@@ -65,7 +65,7 @@ func (w ws) parseMatch(msg *core.Message, env map[string]any) error {
 	return nil
 }
 
-func (w ws) parseL2(msg *core.Message, env map[string]any) error {
+func (w *WS) parseL2(msg *core.Message, env map[string]any) error {
 	symbol := w.canonicalSymbol(fmt.Sprint(env["product_id"]))
 	msg.Topic = core.DepthTopic(symbol)
 	msg.Event = "depth"
@@ -90,7 +90,7 @@ func (w ws) parseL2(msg *core.Message, env map[string]any) error {
 	return nil
 }
 
-func (w ws) parseSnapshot(msg *core.Message, env map[string]any) error {
+func (w *WS) parseSnapshot(msg *core.Message, env map[string]any) error {
 	symbol := w.canonicalSymbol(fmt.Sprint(env["product_id"]))
 	msg.Topic = core.DepthTopic(symbol)
 	msg.Event = "depth"
@@ -119,7 +119,7 @@ func buildLevels(raw []any) []core.DepthLevel {
 	return out
 }
 
-func (w ws) parseOrderEvent(msg *core.Message, env map[string]any) error {
+func (w *WS) parseOrderEvent(msg *core.Message, env map[string]any) error {
 	symbol := w.canonicalSymbol(fmt.Sprint(env["product_id"]))
 	id := fmt.Sprint(env["order_id"]) + fmt.Sprint(env["client_oid"])
 	status := mapStatus(fmt.Sprint(env["type"]), fmt.Sprint(env["reason"]))
@@ -131,7 +131,7 @@ func (w ws) parseOrderEvent(msg *core.Message, env map[string]any) error {
 	return nil
 }
 
-func (w ws) parseBalance(msg *core.Message, env map[string]any) error {
+func (w *WS) parseBalance(msg *core.Message, env map[string]any) error {
 	accounts, _ := env["accounts"].([]any)
 	balances := make([]core.Balance, 0, len(accounts))
 	for _, acct := range accounts {

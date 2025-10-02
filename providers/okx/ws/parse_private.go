@@ -1,4 +1,4 @@
-package okx
+package ws
 
 import (
 	"encoding/json"
@@ -16,7 +16,7 @@ type okxPrivateEnvelope struct {
 	Event string            `json:"event"`
 }
 
-func (w ws) parsePrivateMessage(msg *core.Message, raw []byte) error {
+func (w *WS) parsePrivateMessage(msg *core.Message, raw []byte) error {
 	var env okxPrivateEnvelope
 	if err := json.Unmarshal(raw, &env); err != nil {
 		return nil
@@ -37,7 +37,7 @@ func (w ws) parsePrivateMessage(msg *core.Message, raw []byte) error {
 	}
 }
 
-func (w ws) parseOrderUpdate(msg *core.Message, payload []json.RawMessage) error {
+func (w *WS) parseOrderUpdate(msg *core.Message, payload []json.RawMessage) error {
 	if len(payload) == 0 {
 		return nil
 	}
@@ -67,7 +67,7 @@ func (w ws) parseOrderUpdate(msg *core.Message, payload []json.RawMessage) error
 	return nil
 }
 
-func (w ws) parseBalanceUpdate(msg *core.Message, payload []json.RawMessage) error {
+func (w *WS) parseBalanceUpdate(msg *core.Message, payload []json.RawMessage) error {
 	var balances []core.Balance
 	for _, raw := range payload {
 		var entry struct {

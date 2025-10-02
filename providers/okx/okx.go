@@ -12,6 +12,7 @@ import (
 
 	"github.com/coachpo/meltica/core"
 	"github.com/coachpo/meltica/protocol"
+	okxws "github.com/coachpo/meltica/providers/okx/ws"
 	"github.com/coachpo/meltica/transport"
 )
 
@@ -73,12 +74,24 @@ func (p *Provider) SupportedProtocolVersion() string { return protocol.ProtocolV
 func (p *Provider) Spot(ctx context.Context) core.SpotAPI              { return spotAPI{p} }
 func (p *Provider) LinearFutures(ctx context.Context) core.FuturesAPI  { return futAPI{p} }
 func (p *Provider) InverseFutures(ctx context.Context) core.FuturesAPI { return futAPI{p} }
-func (p *Provider) WS() core.WS                                        { return ws{p} }
+func (p *Provider) WS() core.WS                                        { return okxws.New(p) }
 func (p *Provider) Close() error                                       { return nil }
+
+// WebSocket support methods
+func (p *Provider) APIKey() string {
+	return p.apiKey
+}
+
+func (p *Provider) Secret() string {
+	return p.secret
+}
+
+func (p *Provider) Passphrase() string {
+	return p.passphrase
+}
 
 type spotAPI struct{ p *Provider }
 type futAPI struct{ p *Provider }
-type ws struct{ p *Provider }
 
 func (s spotAPI) ServerTime(ctx context.Context) (time.Time, error) {
 	var arr []struct {

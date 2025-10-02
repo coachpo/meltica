@@ -1,8 +1,9 @@
-package kraken
+package ws
 
 import (
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"strconv"
 	"strings"
 	"time"
@@ -89,4 +90,72 @@ func parseTradesTS(ts string) time.Time {
 	sec := int64(f)
 	ns := int64((f - float64(sec)) * 1e9)
 	return time.Unix(sec, ns).UTC()
+}
+
+func parseDecimal(s string) (*big.Rat, bool) {
+	var out big.Rat
+	if s == "" {
+		return nil, false
+	}
+	if _, ok := out.SetString(s); !ok {
+		return nil, false
+	}
+	return &out, true
+}
+
+func parseDecimalStr(s string) *big.Rat {
+	r, _ := parseDecimal(s)
+	return r
+}
+
+func mapStatus(state string) core.OrderStatus {
+	switch state {
+	case "pending", "open", "partial":
+		return core.OrderNew
+	case "filled", "closed":
+		return core.OrderFilled
+	case "canceled", "cancelled":
+		return core.OrderCanceled
+	case "rejected", "expired":
+		return core.OrderRejected
+	default:
+		return core.OrderNew
+	}
+}
+
+// CanonicalFromRequested attempts to match an exchange symbol to a requested topic symbol.
+func CanonicalFromRequested(exch string, requested []string) string {
+	candidates := []string{exch}
+	if strings.Contains(exch, "/") {
+		candidates = append(candidates, strings.ReplaceAll(exch, "/", "-"))
+	} else if strings.Contains(exch, "-") {
+		candidates = append(candidates, strings.ReplaceAll(exch, "-", "/"))
+	}
+	for _, t := range requested {
+		parts := strings.Split(t, ":")
+		if len(parts) != 2 {
+			continue
+		}
+		sym := parts[1]
+		if sym == "" {
+			continue
+		}
+		for _, cand := range candidates {
+			if cand != "" && strings.EqualFold(sym, cand) {
+				return sym
+			}
+		}
+		if strings.Contains(sym, "-") {
+			alt := strings.ReplaceAll(sym, "-", "/")
+			for _, cand := range candidates {
+				if cand != "" && strings.EqualFold(alt, cand) {
+					return sym
+				}
+			}
+		}
+	}
+	if strings.Contains(exch, "/") {
+		return strings.ReplaceAll(exch, "/", "-")
+	}
+	return exch
 }

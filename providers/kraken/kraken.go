@@ -16,6 +16,7 @@ import (
 	"github.com/coachpo/meltica/core"
 	"github.com/coachpo/meltica/errs"
 	"github.com/coachpo/meltica/protocol"
+	krakenws "github.com/coachpo/meltica/providers/kraken/ws"
 	"github.com/coachpo/meltica/transport"
 )
 
@@ -105,10 +106,82 @@ func (p *Provider) InverseFutures(ctx context.Context) core.FuturesAPI {
 }
 
 // WS returns the websocket handler.
-func (p *Provider) WS() core.WS { return ws{p} }
+func (p *Provider) WS() core.WS { return krakenws.New(p) }
 
 // Close cleans up resources.
 func (p *Provider) Close() error { return nil }
+
+// WebSocket support methods
+func (p *Provider) NativeSymbolForWS(canon string) string {
+	if p.canonToKrakenWS != nil {
+		if native := p.canonToKrakenWS[canon]; native != "" {
+			return native
+		}
+	}
+	if p.canonToKraken != nil {
+		if native := p.canonToKraken[canon]; native != "" {
+			return native
+		}
+	}
+	return canon
+}
+
+func (p *Provider) CanonicalSymbol(exch string, requested []string) string {
+	if exch == "" {
+		return krakenws.CanonicalFromRequested(exch, requested)
+	}
+	upper := strings.ToUpper(strings.TrimSpace(exch))
+	if p.nativeToCanon != nil {
+		if canon := p.nativeToCanon[upper]; canon != "" {
+			return canon
+		}
+		if canon := p.nativeToCanon[strings.ReplaceAll(upper, "/", "")]; canon != "" {
+			return canon
+		}
+	}
+	for c, native := range p.canonToKraken {
+		if strings.EqualFold(native, upper) {
+			return c
+		}
+	}
+	for c, native := range p.canonToKrakenWS {
+		if strings.EqualFold(native, upper) {
+			return c
+		}
+	}
+	return krakenws.CanonicalFromRequested(upper, requested)
+}
+
+func (p *Provider) MapNativeToCanon(native string) string {
+	if native == "" {
+		return native
+	}
+	native = strings.ToUpper(native)
+	if canon := p.nativeToCanon[native]; canon != "" {
+		return canon
+	}
+	return native
+}
+
+func (p *Provider) EnsureInstruments(ctx context.Context) error {
+	if len(p.instCache) > 0 {
+		return nil
+	}
+	_, err := spotAPI{p}.Instruments(ctx)
+	return err
+}
+
+func (p *Provider) APIKey() string {
+	return p.apiKey
+}
+
+func (p *Provider) Secret() string {
+	return p.secret
+}
+
+func (p *Provider) GetWSToken(ctx context.Context) (string, error) {
+	return p.getWSToken(ctx)
+}
 
 func (p *Provider) getWSToken(ctx context.Context) (string, error) {
 	p.tokenMu.Lock()

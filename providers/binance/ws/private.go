@@ -1,39 +1,18 @@
-package binance
+package ws
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"time"
 
 	"github.com/coachpo/meltica/core"
 	"github.com/gorilla/websocket"
 )
 
-func (p *Provider) createListenKey(ctx context.Context) (string, error) {
-	var resp struct {
-		ListenKey string `json:"listenKey"`
-	}
-	if err := p.sapi.Do(ctx, http.MethodPost, "/api/v3/userDataStream", nil, nil, false, &resp); err != nil {
-		return "", err
-	}
-	return resp.ListenKey, nil
-}
-
-func (p *Provider) keepaliveListenKey(ctx context.Context, key string) error {
-	q := map[string]string{"listenKey": key}
-	return p.sapi.Do(ctx, http.MethodPut, "/api/v3/userDataStream", q, nil, false, nil)
-}
-
-func (p *Provider) closeListenKey(ctx context.Context, key string) error {
-	q := map[string]string{"listenKey": key}
-	return p.sapi.Do(ctx, http.MethodDelete, "/api/v3/userDataStream", q, nil, false, nil)
-}
-
-func (w ws) SubscribePrivate(ctx context.Context, topics ...string) (core.Subscription, error) {
+func (w *WS) SubscribePrivate(ctx context.Context, topics ...string) (core.Subscription, error) {
 	// Binance private WS does not use topics; it is bound to listenKey
-	key, err := w.p.createListenKey(ctx)
+	key, err := w.p.CreateListenKey(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -54,7 +33,7 @@ func (w ws) SubscribePrivate(ctx context.Context, topics ...string) (core.Subscr
 			case <-kaCtx.Done():
 				return
 			case <-t.C:
-				_ = w.p.keepaliveListenKey(context.Background(), key)
+				_ = w.p.KeepAliveListenKey(context.Background(), key)
 			}
 		}
 	}()
@@ -138,7 +117,7 @@ func (w ws) SubscribePrivate(ctx context.Context, topics ...string) (core.Subscr
 type wsPrivWrapper struct {
 	inner  *wsSub
 	key    string
-	p      *Provider
+	p      Provider
 	kaStop context.CancelFunc
 }
 
@@ -146,6 +125,6 @@ func (w *wsPrivWrapper) C() <-chan core.Message { return w.inner.C() }
 func (w *wsPrivWrapper) Err() <-chan error      { return w.inner.Err() }
 func (w *wsPrivWrapper) Close() error {
 	w.kaStop()
-	_ = w.p.closeListenKey(context.Background(), w.key)
+	_ = w.p.CloseListenKey(context.Background(), w.key)
 	return w.inner.Close()
 }

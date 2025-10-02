@@ -1,4 +1,4 @@
-package coinbase
+package ws
 
 import (
 	"context"
@@ -17,8 +17,27 @@ const (
 	wsBufferSize       = 256
 )
 
-type ws struct {
-	p *Provider
+// Provider interface defines what the ws package needs from the main provider
+type Provider interface {
+	// For symbol conversion
+	Native(symbol string) string
+	CanonicalFromNative(native string) string
+	// For ensuring instruments are loaded
+	EnsureInstruments(ctx context.Context) error
+	// For private authentication
+	APIKey() string
+	Secret() string
+	Passphrase() string
+}
+
+// WS implements the core.WS interface for Coinbase
+type WS struct {
+	p Provider
+}
+
+// New creates a new WebSocket handler for Coinbase
+func New(p Provider) *WS {
+	return &WS{p: p}
 }
 
 type wsSub struct {
@@ -45,11 +64,11 @@ func newWSSub(conn *websocket.Conn) *wsSub {
 	}
 }
 
-func (w ws) SubscribePublic(ctx context.Context, topics ...string) (core.Subscription, error) {
+func (w *WS) SubscribePublic(ctx context.Context, topics ...string) (core.Subscription, error) {
 	if len(topics) == 0 {
 		return nil, fmt.Errorf("coinbase: no topics provided")
 	}
-	if err := w.p.ensureInstruments(ctx); err != nil {
+	if err := w.p.EnsureInstruments(ctx); err != nil {
 		return nil, err
 	}
 	conn, err := w.dial(ctx)
@@ -65,11 +84,11 @@ func (w ws) SubscribePublic(ctx context.Context, topics ...string) (core.Subscri
 	return sub, nil
 }
 
-func (w ws) SubscribePrivate(ctx context.Context, topics ...string) (core.Subscription, error) {
-	if w.p.apiKey == "" || w.p.secret == "" || w.p.passphrase == "" {
+func (w *WS) SubscribePrivate(ctx context.Context, topics ...string) (core.Subscription, error) {
+	if w.p.APIKey() == "" || w.p.Secret() == "" || w.p.Passphrase() == "" {
 		return nil, core.ErrNotSupported
 	}
-	if err := w.p.ensureInstruments(ctx); err != nil {
+	if err := w.p.EnsureInstruments(ctx); err != nil {
 		return nil, err
 	}
 	conn, err := w.dial(ctx)
@@ -85,13 +104,13 @@ func (w ws) SubscribePrivate(ctx context.Context, topics ...string) (core.Subscr
 	return sub, nil
 }
 
-func (w ws) dial(ctx context.Context) (*websocket.Conn, error) {
+func (w *WS) dial(ctx context.Context) (*websocket.Conn, error) {
 	dialer := websocket.Dialer{Proxy: http.ProxyFromEnvironment, HandshakeTimeout: wsHandshakeTimeout}
 	conn, _, err := dialer.DialContext(ctx, wsEndpoint, nil)
 	return conn, err
 }
 
-func (w ws) readLoop(sub *wsSub, private bool) {
+func (w *WS) readLoop(sub *wsSub, private bool) {
 	defer close(sub.c)
 	defer close(sub.err)
 	for {
@@ -109,4 +128,24 @@ func (w ws) readLoop(sub *wsSub, private bool) {
 			sub.c <- msg
 		}
 	}
+}
+
+func (w *WS) nativeProduct(symbol string) string {
+	if symbol == "" {
+		return symbol
+	}
+	if native := w.p.Native(symbol); native != "" {
+		return native
+	}
+	return symbol
+}
+
+func (w *WS) canonicalSymbol(native string) string {
+	if native == "" {
+		return native
+	}
+	if canon := w.p.CanonicalFromNative(native); canon != "" {
+		return canon
+	}
+	return native
 }

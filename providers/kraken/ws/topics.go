@@ -1,4 +1,4 @@
-package kraken
+package ws
 
 import (
 	"strings"

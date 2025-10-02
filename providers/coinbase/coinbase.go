@@ -16,6 +16,7 @@ import (
 	"github.com/coachpo/meltica/core"
 	"github.com/coachpo/meltica/errs"
 	"github.com/coachpo/meltica/protocol"
+	cbws "github.com/coachpo/meltica/providers/coinbase/ws"
 	"github.com/coachpo/meltica/transport"
 )
 
@@ -98,9 +99,46 @@ func (p *Provider) LinearFutures(ctx context.Context) core.FuturesAPI { return u
 
 func (p *Provider) InverseFutures(ctx context.Context) core.FuturesAPI { return unsupportedFutures{} }
 
-func (p *Provider) WS() core.WS { return ws{p} }
+func (p *Provider) WS() core.WS { return cbws.New(p) }
 
 func (p *Provider) Close() error { return nil }
+
+// WebSocket support methods
+func (p *Provider) Native(symbol string) string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.canonToNative[symbol]
+}
+
+func (p *Provider) CanonicalFromNative(native string) string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.nativeToCanon[strings.ToUpper(native)]
+}
+
+func (p *Provider) EnsureInstruments(ctx context.Context) error {
+	p.mu.RLock()
+	ready := len(p.instCache) > 0
+	p.mu.RUnlock()
+	if ready {
+		return nil
+	}
+	s := spotAPI{p: p}
+	_, err := s.Instruments(ctx)
+	return err
+}
+
+func (p *Provider) APIKey() string {
+	return p.apiKey
+}
+
+func (p *Provider) Secret() string {
+	return p.secret
+}
+
+func (p *Provider) Passphrase() string {
+	return p.passphrase
+}
 
 type spotAPI struct{ p *Provider }
 

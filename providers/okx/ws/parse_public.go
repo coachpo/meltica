@@ -1,4 +1,4 @@
-package okx
+package ws
 
 import (
 	"encoding/json"
@@ -18,7 +18,7 @@ type okxPublicEnvelope struct {
 	Msg   string            `json:"msg"`
 }
 
-func (w ws) parsePublicMessage(msg *core.Message, raw []byte) error {
+func (w *WS) parsePublicMessage(msg *core.Message, raw []byte) error {
 	var env okxPublicEnvelope
 	if err := json.Unmarshal(raw, &env); err != nil {
 		return nil
@@ -47,7 +47,7 @@ func (w ws) parsePublicMessage(msg *core.Message, raw []byte) error {
 	}
 }
 
-func (w ws) parseTradeSnapshot(msg *core.Message, payload []json.RawMessage, instrument string) error {
+func (w *WS) parseTradeSnapshot(msg *core.Message, payload []json.RawMessage, instrument string) error {
 	if len(payload) == 0 {
 		return nil
 	}
@@ -70,7 +70,7 @@ func (w ws) parseTradeSnapshot(msg *core.Message, payload []json.RawMessage, ins
 	return nil
 }
 
-func (w ws) parseTickerSnapshot(msg *core.Message, payload []json.RawMessage, instrument string) error {
+func (w *WS) parseTickerSnapshot(msg *core.Message, payload []json.RawMessage, instrument string) error {
 	if len(payload) == 0 {
 		return nil
 	}
@@ -93,7 +93,7 @@ func (w ws) parseTickerSnapshot(msg *core.Message, payload []json.RawMessage, in
 	return nil
 }
 
-func (w ws) parseBookSnapshot(msg *core.Message, payload []json.RawMessage, instrument string) error {
+func (w *WS) parseBookSnapshot(msg *core.Message, payload []json.RawMessage, instrument string) error {
 	if len(payload) == 0 {
 		return nil
 	}

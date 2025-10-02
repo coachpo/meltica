@@ -1,4 +1,4 @@
-package okx
+package ws
 
 import (
 	"context"
@@ -18,6 +18,24 @@ const (
 	privateWSURL       = "wss://ws.okx.com:8443/ws/v5/private"
 	wsHandshakeTimeout = 10 * time.Second
 )
+
+// Provider interface defines what the ws package needs from the main provider
+type Provider interface {
+	// For private authentication
+	APIKey() string
+	Secret() string
+	Passphrase() string
+}
+
+// WS implements the core.WS interface for OKX
+type WS struct {
+	p Provider
+}
+
+// New creates a new WebSocket handler for OKX
+func New(p Provider) *WS {
+	return &WS{p: p}
+}
 
 // wsSub wraps a websocket connection and exposes it as a subscription.
 type wsSub struct {
@@ -45,7 +63,7 @@ func newWSSub(conn *websocket.Conn) *wsSub {
 }
 
 // SubscribePublic connects to the OKX public websocket and subscribes to requested topics.
-func (w ws) SubscribePublic(ctx context.Context, topics ...string) (core.Subscription, error) {
+func (w *WS) SubscribePublic(ctx context.Context, topics ...string) (core.Subscription, error) {
 	if len(topics) == 0 {
 		return nil, fmt.Errorf("no topics provided")
 	}
@@ -68,7 +86,7 @@ func (w ws) SubscribePublic(ctx context.Context, topics ...string) (core.Subscri
 }
 
 // SubscribePrivate connects to the OKX private websocket and subscribes to private topics.
-func (w ws) SubscribePrivate(ctx context.Context, topics ...string) (core.Subscription, error) {
+func (w *WS) SubscribePrivate(ctx context.Context, topics ...string) (core.Subscription, error) {
 	dialer := websocket.Dialer{HandshakeTimeout: wsHandshakeTimeout}
 	conn, _, err := dialer.DialContext(ctx, privateWSURL, nil)
 	if err != nil {
@@ -93,7 +111,7 @@ func (w ws) SubscribePrivate(ctx context.Context, topics ...string) (core.Subscr
 	return sub, nil
 }
 
-func (w ws) readLoopPublic(sub *wsSub) {
+func (w *WS) readLoopPublic(sub *wsSub) {
 	defer close(sub.c)
 	defer close(sub.err)
 	for {
@@ -111,7 +129,7 @@ func (w ws) readLoopPublic(sub *wsSub) {
 	}
 }
 
-func (w ws) readLoopPrivate(sub *wsSub) {
+func (w *WS) readLoopPrivate(sub *wsSub) {
 	defer close(sub.c)
 	defer close(sub.err)
 	for {
@@ -129,7 +147,7 @@ func (w ws) readLoopPrivate(sub *wsSub) {
 	}
 }
 
-func (w ws) buildSubscriptionArgs(topics []string) []map[string]string {
+func (w *WS) buildSubscriptionArgs(topics []string) []map[string]string {
 	args := make([]map[string]string, 0, len(topics))
 	for _, topic := range topics {
 		channel, instrument := splitTopic(topic)
@@ -146,17 +164,17 @@ func (w ws) buildSubscriptionArgs(topics []string) []map[string]string {
 	return args
 }
 
-func (w ws) writePrivateLogin(conn *websocket.Conn) error {
+func (w *WS) writePrivateLogin(conn *websocket.Conn) error {
 	ts := time.Now().UTC().Format(time.RFC3339)
 	pre := ts + "GET" + "/users/self/verify"
-	mac := hmac.New(sha256.New, []byte(w.p.secret))
+	mac := hmac.New(sha256.New, []byte(w.p.Secret()))
 	mac.Write([]byte(pre))
 	sign := base64.StdEncoding.EncodeToString(mac.Sum(nil))
 	payload := map[string]any{
 		"op": "login",
 		"args": []map[string]string{{
-			"apiKey":     w.p.apiKey,
-			"passphrase": w.p.passphrase,
+			"apiKey":     w.p.APIKey(),
+			"passphrase": w.p.Passphrase(),
 			"timestamp":  ts,
 			"sign":       sign,
 		}},

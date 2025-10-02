@@ -1,4 +1,4 @@
-package coinbase
+package ws
 
 import (
 	"strings"
@@ -8,7 +8,7 @@ import (
 	"github.com/coachpo/meltica/core"
 )
 
-func (w ws) sendSubscriptions(conn *websocket.Conn, topics []string, private bool) error {
+func (w *WS) sendSubscriptions(conn *websocket.Conn, topics []string, private bool) error {
 	channels := map[string][]string{}
 	for _, topic := range topics {
 		parts := strings.Split(topic, ":")
@@ -36,7 +36,7 @@ func (w ws) sendSubscriptions(conn *websocket.Conn, topics []string, private boo
 		"channels":    buildChannels(channels),
 	}
 	if private {
-		sig, err := buildWSSignature(w.p.apiKey, w.p.secret, w.p.passphrase)
+		sig, err := buildWSSignature(w.p.APIKey(), w.p.Secret(), w.p.Passphrase())
 		if err != nil {
 			return err
 		}

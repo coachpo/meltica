@@ -1,4 +1,4 @@
-package coinbase
+package ws
 
 import (
 	"github.com/coachpo/meltica/core"

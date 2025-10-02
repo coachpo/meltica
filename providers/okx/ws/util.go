@@ -1,6 +1,7 @@
-package okx
+package ws
 
 import (
+	"math/big"
 	"strconv"
 	"time"
 
@@ -32,4 +33,25 @@ func depthLevelsFromPairs(pairs [][]string) []core.DepthLevel {
 		levels = append(levels, core.DepthLevel{Price: price, Qty: qty})
 	}
 	return levels
+}
+
+func parseDecimalToRat(s string) (*big.Rat, bool) {
+	return core.ParseDecimalToRat(s)
+}
+
+func mapOKXStatus(s string) core.OrderStatus {
+	switch s {
+	case "live", "effective":
+		return core.OrderNew
+	case "partially-filled":
+		return core.OrderPartFilled
+	case "filled":
+		return core.OrderFilled
+	case "canceled":
+		return core.OrderCanceled
+	case "canceled-amend", "cancel_rejected", "order_failed":
+		return core.OrderRejected
+	default:
+		return core.OrderNew
+	}
 }

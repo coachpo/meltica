@@ -1,4 +1,4 @@
-package kraken
+package ws
 
 import (
 	"context"
@@ -16,8 +16,28 @@ const (
 	wsHandshakeTimeout = 10 * time.Second
 )
 
-type ws struct {
-	p *Provider
+// Provider interface defines what the ws package needs from the main provider
+type Provider interface {
+	// For symbol conversion
+	NativeSymbolForWS(canon string) string
+	CanonicalSymbol(exch string, requested []string) string
+	MapNativeToCanon(native string) string
+	// For ensuring instruments are loaded
+	EnsureInstruments(ctx context.Context) error
+	// For private authentication
+	APIKey() string
+	Secret() string
+	GetWSToken(ctx context.Context) (string, error)
+}
+
+// WS implements the core.WS interface for Kraken
+type WS struct {
+	p Provider
+}
+
+// New creates a new WebSocket handler for Kraken
+func New(p Provider) *WS {
+	return &WS{p: p}
 }
 
 // wsSub wraps a websocket connection and exposes it as a subscription.
@@ -46,11 +66,11 @@ func newWSSub(conn *websocket.Conn) *wsSub {
 }
 
 // SubscribePublic connects to the Kraken public websocket and subscribes to the requested topics.
-func (w ws) SubscribePublic(ctx context.Context, topics ...string) (core.Subscription, error) {
+func (w *WS) SubscribePublic(ctx context.Context, topics ...string) (core.Subscription, error) {
 	if len(topics) == 0 {
 		return nil, fmt.Errorf("no topics provided")
 	}
-	if err := w.p.ensureInstruments(ctx); err != nil {
+	if err := w.p.EnsureInstruments(ctx); err != nil {
 		return nil, err
 	}
 	dialer := websocket.Dialer{HandshakeTimeout: wsHandshakeTimeout}
@@ -68,7 +88,7 @@ func (w ws) SubscribePublic(ctx context.Context, topics ...string) (core.Subscri
 		if channelName == "" {
 			continue
 		}
-		native := strings.ReplaceAll(w.nativeSymbolForWS(canon), "-", "/")
+		native := strings.ReplaceAll(w.p.NativeSymbolForWS(canon), "-", "/")
 		payload := map[string]any{
 			"method": "subscribe",
 			"params": map[string]any{
@@ -87,11 +107,11 @@ func (w ws) SubscribePublic(ctx context.Context, topics ...string) (core.Subscri
 }
 
 // SubscribePrivate connects to the authenticated websocket stream and subscribes to private topics.
-func (w ws) SubscribePrivate(ctx context.Context, topics ...string) (core.Subscription, error) {
-	if w.p.apiKey == "" || w.p.secret == "" {
+func (w *WS) SubscribePrivate(ctx context.Context, topics ...string) (core.Subscription, error) {
+	if w.p.APIKey() == "" || w.p.Secret() == "" {
 		return nil, core.ErrNotSupported
 	}
-	token, err := w.p.getWSToken(ctx)
+	token, err := w.p.GetWSToken(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -134,7 +154,7 @@ func (w ws) SubscribePrivate(ctx context.Context, topics ...string) (core.Subscr
 }
 
 // readLoop processes public websocket messages until the connection closes.
-func (w ws) readLoop(sub *wsSub, requested []string) {
+func (w *WS) readLoop(sub *wsSub, requested []string) {
 	defer close(sub.c)
 	defer close(sub.err)
 	for {
@@ -153,7 +173,7 @@ func (w ws) readLoop(sub *wsSub, requested []string) {
 }
 
 // readLoopPrivate processes private websocket messages until the connection closes.
-func (w ws) readLoopPrivate(sub *wsSub) {
+func (w *WS) readLoopPrivate(sub *wsSub) {
 	defer close(sub.c)
 	defer close(sub.err)
 	for {

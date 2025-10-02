@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"math/big"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/coachpo/meltica/core"
 	"github.com/coachpo/meltica/protocol"
+	"github.com/coachpo/meltica/providers/binance/ws"
 	"github.com/coachpo/meltica/transport"
 )
 
@@ -72,8 +74,42 @@ func (p *Provider) SupportedProtocolVersion() string { return protocol.ProtocolV
 func (p *Provider) Spot(ctx context.Context) core.SpotAPI              { return spotAPI{p} }
 func (p *Provider) LinearFutures(ctx context.Context) core.FuturesAPI  { return fapi{p} }
 func (p *Provider) InverseFutures(ctx context.Context) core.FuturesAPI { return dapi{p} }
-func (p *Provider) WS() core.WS                                        { return ws{p} }
+func (p *Provider) WS() core.WS                                        { return ws.New(p) }
 func (p *Provider) Close() error                                       { return nil }
+
+// WebSocket support methods
+func (p *Provider) CanonicalSymbol(binanceSymbol string) string {
+	if binanceSymbol == "" {
+		return binanceSymbol
+	}
+	binanceSymbol = strings.ToUpper(binanceSymbol)
+	if p.binToCanon != nil {
+		if canon := p.binToCanon[binanceSymbol]; canon != "" {
+			return canon
+		}
+	}
+	return binanceSymbol
+}
+
+func (p *Provider) CreateListenKey(ctx context.Context) (string, error) {
+	var resp struct {
+		ListenKey string `json:"listenKey"`
+	}
+	if err := p.sapi.Do(ctx, http.MethodPost, "/api/v3/userDataStream", nil, nil, false, &resp); err != nil {
+		return "", err
+	}
+	return resp.ListenKey, nil
+}
+
+func (p *Provider) KeepAliveListenKey(ctx context.Context, key string) error {
+	q := map[string]string{"listenKey": key}
+	return p.sapi.Do(ctx, http.MethodPut, "/api/v3/userDataStream", q, nil, false, nil)
+}
+
+func (p *Provider) CloseListenKey(ctx context.Context, key string) error {
+	q := map[string]string{"listenKey": key}
+	return p.sapi.Do(ctx, http.MethodDelete, "/api/v3/userDataStream", q, nil, false, nil)
+}
 
 // Register with core registry
 func init() {
@@ -89,8 +125,6 @@ type spotAPI struct{ p *Provider }
 type fapi struct{ p *Provider }
 
 type dapi struct{ p *Provider }
-
-type ws struct{ p *Provider }
 
 func (s spotAPI) ServerTime(ctx context.Context) (time.Time, error) {
 	var resp struct {

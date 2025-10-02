@@ -1,4 +1,4 @@
-package binance
+package ws
 
 import (
 	"encoding/json"
@@ -12,7 +12,7 @@ type binanceEnvelope struct {
 	Data   json.RawMessage `json:"data"`
 }
 
-func (w ws) parsePublicMessage(msg *core.Message, raw []byte) error {
+func (w *WS) parsePublicMessage(msg *core.Message, raw []byte) error {
 	payload := raw
 	var envelope binanceEnvelope
 	if err := json.Unmarshal(raw, &envelope); err == nil && len(envelope.Data) > 0 {
@@ -39,7 +39,7 @@ func (w ws) parsePublicMessage(msg *core.Message, raw []byte) error {
 	}
 }
 
-func (w ws) parseTradeEvent(msg *core.Message, payload []byte, symbol, stream string) error {
+func (w *WS) parseTradeEvent(msg *core.Message, payload []byte, symbol, stream string) error {
 	var rec struct {
 		Symbol string `json:"s"`
 		Price  string `json:"p"`
@@ -67,7 +67,7 @@ func (w ws) parseTradeEvent(msg *core.Message, payload []byte, symbol, stream st
 	return nil
 }
 
-func (w ws) parseBookTicker(msg *core.Message, payload []byte, symbol, stream string) error {
+func (w *WS) parseBookTicker(msg *core.Message, payload []byte, symbol, stream string) error {
 	var rec struct {
 		Symbol string `json:"s"`
 		Bid    string `json:"b"`
@@ -95,7 +95,7 @@ func (w ws) parseBookTicker(msg *core.Message, payload []byte, symbol, stream st
 	return nil
 }
 
-func (w ws) parseDepthUpdate(msg *core.Message, payload []byte, symbol, stream string) error {
+func (w *WS) parseDepthUpdate(msg *core.Message, payload []byte, symbol, stream string) error {
 	var rec struct {
 		Symbol string     `json:"s"`
 		Time   int64      `json:"E"`
@@ -124,7 +124,7 @@ func (w ws) parseDepthUpdate(msg *core.Message, payload []byte, symbol, stream s
 	return nil
 }
 
-func (w ws) parseByHeuristics(msg *core.Message, payload []byte, symbol, stream string) error {
+func (w *WS) parseByHeuristics(msg *core.Message, payload []byte, symbol, stream string) error {
 	var probe map[string]any
 	if err := json.Unmarshal(payload, &probe); err != nil {
 		return nil
@@ -153,4 +153,13 @@ func depthLevelsFromPairs(pairs [][]string) []core.DepthLevel {
 		levels = append(levels, core.DepthLevel{Price: price, Qty: qty})
 	}
 	return levels
+}
+
+func hasString(m map[string]any, key string) bool {
+	v, ok := m[key]
+	if !ok {
+		return false
+	}
+	_, isString := v.(string)
+	return isString
 }

@@ -1,4 +1,4 @@
-package kraken
+package ws
 
 import (
 	"encoding/json"
@@ -8,7 +8,7 @@ import (
 	"github.com/coachpo/meltica/core"
 )
 
-func (w ws) parsePrivate(msg *core.Message, data []byte, topics []string) error {
+func (w *WS) parsePrivate(msg *core.Message, data []byte, topics []string) error {
 	if len(data) == 0 {
 		return nil
 	}
@@ -38,7 +38,7 @@ func (w ws) parsePrivate(msg *core.Message, data []byte, topics []string) error 
 	return nil
 }
 
-func (w ws) parseOwnTrades(msg *core.Message, payload any) error {
+func (w *WS) parseOwnTrades(msg *core.Message, payload any) error {
 	trades, ok := payload.(map[string]any)
 	if !ok {
 		return nil
@@ -59,7 +59,7 @@ func (w ws) parseOwnTrades(msg *core.Message, payload any) error {
 	return nil
 }
 
-func (w ws) parseOpenOrders(msg *core.Message, payload any) error {
+func (w *WS) parseOpenOrders(msg *core.Message, payload any) error {
 	recMap, ok := payload.(map[string]any)
 	if !ok {
 		return nil
@@ -80,8 +80,8 @@ func (w ws) parseOpenOrders(msg *core.Message, payload any) error {
 	return nil
 }
 
-func (w ws) orderEventFromTrade(id string, rec map[string]any) *core.OrderEvent {
-	canon := w.p.mapNativeToCanon(strings.ToUpper(fmt.Sprint(rec["pair"])))
+func (w *WS) orderEventFromTrade(id string, rec map[string]any) *core.OrderEvent {
+	canon := w.p.MapNativeToCanon(strings.ToUpper(fmt.Sprint(rec["pair"])))
 	filled := parseDecimalStr(fmt.Sprint(rec["vol"]))
 	avg := parseDecimalStr(fmt.Sprint(rec["price"]))
 	status := mapStatus(fmt.Sprint(rec["status"]))
@@ -95,13 +95,13 @@ func (w ws) orderEventFromTrade(id string, rec map[string]any) *core.OrderEvent 
 	}
 }
 
-func (w ws) orderEventFromOpenOrder(id string, rec map[string]any) *core.OrderEvent {
+func (w *WS) orderEventFromOpenOrder(id string, rec map[string]any) *core.OrderEvent {
 	descr, _ := rec["descr"].(map[string]any)
 	pair := ""
 	if descr != nil {
 		pair = fmt.Sprint(descr["pair"])
 	}
-	canon := w.p.mapNativeToCanon(strings.ToUpper(pair))
+	canon := w.p.MapNativeToCanon(strings.ToUpper(pair))
 	status := mapStatus(fmt.Sprint(rec["status"]))
 	priceMap, _ := rec["price"].(map[string]any)
 	avg := parseDecimalStr(fmt.Sprint(priceMap["last"]))
