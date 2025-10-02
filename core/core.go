@@ -121,8 +121,8 @@ type Balance struct {
 	Time      time.Time
 }
 
-// DepthLevel represents a single price level in an order book.
-type DepthLevel struct {
+// BookDepthLevel represents a single price level in an order book.
+type BookDepthLevel struct {
 	Price *big.Rat
 	Qty   *big.Rat
 }
@@ -130,8 +130,8 @@ type DepthLevel struct {
 // OrderBook captures a depth snapshot in canonical format.
 type OrderBook struct {
 	Symbol string
-	Bids   []DepthLevel
-	Asks   []DepthLevel
+	Bids   []BookDepthLevel
+	Asks   []BookDepthLevel
 	Time   time.Time
 }
 

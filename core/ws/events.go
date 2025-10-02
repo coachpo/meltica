@@ -9,7 +9,7 @@ import (
 
 // Re-export core domain primitives used by websocket events.
 type (
-	DepthLevel  = corepkg.DepthLevel
+	DepthLevel  = corepkg.BookDepthLevel
 	OrderStatus = corepkg.OrderStatus
 	Balance     = corepkg.Balance
 )
