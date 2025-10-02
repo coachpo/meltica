@@ -36,58 +36,6 @@ market-stream -exchange coinbase -symbol BTC-USD -channel depth
 - Formatted output with timestamps
 - Graceful shutdown with Ctrl+C
 
-### validate-schemas
-
-Validate all JSON schemas against their golden test vectors to ensure protocol consistency.
-
-**Usage:**
-```bash
-validate-schemas
-```
-
-**What it does:**
-- Validates protocol schemas in `protocol/schemas/`
-- Tests against golden vectors in `protocol/vectors/`
-- Reports validation success or detailed error messages
-- Used in CI/CD pipelines for protocol verification
-
-**Example output:**
-```
-All schemas validated successfully
-```
-
-### barista
-
-Brew fresh scaffold code for new cryptocurrency exchange providers. Like a skilled barista crafting the perfect cup, this tool expertly prepares all the essential ingredients for your exchange integration.
-
-**Usage:**
-```bash
-barista -name <provider> [-out <directory>]
-```
-
-**Flags:**
-- `-name` - Provider short name (e.g., bybit, ftx, huobi) [required]
-- `-out` - Optional output directory [default: providers/<name>]
-
-**Examples:**
-```bash
-# Brew a provider scaffold in default location
-barista -name bybit
-
-# Brew a provider scaffold in custom directory
-barista -name ftx -out custom-providers/ftx
-```
-
-**Generated Files:**
-- `{provider}.go` - Main provider implementation with all core interfaces
-- `sign.go` - Request signing utilities (placeholder)
-- `errors.go` - Error mapping functions (placeholder)
-- `status.go` - Order status translation (placeholder)
-- `ws.go` - Public WebSocket implementation (placeholder)
-- `ws_private.go` - Private WebSocket implementation (placeholder)
-- `conformance_test.go` - Conformance test skeleton
-- `golden_test.go` - Golden test vectors (placeholder)
-- `README.md` - Documentation template
 
 ## Building
 
@@ -102,25 +50,19 @@ Or build individual tools:
 
 ```bash
 go build -o market-stream ./cmd/market-stream
-go build -o validate-schemas ./cmd/validate-schemas
-go build -o barista ./cmd/barista
+# Build tools as needed
 ```
 
 ## Development Workflow
 
 1. **Adding a new exchange provider:**
    ```bash
-   barista -name myexchange
-   cd providers/myexchange
-   # Implement the TODO sections in generated files
+   # Create provider directory and implement core interfaces
+   mkdir providers/myexchange
+   # Implement the required interfaces in the provider package
    ```
 
-2. **Validating protocol changes:**
-   ```bash
-   validate-schemas
-   ```
-
-3. **Testing with live data:**
+2. **Testing with live data:**
    ```bash
    market-stream -exchange binance -symbol BTC-USDT -channel ticker
    ```
@@ -129,8 +71,7 @@ go build -o barista ./cmd/barista
 
 These tools are designed to work together:
 
-- Use `barista` to brew new provider scaffolds
-- Use `validate-schemas` to ensure protocol compliance
 - Use `market-stream` to test live data connectivity
+- Implement providers following the core interface patterns
 
 All tools use the meltica core framework and follow the same patterns for error handling, configuration, and output formatting.

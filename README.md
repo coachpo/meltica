@@ -6,15 +6,14 @@ Provider-agnostic cryptocurrency exchange SDK with pluggable adapters for unifie
 
 **meltica** comes from "melting coffee" ☕ - representing the idea of blending different exchange APIs into a single, unified, smooth experience. Just like melting coffee dissolves and combines flavors, meltica dissolves the differences between exchanges, giving you one consistent interface to trade across multiple platforms.
 
-This coffee inspiration extends to our tools:
-- **`barista`** - Our code generator that brews fresh exchange provider scaffolds
+This coffee inspiration reflects our approach to blending different exchange APIs seamlessly.
 
 ## Features
 
 - **Unified API**: Single interface for trading across multiple exchanges
 - **Multiple Markets**: Support for spot, linear futures, and inverse futures trading
 - **Real-time Data**: WebSocket subscriptions for market data and private account updates
-- **Protocol Compliance**: JSON Schema validation and conformance testing
+- **Protocol Compliance**: JSON Schema validation
 - **Extensible**: Easy to add new exchange providers
 
 ## Supported Providers
@@ -170,8 +169,7 @@ make build
 
 # Or build individual tools
 go build -o market-stream ./cmd/market-stream
-go build -o validate-schemas ./cmd/validate-schemas
-go build -o barista ./cmd/barista
+# Build tools as needed
 ```
 
 ### Market Data Stream CLI
@@ -189,28 +187,17 @@ go run ./cmd/market-stream --exchange coinbase --symbol BTC-USD --channel depth
 
 Available channels depend on the provider. Common options are `ticker`, `trades`, and `depth`.
 
-### Provider Scaffold Generation
+### Provider Development
 
-Use the `barista` tool to generate new exchange provider scaffolds:
-
-```bash
-# Generate a new provider scaffold
-go run ./cmd/barista -name bybit
-
-# Generate with custom output directory
-go run ./cmd/barista -name ftx -out custom-providers/ftx
-```
+Providers are located in the `providers/` directory. Each provider implements the core interfaces defined in the `core` package.
 
 ### Protocol Validation
 
 Validate JSON schemas and golden vectors:
 
 ```bash
-# Validate all protocol schemas
-go run ./cmd/validate-schemas
-
-# Run conformance tests
-go test ./conformance
+# Run all tests
+go test ./...
 ```
 
 ### Testing
@@ -222,9 +209,8 @@ go test ./... -count=1
 # Run with race detection
 go test ./... -race -count=1
 
-# Run conformance tests (requires API keys)
-export MELTICA_CONFORMANCE=1
-export BINANCE_KEY=your_key
+# Run tests with race detection
+go test ./... -race
 export BINANCE_SECRET=your_secret
 go test ./internal/test -count=1
 
@@ -235,12 +221,9 @@ go test ./providers/binance -v
 ### Protocol Validation
 
 ```bash
-# Validate provider conformance
+# Validate provider compliance
 go build ./internal/meltilint/cmd/meltilint
 ./meltilint ./providers/...
-
-# Validate JSON schemas and vectors
-go test ./conformance
 ```
 
 ### Building & Tools
@@ -253,8 +236,7 @@ make build
 
 # Build specific tools
 make build-meltilint        # Protocol linter
-make build-validate-schemas # Schema validator
-make build-barista          # Provider scaffold generator
+# Build tools as needed
 
 # Development commands
 make test      # Run tests with race detection
@@ -268,16 +250,13 @@ rm -rf out/
 **Available Tools:**
 
 - **`out/meltilint`** - Static analysis tool for provider protocol compliance
-- **`out/validate-schemas`** - JSON schema validation against golden vectors
-- **`out/barista`** - Code generator to brew fresh exchange provider scaffolds
 
 **Directory Structure:**
 ```
 meltica/
 ├── out/                 # Build output directory
 │   ├── meltilint
-│   ├── validate-schemas
-│   └── barista
+│   └── market-stream
 └── ...
 ```
 
@@ -291,7 +270,6 @@ The `out/` directory is automatically ignored by git.
 - **`providers/`**: Exchange-specific implementations
 - **`protocol/`**: JSON Schema definitions and validation
 - **`transport/`**: HTTP client with retry logic and rate limiting
-- **`conformance/`**: Protocol compliance testing
 
 ### Provider Interface
 

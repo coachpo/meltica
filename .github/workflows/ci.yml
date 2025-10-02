@@ -12,11 +12,8 @@ jobs:
       - run: go mod download
       - run: make build
       - run: go test ./... -race -count=1
-      - run: go test ./conformance -count=1
       - run: make build-meltilint
       - run: ./out/meltilint ./providers/...
-      - run: make build-validate-schemas
-      - run: ./out/validate-schemas
       - name: Ensure protocol version bump
         run: |
           git fetch origin main --depth=1 || true

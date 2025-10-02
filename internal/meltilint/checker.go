@@ -43,8 +43,6 @@ func Run(ctx context.Context, patterns []string) ([]Issue, error) {
 			allIssues = append(allIssues, checkErrsPackage(pkg)...)
 		case path == "github.com/coachpo/meltica/protocol":
 			allIssues = append(allIssues, checkProtocolPackage(pkg)...)
-		case strings.HasPrefix(path, "github.com/coachpo/meltica/conformance"):
-			allIssues = append(allIssues, checkConformancePackage(pkg)...)
 		case strings.HasPrefix(path, "github.com/coachpo/meltica/providers/"):
 			allIssues = append(allIssues, checkProviderPackage(pkg)...)
 		}
