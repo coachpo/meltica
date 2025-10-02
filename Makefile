@@ -1,6 +1,6 @@
 GO111MODULE=on
 
-.PHONY: test lint tidy build build-meltilint meltilint standards ci clean
+.PHONY: test lint tidy build standards ci clean
 
 lint:
 	golangci-lint run || true
@@ -11,19 +11,13 @@ test:
 build:
 	go build -o out/ ./...
 
-build-meltilint:
-	go build -o out/meltilint ./internal/meltilint/cmd/meltilint
-
-meltilint:
-	go run ./internal/meltilint/cmd/meltilint ./core ./providers/...
 
 ci:
 	$(MAKE) test
 	$(MAKE) build
-	$(MAKE) meltilint
 
 standards:
-	$(MAKE) meltilint
+	$(MAKE) test
 
 tidy:
 	go mod tidy

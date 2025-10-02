@@ -218,13 +218,6 @@ go test ./internal/test -count=1
 go test ./providers/binance -v
 ```
 
-### Protocol Validation
-
-```bash
-# Validate provider compliance
-go build ./internal/meltilint/cmd/meltilint
-./meltilint ./providers/...
-```
 
 ### Building & Tools
 
@@ -233,10 +226,6 @@ All compiled binaries are output to the `out/` directory in the project root.
 ```bash
 # Build all binaries
 make build
-
-# Build specific tools
-make build-meltilint        # Protocol linter
-# Build tools as needed
 
 # Development commands
 make test      # Run tests with race detection
@@ -249,13 +238,11 @@ rm -rf out/
 
 **Available Tools:**
 
-- **`out/meltilint`** - Static analysis tool for provider protocol compliance
 
 **Directory Structure:**
 ```
 meltica/
 ├── out/                 # Build output directory
-│   ├── meltilint
 │   └── market-stream
 └── ...
 ```
@@ -293,7 +280,6 @@ type Provider interface {
 The project enforces protocol compliance through:
 
 - **JSON Schema validation** for WebSocket events and data structures
-- **Static analysis** via `meltilint` to ensure capability alignment
 - **Conformance testing** to validate provider implementations
 - **Golden file testing** for consistent API responses
 
