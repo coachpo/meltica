@@ -142,7 +142,7 @@ func (w *WS) parseBook(msg *core.Message, payload any, symbol string) error {
 	if rawAsks, ok := row["asks"]; ok {
 		appendDepthLevels(&de.Asks, rawAsks)
 	}
-	msg.Event = "depth"
+	msg.Event = "book"
 	msg.Parsed = &de
 	return nil
 }
@@ -188,7 +188,7 @@ func (w *WS) parseLevel3(msg *core.Message, payload any, symbol string) error {
 	if len(de.Bids) == 0 && len(de.Asks) == 0 {
 		return nil
 	}
-	msg.Event = "depth"
+	msg.Event = "book"
 	msg.Parsed = &de
 	return nil
 }

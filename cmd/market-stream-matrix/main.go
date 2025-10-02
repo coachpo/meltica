@@ -25,7 +25,7 @@ func main() {
 	var (
 		exchangeFlag = flag.String("exchange", "binance,okx,coinbase,kraken", "Comma-separated list of exchanges to connect to")
 		symbolFlag   = flag.String("symbol", "BTC-USDT,BTC-USD,ETH-USDT,ETH-USD", "Comma-separated list of trading symbols in BASE-QUOTE form")
-		channelFlag  = flag.String("channel", "ticker,trade,depth", "Comma-separated list of market data streams to subscribe to")
+		channelFlag  = flag.String("channel", "ticker,trade,book", "Comma-separated list of market data streams to subscribe to")
 		durationFlag = flag.Duration("duration", 3*time.Second, "Streaming duration for each combination")
 	)
 
@@ -183,7 +183,7 @@ func resolveTopic(providerName, channel, symbol string) (string, error) {
 			return corews.TopicTrade + ":" + symbol, nil
 		case "ticker":
 			return corews.TopicTicker + ":" + symbol, nil
-		case "depth":
+		case "book":
 			return corews.TopicBook + ":" + symbol, nil
 		default:
 			return ch + ":" + symbol, nil
@@ -194,7 +194,7 @@ func resolveTopic(providerName, channel, symbol string) (string, error) {
 			return corews.TopicTrade + ":" + symbol, nil
 		case "ticker":
 			return corews.TopicTicker + ":" + symbol, nil
-		case "depth":
+		case "book":
 			return corews.TopicBook + ":" + symbol, nil
 		default:
 			return ch + ":" + symbol, nil
@@ -205,7 +205,7 @@ func resolveTopic(providerName, channel, symbol string) (string, error) {
 			return corews.TopicTrade + ":" + symbol, nil
 		case "ticker":
 			return corews.TopicTicker + ":" + symbol, nil
-		case "depth":
+		case "book":
 			return corews.TopicBook + ":" + symbol, nil
 		default:
 			return ch + ":" + symbol, nil
@@ -216,7 +216,7 @@ func resolveTopic(providerName, channel, symbol string) (string, error) {
 			return corews.TopicTrade + ":" + symbol, nil
 		case "ticker":
 			return corews.TopicTicker + ":" + symbol, nil
-		case "depth":
+		case "book":
 			return corews.TopicBook + ":" + symbol, nil
 		default:
 			return ch + ":" + symbol, nil
@@ -257,7 +257,7 @@ func formatEventMessage(msg core.Message) (string, bool) {
 		if len(evt.Asks) > 0 {
 			ask = fmt.Sprintf("%s@%s", formatRat(evt.Asks[0].Price), formatRat(evt.Asks[0].Qty))
 		}
-		return fmt.Sprintf("[%s] %s depth bid=%s ask=%s", ts, evt.Symbol, bid, ask), true
+		return fmt.Sprintf("[%s] %s book bid=%s ask=%s", ts, evt.Symbol, bid, ask), true
 	case *corews.OrderEvent:
 		return fmt.Sprintf("[%s] %s order id=%s status=%s filled=%s avg=%s", ts, evt.Symbol, evt.OrderID, evt.Status, formatRat(evt.FilledQty), formatRat(evt.AvgPrice)), true
 	case *corews.BalanceEvent:

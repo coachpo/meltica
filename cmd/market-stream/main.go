@@ -195,7 +195,7 @@ func runInteractiveGuide(exchange, symbol, channel string) (string, string, stri
 	fmt.Println()
 
 	exchanges := []string{"binance", "okx", "coinbase", "kraken"}
-	channels := []string{"ticker", "trades", "depth"}
+	channels := []string{"ticker", "trade", "book"}
 
 	exchange = promptSelection(reader, "exchange", exchanges, exchange)
 	fmt.Println()
