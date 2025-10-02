@@ -157,23 +157,21 @@ func comparePrices() {
 - Network access for public endpoints
 - API credentials for private endpoints (optional)
 
-### Running Examples
+### Command Line Tools
+
+The project provides several command-line tools in the `cmd/` directory for development and testing:
 
 ```bash
 # Navigate to project directory
 cd meltica
 
-# Run spot trading example
-go run ./examples/spot
+# Build all tools
+make build
 
-# Run futures example
-go run ./examples/futures
-
-# Run WebSocket example
-go run ./examples/ws_public
-
-# Run OKX-specific example
-go run ./examples/okx/spot
+# Or build individual tools
+go build -o market-stream ./cmd/market-stream
+go build -o validate-schemas ./cmd/validate-schemas
+go build -o barista ./cmd/barista
 ```
 
 ### Market Data Stream CLI
@@ -184,9 +182,36 @@ go run ./cmd/market-stream --exchange binance --symbol BTC-USDT --channel trades
 
 # Subscribe to OKX top-of-book quotes
 go run ./cmd/market-stream --exchange okx --symbol ETH-USDT --channel ticker
+
+# Stream order book depth from Coinbase
+go run ./cmd/market-stream --exchange coinbase --symbol BTC-USD --channel depth
 ```
 
 Available channels depend on the provider. Common options are `ticker`, `trades`, and `depth`.
+
+### Provider Scaffold Generation
+
+Use the `barista` tool to generate new exchange provider scaffolds:
+
+```bash
+# Generate a new provider scaffold
+go run ./cmd/barista -name bybit
+
+# Generate with custom output directory
+go run ./cmd/barista -name ftx -out custom-providers/ftx
+```
+
+### Protocol Validation
+
+Validate JSON schemas and golden vectors:
+
+```bash
+# Validate all protocol schemas
+go run ./cmd/validate-schemas
+
+# Run conformance tests
+go test ./conformance
+```
 
 ### Testing
 
