@@ -6,28 +6,35 @@ import (
 	corews "github.com/coachpo/meltica/core/ws"
 )
 
+// Binance-specific topic constants
+const (
+	TopicTrade     = "trade"
+	TopicTicker    = "bookTicker"
+	TopicBookDepth = "depth20@100ms"
+)
+
 var mapper = corews.NewChannelMapper(corews.ChannelMappingConfig{
 	ProtocolToProvider: map[string]string{
-		corews.TopicTrade:  "trade",
-		corews.TopicTicker: "bookTicker",
-		corews.TopicBook:   "depth20@100ms",
+		corews.TopicTrade:  TopicTrade,
+		corews.TopicTicker: TopicTicker,
+		corews.TopicBook:   TopicBookDepth,
 	},
 	AdditionalProviderMappings: map[string]string{
-		"trade":         corews.TopicTrade,
-		"bookTicker":    corews.TopicTicker,
-		"depth20@100ms": corews.TopicBook,
+		TopicTrade:     corews.TopicTrade,
+		TopicTicker:    corews.TopicTicker,
+		TopicBookDepth: corews.TopicBook,
 	},
 })
 
-func splitTopic(topic string) (channel, instrument string) {
+func parseTopic(topic string) (channel, instrument string) {
 	if idx := strings.IndexByte(topic, ':'); idx > 0 {
 		return topic[:idx], topic[idx+1:]
 	}
 	return topic, ""
 }
 
-func topicFromEvent(event, instrument string) string {
-	protocolTopic := mapper.ToProtocolTopic(event)
+func topicFromChannel(channel, instrument string) string {
+	protocolTopic := mapper.ToProtocolTopic(channel)
 	if instrument == "" {
 		return protocolTopic
 	}
@@ -40,7 +47,7 @@ func topicFromEvent(event, instrument string) string {
 		return corews.BookTopic(instrument)
 	default:
 		if protocolTopic == "" {
-			return event + ":" + instrument
+			return channel + ":" + instrument
 		}
 		return protocolTopic + ":" + instrument
 	}

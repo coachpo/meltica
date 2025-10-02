@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/coachpo/meltica/core"
@@ -154,7 +153,7 @@ func (w *WS) readLoopPrivate(sub *wsSub) {
 func (w *WS) buildSubscriptionArgs(topics []string) []map[string]string {
 	args := make([]map[string]string, 0, len(topics))
 	for _, topic := range topics {
-		channel, instrument := splitTopic(topic)
+		channel, instrument := parseTopic(topic)
 		providerChannel := mapper.ToProviderChannel(channel)
 		if providerChannel == "" {
 			continue
@@ -189,11 +188,4 @@ func (w *WS) writePrivateLogin(conn *websocket.Conn) error {
 type wsSubscribePayload struct {
 	Op   string              `json:"op"`
 	Args []map[string]string `json:"args"`
-}
-
-func splitTopic(topic string) (channel, instrument string) {
-	if idx := strings.IndexByte(topic, ':'); idx > 0 {
-		return topic[:idx], topic[idx+1:]
-	}
-	return topic, ""
 }

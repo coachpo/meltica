@@ -62,7 +62,7 @@ func (w *WS) parseV2Channel(msg *core.Message, channel string, env map[string]an
 		}
 	}
 	canon := w.p.CanonicalSymbol(symbol, requested)
-	msg.Topic = topicFromChannelName(normalized, canon)
+	msg.Topic = topicFromChannel(normalized, canon)
 	switch normalized {
 	case "trade":
 		return w.parseTrades(msg, data, canon)

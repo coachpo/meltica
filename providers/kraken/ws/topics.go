@@ -6,57 +6,37 @@ import (
 	corews "github.com/coachpo/meltica/core/ws"
 )
 
-// channelMapper provides bidirectional conversion between protocol topics and Kraken channels.
-type channelMapper struct {
-	protocolToKraken map[string]string
-	krakenToProtocol map[string]string
-}
+// Kraken-specific topic constants
+const (
+	TopicTrade      = "trade"
+	TopicTicker     = "ticker"
+	TopicBook       = "book"
+	TopicBalance    = "balance"
+	TopicSpread     = "spread"
+	TopicOwnTrades  = "ownTrades"
+	TopicOpenOrders = "openOrders"
+)
 
-// newChannelMapper creates a mapper with bidirectional conversion tables.
-func newChannelMapper() *channelMapper {
-	protocolToKraken := map[string]string{
-		corews.TopicTrade:       "trade",
-		corews.TopicTicker:      "ticker",
-		corews.TopicBook:        "book",
-		corews.TopicUserBalance: "balance", // for private streams
-	}
+var mapper = corews.NewChannelMapper(corews.ChannelMappingConfig{
+	ProtocolToProvider: map[string]string{
+		corews.TopicTrade:       TopicTrade,
+		corews.TopicTicker:      TopicTicker,
+		corews.TopicBook:        TopicBook,
+		corews.TopicUserBalance: TopicBalance, // for private streams
+	},
+	AdditionalProviderMappings: map[string]string{
+		TopicTrade:      corews.TopicTrade,
+		TopicTicker:     corews.TopicTicker,
+		TopicBook:       corews.TopicBook,
+		TopicBalance:    corews.TopicUserBalance,
+		TopicSpread:     corews.TopicBook,
+		TopicOwnTrades:  corews.TopicUserOrder,
+		TopicOpenOrders: corews.TopicUserOrder,
+	},
+})
 
-	krakenToProtocol := make(map[string]string, len(protocolToKraken))
-	for protocol, kraken := range protocolToKraken {
-		krakenToProtocol[kraken] = protocol
-	}
-
-	krakenToProtocol["spread"] = corews.TopicBook
-	krakenToProtocol["ownTrades"] = corews.TopicUserOrder
-	krakenToProtocol["openOrders"] = corews.TopicUserOrder
-
-	return &channelMapper{
-		protocolToKraken: protocolToKraken,
-		krakenToProtocol: krakenToProtocol,
-	}
-}
-
-// toKrakenChannel converts a protocol topic to Kraken channel name.
-func (m *channelMapper) toKrakenChannel(protocolTopic string) string {
-	if channel, ok := m.protocolToKraken[protocolTopic]; ok {
-		return channel
-	}
-	return strings.ToLower(protocolTopic)
-}
-
-// toProtocolTopic converts a Kraken channel name to protocol topic.
-func (m *channelMapper) toProtocolTopic(krakenChannel string) string {
-	if topic, ok := m.krakenToProtocol[krakenChannel]; ok {
-		return topic
-	}
-	return krakenChannel
-}
-
-// mapper is the shared channel mapper instance for the websocket client.
-var mapper = newChannelMapper()
-
-// parseTopic splits a topic "channel:symbol" into channel and symbol parts.
-func parseTopic(topic string) (channel, symbol string) {
+// parseTopic splits a topic "channel:instrument" into channel and instrument parts.
+func parseTopic(topic string) (channel, instrument string) {
 	parts := strings.Split(topic, ":")
 	if len(parts) != 2 {
 		return "", ""
@@ -70,28 +50,28 @@ func normalizePublicChannel(name string) string {
 	if trimmed == "" {
 		return ""
 	}
-	return mapper.toKrakenChannel(trimmed)
+	return mapper.ToProviderChannel(trimmed)
 }
 
-// topicFromChannelName builds the protocol topic for a channel and symbol.
-func topicFromChannelName(name, symbol string) string {
-	protocolTopic := mapper.toProtocolTopic(name)
-	if symbol == "" {
+// topicFromChannel builds the protocol topic for a channel and instrument.
+func topicFromChannel(channel, instrument string) string {
+	protocolTopic := mapper.ToProtocolTopic(channel)
+	if instrument == "" {
 		return protocolTopic
 	}
 
 	switch protocolTopic {
 	case corews.TopicTrade:
-		return corews.TradeTopic(symbol)
+		return corews.TradeTopic(instrument)
 	case corews.TopicTicker:
-		return corews.TickerTopic(symbol)
+		return corews.TickerTopic(instrument)
 	case corews.TopicUserOrder:
-		return corews.UserOrderTopic(symbol)
+		return corews.UserOrderTopic(instrument)
 	case corews.TopicBook:
-		return corews.BookTopic(symbol)
+		return corews.BookTopic(instrument)
 	case corews.TopicUserBalance:
 		return corews.UserBalanceTopic()
 	default:
-		return protocolTopic + ":" + symbol
+		return protocolTopic + ":" + instrument
 	}
 }

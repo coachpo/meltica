@@ -86,7 +86,7 @@ func (w *WS) parseTradeEvent(msg *core.Message, payload []byte, symbol, stream s
 	if sym == "" {
 		sym = rec.Symbol
 	}
-	msg.Topic = topicFromEvent("trade", sym)
+	msg.Topic = topicFromChannel("trade", sym)
 	if msg.Topic == "" {
 		msg.Topic = stream
 	}
@@ -114,7 +114,7 @@ func (w *WS) parseBookTicker(msg *core.Message, payload []byte, symbol, stream s
 	if sym == "" {
 		sym = rec.Symbol
 	}
-	msg.Topic = topicFromEvent("bookTicker", sym)
+	msg.Topic = topicFromChannel("bookTicker", sym)
 	if msg.Topic == "" {
 		msg.Topic = stream
 	}
