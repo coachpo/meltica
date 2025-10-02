@@ -5,14 +5,14 @@ package core
 
 const (
 	// Public topics
-	TopicTrade  = "trade"
-	TopicTicker = "ticker"
-	TopicDepth  = "depth"
-	TopicOrder  = "order"
-	// Private topics
-	TopicBalance   = "balance"
+	TopicTrade     = "trade"
+	TopicTicker    = "ticker"
+	TopicDepth     = "depth"
 	TopicFullBook  = "book"
 	TopicSnapshot5 = "book5"
+	// Private topics
+	TopicOrder   = "order"
+	TopicBalance = "balance"
 )
 
 func TradeTopic(symbol string) string  { return TopicTrade + ":" + symbol }
