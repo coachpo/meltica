@@ -194,7 +194,7 @@ func resolveTopic(providerName, channel, symbol string) (string, error) {
 		case "ticker":
 			return corews.TopicTicker + ":" + symbol, nil
 		case "depth":
-			return corews.TopicDepth + ":" + symbol, nil
+			return corews.TopicBook + ":" + symbol, nil
 		default:
 			return ch + ":" + symbol, nil
 		}
@@ -205,7 +205,7 @@ func resolveTopic(providerName, channel, symbol string) (string, error) {
 		case "ticker":
 			return corews.TopicTicker + ":" + symbol, nil
 		case "depth":
-			return corews.TopicDepth + ":" + symbol, nil
+			return corews.TopicBook + ":" + symbol, nil
 		default:
 			return ch + ":" + symbol, nil
 		}
@@ -216,7 +216,7 @@ func resolveTopic(providerName, channel, symbol string) (string, error) {
 		case "ticker":
 			return corews.TopicTicker + ":" + symbol, nil
 		case "depth":
-			return corews.TopicDepth + ":" + symbol, nil
+			return corews.TopicBook + ":" + symbol, nil
 		default:
 			return ch + ":" + symbol, nil
 		}
@@ -227,7 +227,7 @@ func resolveTopic(providerName, channel, symbol string) (string, error) {
 		case "ticker":
 			return corews.TopicTicker + ":" + symbol, nil
 		case "depth":
-			return corews.TopicDepth + ":" + symbol, nil
+			return corews.TopicBook + ":" + symbol, nil
 		default:
 			return ch + ":" + symbol, nil
 		}

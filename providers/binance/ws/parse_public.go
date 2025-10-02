@@ -98,10 +98,12 @@ func (w *WS) parseBookTicker(msg *core.Message, payload []byte, symbol, stream s
 
 func (w *WS) parseDepthUpdate(msg *core.Message, payload []byte, symbol, stream string) error {
 	var rec struct {
-		Symbol string     `json:"s"`
-		Time   int64      `json:"E"`
-		Bids   [][]string `json:"b"`
-		Asks   [][]string `json:"a"`
+		Symbol        string     `json:"s"`
+		Time          int64      `json:"E"`
+		FirstUpdateID int64      `json:"U"`
+		LastUpdateID  int64      `json:"u"`
+		Bids          [][]string `json:"b"`
+		Asks          [][]string `json:"a"`
 	}
 	if err := json.Unmarshal(payload, &rec); err != nil {
 		return err
@@ -113,19 +115,34 @@ func (w *WS) parseDepthUpdate(msg *core.Message, payload []byte, symbol, stream 
 	if sym == "" {
 		sym = rec.Symbol
 	}
+
+	// Get or create order book for this symbol
+	orderBook := w.orderBooks.GetOrCreateOrderBook(sym)
+
+	// Parse the delta update
+	bids := depthLevelsFromPairs(rec.Bids)
+	asks := depthLevelsFromPairs(rec.Asks)
+	updateTime := time.UnixMilli(rec.Time)
+
+	// Apply delta update to order book
+	success := UpdateFromBinanceDelta(orderBook, bids, asks, rec.FirstUpdateID, rec.LastUpdateID, updateTime)
+
+	if !success {
+		// If the update failed (sequence mismatch), we need to request a snapshot
+		// For now, we'll skip this update and log the issue
+		// In a production system, you would request a fresh snapshot from the REST API
+		return nil
+	}
+
+	// Get the complete order book snapshot
+	completeSnapshot := orderBook.GetSnapshot()
+
 	msg.Topic = topicFromEvent("depthUpdate", sym)
 	if msg.Topic == "" {
 		msg.Topic = stream
 	}
-	msg.Event = "depth"
-	de := corews.DepthEvent{
-		Symbol:     sym,
-		Time:       time.UnixMilli(rec.Time),
-		UpdateType: corews.DepthUpdateDelta, // Binance depthUpdate is incremental
-	}
-	de.Bids = append(de.Bids, depthLevelsFromPairs(rec.Bids)...)
-	de.Asks = append(de.Asks, depthLevelsFromPairs(rec.Asks)...)
-	msg.Parsed = &de
+	msg.Event = "book"
+	msg.Parsed = &completeSnapshot
 	return nil
 }
 

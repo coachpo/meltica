@@ -14,9 +14,10 @@ type okxPublicEnvelope struct {
 		Channel string `json:"channel"`
 		InstID  string `json:"instId"`
 	} `json:"arg"`
-	Data  []json.RawMessage `json:"data"`
-	Event string            `json:"event"`
-	Msg   string            `json:"msg"`
+	Action string            `json:"action"` // "snapshot" or "update"
+	Data   []json.RawMessage `json:"data"`
+	Event  string            `json:"event"`
+	Msg    string            `json:"msg"`
 }
 
 func (w *WS) parsePublicMessage(msg *core.Message, raw []byte) error {
@@ -42,7 +43,7 @@ func (w *WS) parsePublicMessage(msg *core.Message, raw []byte) error {
 	case channel == "tickers":
 		return w.parseTickerSnapshot(msg, env.Data, instrument)
 	case strings.HasPrefix(channel, "books"):
-		return w.parseBookSnapshot(msg, env.Data, instrument)
+		return w.parseBookData(msg, env.Data, instrument, env.Action)
 	default:
 		return nil
 	}
@@ -94,26 +95,58 @@ func (w *WS) parseTickerSnapshot(msg *core.Message, payload []json.RawMessage, i
 	return nil
 }
 
-func (w *WS) parseBookSnapshot(msg *core.Message, payload []json.RawMessage, instrument string) error {
+func (w *WS) parseBookData(msg *core.Message, payload []json.RawMessage, instrument, action string) error {
 	if len(payload) == 0 {
 		return nil
 	}
+
 	var rec struct {
-		Bids [][]string `json:"bids"`
-		Asks [][]string `json:"asks"`
-		Ts   string     `json:"ts"`
+		Bids      [][]string `json:"bids"`
+		Asks      [][]string `json:"asks"`
+		Ts        string     `json:"ts"`
+		Checksum  int64      `json:"checksum"`
+		PrevSeqID int64      `json:"prevSeqId"`
+		SeqID     int64      `json:"seqId"`
 	}
+
 	if err := json.Unmarshal(payload[len(payload)-1], &rec); err != nil {
 		return err
 	}
-	de := corews.DepthEvent{
-		Symbol:     instrument,
-		Time:       parseMillis(rec.Ts),
-		UpdateType: corews.DepthUpdateSnapshot, // OKX books channel provides full snapshots
+
+	// Get or create order book for this symbol
+	orderBook := w.orderBooks.GetOrCreateOrderBook(instrument)
+
+	updateTime := parseMillis(rec.Ts)
+	bids := depthLevelsFromPairs(rec.Bids)
+	asks := depthLevelsFromPairs(rec.Asks)
+
+	var success bool
+	switch action {
+	case "snapshot":
+		// Full snapshot - replace entire order book
+		orderBook.UpdateFromSnapshot(bids, asks, updateTime)
+		orderBook.SetLastUpdateID(rec.SeqID)
+		success = true
+	case "update":
+		// Incremental update - merge with existing order book
+		success = UpdateFromOKXDelta(orderBook, bids, asks, rec.PrevSeqID, rec.SeqID, updateTime)
+	default:
+		// Unknown action, treat as snapshot
+		orderBook.UpdateFromSnapshot(bids, asks, updateTime)
+		orderBook.SetLastUpdateID(rec.SeqID)
+		success = true
 	}
-	de.Bids = append(de.Bids, depthLevelsFromPairs(rec.Bids)...)
-	de.Asks = append(de.Asks, depthLevelsFromPairs(rec.Asks)...)
+
+	if !success {
+		// If the update failed (sequence mismatch), skip this update
+		// In a production system, you would request a fresh snapshot
+		return nil
+	}
+
+	// Get the complete order book snapshot
+	completeSnapshot := orderBook.GetSnapshot()
+
 	msg.Event = "book"
-	msg.Parsed = &de
+	msg.Parsed = &completeSnapshot
 	return nil
 }

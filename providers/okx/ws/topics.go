@@ -10,21 +10,16 @@ var mapper = corews.NewChannelMapper(corews.ChannelMappingConfig{
 	ProtocolToProvider: map[string]string{
 		corews.TopicTrade:       "trades",
 		corews.TopicTicker:      "tickers",
-		corews.TopicDepth:       "books5",
-		corews.TopicBook:        "books",
+		corews.TopicBook:        "books", // 400 depth levels, 100ms updates - best balance of depth and performance
 		corews.TopicUserBalance: "account",
 		corews.TopicUserOrder:   "orders",
 	},
 	AdditionalProviderMappings: map[string]string{
-		"trades":         corews.TopicTrade,
-		"tickers":        corews.TopicTicker,
-		"books5":         corews.TopicDepth,
-		"books":          corews.TopicBook,
-		"books1":         corews.TopicDepth,
-		"books-l2-tbt":   corews.TopicDepth,
-		"books50-l2-tbt": corews.TopicDepth,
-		"account":        corews.TopicUserBalance,
-		"orders":         corews.TopicUserOrder,
+		"trades":  corews.TopicTrade,
+		"tickers": corews.TopicTicker,
+		"books":   corews.TopicBook,
+		"account": corews.TopicUserBalance,
+		"orders":  corews.TopicUserOrder,
 	},
 })
 
@@ -39,8 +34,6 @@ func topicFromChannel(channel, instrument string) string {
 		return corews.TradeTopic(instrument)
 	case corews.TopicTicker:
 		return corews.TickerTopic(instrument)
-	case corews.TopicDepth:
-		return corews.DepthTopic(instrument)
 	case corews.TopicBook:
 		return corews.BookTopic(instrument)
 	case corews.TopicUserOrder:

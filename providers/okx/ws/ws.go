@@ -29,12 +29,16 @@ type Provider interface {
 
 // WS implements the core.WS interface for OKX
 type WS struct {
-	p Provider
+	p          Provider
+	orderBooks *OrderBookManager
 }
 
 // New creates a new WebSocket handler for OKX
 func New(p Provider) *WS {
-	return &WS{p: p}
+	return &WS{
+		p:          p,
+		orderBooks: NewOrderBookManager(),
+	}
 }
 
 // wsSub wraps a websocket connection and exposes it as a subscription.

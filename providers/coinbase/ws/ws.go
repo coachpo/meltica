@@ -32,12 +32,16 @@ type Provider interface {
 
 // WS implements the core.WS interface for Coinbase
 type WS struct {
-	p Provider
+	p          Provider
+	orderBooks *OrderBookManager
 }
 
 // New creates a new WebSocket handler for Coinbase
 func New(p Provider) *WS {
-	return &WS{p: p}
+	return &WS{
+		p:          p,
+		orderBooks: NewOrderBookManager(),
+	}
 }
 
 type wsSub struct {

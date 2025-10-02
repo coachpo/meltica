@@ -8,7 +8,6 @@ var mapper = corews.NewChannelMapper(corews.ChannelMappingConfig{
 	ProtocolToProvider: map[string]string{
 		corews.TopicTrade:       "matches",
 		corews.TopicTicker:      "ticker",
-		corews.TopicDepth:       "level2",
 		corews.TopicBook:        "level2",
 		corews.TopicUserBalance: "user",
 		corews.TopicUserOrder:   "user",
@@ -16,11 +15,11 @@ var mapper = corews.NewChannelMapper(corews.ChannelMappingConfig{
 	AdditionalProviderMappings: map[string]string{
 		"matches":  corews.TopicTrade,
 		"ticker":   corews.TopicTicker,
-		"level2":   corews.TopicDepth,
+		"level2":   corews.TopicBook,
 		"user":     corews.TopicUserBalance,
 		"match":    corews.TopicTrade,
-		"l2update": corews.TopicDepth,
-		"snapshot": corews.TopicBook, // Snapshots map to BookTopic
+		"l2update": corews.TopicBook,
+		"snapshot": corews.TopicBook,
 		"received": corews.TopicUserOrder,
 		"open":     corews.TopicUserOrder,
 		"done":     corews.TopicUserOrder,

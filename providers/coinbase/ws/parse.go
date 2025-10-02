@@ -68,14 +68,14 @@ func (w *WS) parseMatch(msg *core.Message, env map[string]any) error {
 
 func (w *WS) parseL2(msg *core.Message, env map[string]any) error {
 	symbol := w.canonicalSymbol(fmt.Sprint(env["product_id"]))
-	msg.Topic = corews.DepthTopic(symbol)
-	msg.Event = "depth"
+
+	// Get or create order book for this symbol
+	orderBook := w.orderBooks.GetOrCreateOrderBook(symbol)
+
 	changes, _ := env["changes"].([]any)
-	event := &corews.DepthEvent{
-		Symbol:     symbol,
-		Time:       parseTime(fmt.Sprint(env["time"])),
-		UpdateType: corews.DepthUpdateDelta, // Coinbase l2update is incremental
-	}
+	updateTime := parseTime(fmt.Sprint(env["time"]))
+
+	var bids, asks []corews.DepthLevel
 	for _, change := range changes {
 		row, _ := change.([]any)
 		if len(row) < 3 {
@@ -86,31 +86,49 @@ func (w *WS) parseL2(msg *core.Message, env map[string]any) error {
 		qty := parseDecimal(fmt.Sprint(row[2]))
 		lvl := corews.DepthLevel{Price: price, Qty: qty}
 		if strings.EqualFold(side, "buy") {
-			event.Bids = append(event.Bids, lvl)
+			bids = append(bids, lvl)
 		} else {
-			event.Asks = append(event.Asks, lvl)
+			asks = append(asks, lvl)
 		}
 	}
-	msg.Parsed = event
+
+	// Apply delta update to order book
+	UpdateFromCoinbaseDelta(orderBook, bids, asks, updateTime)
+
+	// Get the complete order book snapshot
+	completeSnapshot := orderBook.GetSnapshot()
+
+	msg.Topic = corews.BookTopic(symbol)
+	msg.Event = "book"
+	msg.Parsed = &completeSnapshot
 	return nil
 }
 
 func (w *WS) parseSnapshot(msg *core.Message, env map[string]any) error {
 	symbol := w.canonicalSymbol(fmt.Sprint(env["product_id"]))
-	msg.Topic = corews.BookTopic(symbol) // Use BookTopic for snapshots
+
+	// Get or create order book for this symbol
+	orderBook := w.orderBooks.GetOrCreateOrderBook(symbol)
+
+	updateTime := parseTime(fmt.Sprint(env["time"]))
+	var bids, asks []corews.DepthLevel
+
+	if bidsData, ok := env["bids"].([]any); ok {
+		bids = buildLevels(bidsData)
+	}
+	if asksData, ok := env["asks"].([]any); ok {
+		asks = buildLevels(asksData)
+	}
+
+	// Update order book from snapshot
+	orderBook.UpdateFromSnapshot(bids, asks, updateTime)
+
+	// Get the complete order book snapshot
+	completeSnapshot := orderBook.GetSnapshot()
+
+	msg.Topic = corews.BookTopic(symbol)
 	msg.Event = "book"
-	event := &corews.DepthEvent{
-		Symbol:     symbol,
-		Time:       parseTime(fmt.Sprint(env["time"])),
-		UpdateType: corews.DepthUpdateSnapshot, // Coinbase snapshot is full book
-	}
-	if bids, ok := env["bids"].([]any); ok {
-		event.Bids = append(event.Bids, buildLevels(bids)...)
-	}
-	if asks, ok := env["asks"].([]any); ok {
-		event.Asks = append(event.Asks, buildLevels(asks)...)
-	}
-	msg.Parsed = event
+	msg.Parsed = &completeSnapshot
 	return nil
 }
 

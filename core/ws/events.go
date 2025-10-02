@@ -30,24 +30,12 @@ type TickerEvent struct {
 	Time   time.Time
 }
 
-// DepthUpdateType represents the type of depth update.
-type DepthUpdateType int
-
-const (
-	// DepthUpdateSnapshot represents a full order book snapshot
-	DepthUpdateSnapshot DepthUpdateType = iota
-	// DepthUpdateDelta represents incremental order book changes
-	DepthUpdateDelta
-)
-
-// DepthEvent represents an order book delta or snapshot.
+// DepthEvent represents an order book snapshot.
 type DepthEvent struct {
 	Symbol string
 	Bids   []DepthLevel
 	Asks   []DepthLevel
 	Time   time.Time
-	// UpdateType indicates whether this is a snapshot or delta update
-	UpdateType DepthUpdateType
 }
 
 // OrderEvent is a normalized private websocket order update.

@@ -17,8 +17,7 @@ func newChannelMapper() *channelMapper {
 	protocolToKraken := map[string]string{
 		corews.TopicTrade:       "trade",
 		corews.TopicTicker:      "ticker",
-		corews.TopicDepth:       "book",
-		corews.TopicBook:        "level3",  // Level 3 order book (individual orders)
+		corews.TopicBook:        "book",
 		corews.TopicUserBalance: "balance", // for private streams
 	}
 
@@ -27,10 +26,9 @@ func newChannelMapper() *channelMapper {
 		krakenToProtocol[kraken] = protocol
 	}
 
-	krakenToProtocol["spread"] = corews.TopicDepth
+	krakenToProtocol["spread"] = corews.TopicBook
 	krakenToProtocol["ownTrades"] = corews.TopicUserOrder
 	krakenToProtocol["openOrders"] = corews.TopicUserOrder
-	krakenToProtocol["level3"] = corews.TopicBook
 
 	return &channelMapper{
 		protocolToKraken: protocolToKraken,
@@ -87,8 +85,6 @@ func topicFromChannelName(name, symbol string) string {
 		return corews.TradeTopic(symbol)
 	case corews.TopicTicker:
 		return corews.TickerTopic(symbol)
-	case corews.TopicDepth:
-		return corews.DepthTopic(symbol)
 	case corews.TopicUserOrder:
 		return corews.UserOrderTopic(symbol)
 	case corews.TopicBook:
