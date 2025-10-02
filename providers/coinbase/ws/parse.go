@@ -126,7 +126,7 @@ func (w *WS) parseOrderEvent(msg *core.Message, env map[string]any) error {
 	status := mapStatus(fmt.Sprint(env["type"]), fmt.Sprint(env["reason"]))
 	filled := parseDecimal(fmt.Sprint(env["filled_size"]))
 	avg := parseDecimal(fmt.Sprint(env["price"]))
-	msg.Topic = corews.OrderTopic(symbol)
+	msg.Topic = corews.UserOrderTopic(symbol)
 	msg.Event = "order"
 	msg.Parsed = &corews.OrderEvent{Symbol: symbol, OrderID: id, Status: status, FilledQty: filled, AvgPrice: avg, Time: parseTime(fmt.Sprint(env["time"]))}
 	return nil
@@ -141,7 +141,7 @@ func (w *WS) parseBalance(msg *core.Message, env map[string]any) error {
 		free := parseDecimal(fmt.Sprint(row["balance"]))
 		balances = append(balances, corews.Balance{Asset: asset, Available: free, Time: parseTime(fmt.Sprint(env["time"]))})
 	}
-	msg.Topic = corews.BalanceTopic()
+	msg.Topic = corews.UserBalanceTopic()
 	msg.Event = "balance"
 	msg.Parsed = &corews.BalanceEvent{Balances: balances}
 	return nil

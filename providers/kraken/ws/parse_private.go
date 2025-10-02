@@ -53,7 +53,7 @@ func (w *WS) parseOwnTrades(msg *core.Message, payload any) error {
 		if evt == nil {
 			continue
 		}
-		msg.Topic = corews.OrderTopic(evt.Symbol)
+		msg.Topic = corews.UserOrderTopic(evt.Symbol)
 		msg.Event = "order"
 		msg.Parsed = evt
 	}
@@ -74,7 +74,7 @@ func (w *WS) parseOpenOrders(msg *core.Message, payload any) error {
 		if evt == nil {
 			continue
 		}
-		msg.Topic = corews.OrderTopic(evt.Symbol)
+		msg.Topic = corews.UserOrderTopic(evt.Symbol)
 		msg.Event = "order"
 		msg.Parsed = evt
 	}

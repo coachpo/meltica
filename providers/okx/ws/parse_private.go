@@ -55,7 +55,7 @@ func (w *WS) parseOrderUpdate(msg *core.Message, payload []json.RawMessage) erro
 	}
 	filled, _ := parseDecimalToRat(rec.AccFillSz)
 	avg, _ := parseDecimalToRat(rec.AvgPx)
-	msg.Topic = corews.OrderTopic(rec.InstID)
+	msg.Topic = corews.UserOrderTopic(rec.InstID)
 	msg.Event = "order"
 	msg.Parsed = &corews.OrderEvent{
 		Symbol:    rec.InstID,
@@ -88,7 +88,7 @@ func (w *WS) parseBalanceUpdate(msg *core.Message, payload []json.RawMessage) er
 	if len(balances) == 0 {
 		return nil
 	}
-	msg.Topic = corews.BalanceTopic()
+	msg.Topic = corews.UserBalanceTopic()
 	msg.Event = "balance"
 	msg.Parsed = &corews.BalanceEvent{Balances: balances}
 	return nil

@@ -8,24 +8,23 @@ import (
 
 var mapper = corews.NewChannelMapper(corews.ChannelMappingConfig{
 	ProtocolToProvider: map[string]string{
-		corews.TopicTrade:     "trades",
-		corews.TopicTicker:    "tickers",
-		corews.TopicDepth:     "books5",
-		corews.TopicFullBook:  "books",
-		corews.TopicSnapshot5: "books5",
-		corews.TopicBalance:   "account",
-		corews.TopicOrder:     "orders",
+		corews.TopicTrade:       "trades",
+		corews.TopicTicker:      "tickers",
+		corews.TopicDepth:       "books5",
+		corews.TopicBook:        "books",
+		corews.TopicUserBalance: "account",
+		corews.TopicUserOrder:   "orders",
 	},
 	AdditionalProviderMappings: map[string]string{
 		"trades":         corews.TopicTrade,
 		"tickers":        corews.TopicTicker,
 		"books5":         corews.TopicDepth,
-		"books":          corews.TopicFullBook,
+		"books":          corews.TopicBook,
 		"books1":         corews.TopicDepth,
 		"books-l2-tbt":   corews.TopicDepth,
 		"books50-l2-tbt": corews.TopicDepth,
-		"account":        corews.TopicBalance,
-		"orders":         corews.TopicOrder,
+		"account":        corews.TopicUserBalance,
+		"orders":         corews.TopicUserOrder,
 	},
 })
 
@@ -42,12 +41,12 @@ func topicFromChannel(channel, instrument string) string {
 		return corews.TickerTopic(instrument)
 	case corews.TopicDepth:
 		return corews.DepthTopic(instrument)
-	case corews.TopicFullBook:
+	case corews.TopicBook:
 		return corews.BookTopic(instrument)
-	case corews.TopicOrder:
-		return corews.OrderTopic(instrument)
-	case corews.TopicBalance:
-		return corews.BalanceTopic()
+	case corews.TopicUserOrder:
+		return corews.UserOrderTopic(instrument)
+	case corews.TopicUserBalance:
+		return corews.UserBalanceTopic()
 	default:
 		if protocolTopic == "" {
 			return instrument

@@ -15,11 +15,11 @@ type channelMapper struct {
 // newChannelMapper creates a mapper with bidirectional conversion tables.
 func newChannelMapper() *channelMapper {
 	protocolToKraken := map[string]string{
-		corews.TopicTrade:    "trade",
-		corews.TopicTicker:   "ticker",
-		corews.TopicDepth:    "book",
-		corews.TopicFullBook: "level3",  // Level 3 order book (individual orders)
-		corews.TopicBalance:  "balance", // for private streams
+		corews.TopicTrade:       "trade",
+		corews.TopicTicker:      "ticker",
+		corews.TopicDepth:       "book",
+		corews.TopicBook:        "level3",  // Level 3 order book (individual orders)
+		corews.TopicUserBalance: "balance", // for private streams
 	}
 
 	krakenToProtocol := make(map[string]string, len(protocolToKraken))
@@ -28,9 +28,9 @@ func newChannelMapper() *channelMapper {
 	}
 
 	krakenToProtocol["spread"] = corews.TopicDepth
-	krakenToProtocol["ownTrades"] = corews.TopicOrder
-	krakenToProtocol["openOrders"] = corews.TopicOrder
-	krakenToProtocol["level3"] = corews.TopicFullBook
+	krakenToProtocol["ownTrades"] = corews.TopicUserOrder
+	krakenToProtocol["openOrders"] = corews.TopicUserOrder
+	krakenToProtocol["level3"] = corews.TopicBook
 
 	return &channelMapper{
 		protocolToKraken: protocolToKraken,
@@ -89,12 +89,12 @@ func topicFromChannelName(name, symbol string) string {
 		return corews.TickerTopic(symbol)
 	case corews.TopicDepth:
 		return corews.DepthTopic(symbol)
-	case corews.TopicOrder:
-		return corews.OrderTopic(symbol)
-	case corews.TopicFullBook:
+	case corews.TopicUserOrder:
+		return corews.UserOrderTopic(symbol)
+	case corews.TopicBook:
 		return corews.BookTopic(symbol)
-	case corews.TopicBalance:
-		return corews.BalanceTopic()
+	case corews.TopicUserBalance:
+		return corews.UserBalanceTopic()
 	default:
 		return protocolTopic + ":" + symbol
 	}

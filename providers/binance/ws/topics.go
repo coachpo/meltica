@@ -8,17 +8,16 @@ import (
 
 var mapper = corews.NewChannelMapper(corews.ChannelMappingConfig{
 	ProtocolToProvider: map[string]string{
-		corews.TopicTrade:     "trade",
-		corews.TopicTicker:    "bookTicker",
-		corews.TopicDepth:     "depth5",
-		corews.TopicFullBook:  "depth",
-		corews.TopicSnapshot5: "depth5",
+		corews.TopicTrade:  "trade",
+		corews.TopicTicker: "bookTicker",
+		corews.TopicDepth:  "depth5",
+		corews.TopicBook:   "depth",
 	},
 	AdditionalProviderMappings: map[string]string{
 		"trade":       corews.TopicTrade,
 		"bookTicker":  corews.TopicTicker,
 		"depth5":      corews.TopicDepth,
-		"depth":       corews.TopicFullBook,
+		"depth":       corews.TopicBook,
 		"depthUpdate": corews.TopicDepth,
 	},
 })
@@ -40,7 +39,7 @@ func topicFromEvent(event, instrument string) string {
 		return corews.TradeTopic(instrument)
 	case corews.TopicTicker:
 		return corews.TickerTopic(instrument)
-	case corews.TopicDepth, corews.TopicFullBook:
+	case corews.TopicDepth, corews.TopicBook:
 		return corews.DepthTopic(instrument)
 	default:
 		if protocolTopic == "" {

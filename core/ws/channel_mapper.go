@@ -82,14 +82,12 @@ func (m *ChannelMapper) TopicFromChannelName(providerChannel, symbol string) str
 		return TickerTopic(symbol)
 	case TopicDepth:
 		return DepthTopic(symbol)
-	case TopicOrder:
-		return OrderTopic(symbol)
-	case TopicFullBook:
+	case TopicUserOrder:
+		return UserOrderTopic(symbol)
+	case TopicBook:
 		return BookTopic(symbol)
-	case TopicSnapshot5:
-		return Book5Topic(symbol)
-	case TopicBalance:
-		return BalanceTopic()
+	case TopicUserBalance:
+		return UserBalanceTopic()
 	default:
 		return protocolTopic + ":" + symbol
 	}

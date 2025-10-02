@@ -22,7 +22,7 @@ func (w *WS) sendSubscriptions(conn *websocket.Conn, topics []string, private bo
 		if providerChannel == "user" && !private {
 			continue
 		}
-		if channel == corews.TopicBalance && private {
+		if channel == corews.TopicUserBalance && private {
 			channels[providerChannel] = append(channels[providerChannel], "*")
 			continue
 		}
