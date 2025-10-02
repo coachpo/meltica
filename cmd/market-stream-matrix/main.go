@@ -25,8 +25,8 @@ func main() {
 	var (
 		exchangeFlag = flag.String("exchange", "binance,okx,coinbase,kraken", "Comma-separated list of exchanges to connect to")
 		symbolFlag   = flag.String("symbol", "BTC-USDT,BTC-USD,ETH-USDT,ETH-USD", "Comma-separated list of trading symbols in BASE-QUOTE form")
-		channelFlag  = flag.String("channel", "ticker,trades,depth", "Comma-separated list of market data streams to subscribe to")
-		durationFlag = flag.Duration("duration", 5*time.Second, "Streaming duration for each combination")
+		channelFlag  = flag.String("channel", "ticker,trade,depth", "Comma-separated list of market data streams to subscribe to")
+		durationFlag = flag.Duration("duration", 3*time.Second, "Streaming duration for each combination")
 	)
 
 	flag.Parse()
@@ -36,7 +36,7 @@ func main() {
 		fatal("at least one exchange is required")
 	}
 
-	channels := normalizeList(*channelFlag, normalizeChannel)
+	channels := normalizeList(*channelFlag, strings.ToLower)
 	if len(channels) == 0 {
 		fatal("at least one channel is required")
 	}
@@ -161,16 +161,6 @@ func normalizeList(raw string, norm func(string) string) []string {
 		result = append(result, normalized)
 	}
 	return result
-}
-
-func normalizeChannel(raw string) string {
-	c := strings.ToLower(strings.TrimSpace(raw))
-	switch c {
-	case "trades":
-		return "trade"
-	default:
-		return c
-	}
 }
 
 func resolveTopic(providerName, channel, symbol string) (string, error) {
