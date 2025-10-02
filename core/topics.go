@@ -4,10 +4,12 @@ package core
 // Topics are expressed as "channel:SYMBOL" where SYMBOL is canonical (e.g., BTC-USDT).
 
 const (
-	TopicTrade     = "trade"
-	TopicTicker    = "ticker"
-	TopicDepth     = "depth"
-	TopicOrder     = "order"
+	// Public topics
+	TopicTrade  = "trade"
+	TopicTicker = "ticker"
+	TopicDepth  = "depth"
+	TopicOrder  = "order"
+	// Private topics
 	TopicBalance   = "balance"
 	TopicFullBook  = "book"
 	TopicSnapshot5 = "book5"

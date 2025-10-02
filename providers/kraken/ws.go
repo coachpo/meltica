@@ -74,21 +74,15 @@ func (w ws) SubscribePublic(ctx context.Context, topics ...string) (core.Subscri
 		if ch == "" || canon == "" {
 			continue
 		}
-		native := ""
-		if w.p != nil {
-			native = w.p.canonToKrakenWS[canon]
-			if native == "" {
-				native = w.p.canonToKraken[canon]
-			}
+		channelName := normalizePublicChannel(ch)
+		if channelName == "" {
+			continue
 		}
-		if native == "" {
-			native = canon
-		}
-		native = strings.ReplaceAll(native, "-", "/")
+		native := strings.ReplaceAll(w.nativeSymbolForWS(canon), "-", "/")
 		payload := map[string]any{
 			"method": "subscribe",
 			"params": map[string]any{
-				"channel": ch,
+				"channel": channelName,
 				"symbol":  []string{native},
 			},
 		}
@@ -206,6 +200,11 @@ func (w ws) parseMessage(msg *core.Message, data []byte, requested []string) err
 }
 
 func (w ws) parseV2Channel(msg *core.Message, channel string, env map[string]any, requested []string) error {
+	normalized := normalizePublicChannel(channel)
+	if normalized == "" {
+		msg.Topic = channel
+		return nil
+	}
 	var data []any
 	switch typed := env["data"].(type) {
 	case []any:
@@ -231,19 +230,17 @@ func (w ws) parseV2Channel(msg *core.Message, channel string, env map[string]any
 		}
 	}
 	canon := w.canonicalSymbol(symbol, requested)
-	switch channel {
+	msg.Topic = topicFromChannelName(normalized, canon)
+	switch normalized {
 	case "trade":
-		msg.Topic = topicFromChannelName(channel, canon)
 		return w.parseTrades(msg, data, canon)
 	case "ticker":
-		msg.Topic = topicFromChannelName(channel, canon)
 		var payload any
 		if len(data) > 0 {
 			payload = data[len(data)-1]
 		}
 		return w.parseTicker(msg, payload, canon)
 	case "book":
-		msg.Topic = topicFromChannelName(channel, canon)
 		var payload any
 		if len(data) > 0 {
 			payload = data[len(data)-1]
@@ -253,7 +250,6 @@ func (w ws) parseV2Channel(msg *core.Message, channel string, env map[string]any
 		msg.Topic = core.BookTopic(canon)
 		return w.parseLevel3(msg, data, canon)
 	default:
-		msg.Topic = topicFromChannelName(channel, canon)
 		return nil
 	}
 }
@@ -478,6 +474,39 @@ func parseTopic(topic string) (channel, symbol string) {
 		return "", ""
 	}
 	return parts[0], parts[1]
+}
+
+func normalizePublicChannel(name string) string {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return ""
+	}
+	lower := strings.ToLower(trimmed)
+	switch lower {
+	case core.TopicTrade:
+		return "trade"
+	case core.TopicTicker:
+		return "ticker"
+	case core.TopicDepth:
+		return "book"
+	case core.TopicOrder:
+		return "level3"
+	default:
+		return lower
+	}
+}
+
+func (w ws) nativeSymbolForWS(canon string) string {
+	if w.p == nil {
+		return canon
+	}
+	if native := w.p.canonToKrakenWS[canon]; native != "" {
+		return native
+	}
+	if native := w.p.canonToKraken[canon]; native != "" {
+		return native
+	}
+	return canon
 }
 
 func topicFromChannelName(name, symbol string) string {
