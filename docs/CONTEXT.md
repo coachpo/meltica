@@ -8,6 +8,15 @@ This file provides a high‑level, always‑up‑to‑date orientation for the *
 
 ---
 
+## Docs quick links
+
+- Full docs index: [README.md](./README.md)
+- Start here: [START-HERE.md](./START-HERE.md)
+- Project overview: [PROJECT_OVERVIEW.md](./PROJECT_OVERVIEW.md)
+- Expectations & standards: [expectations/](./expectations/)
+- How-to guides: [how-to/](./how-to/)
+- Protocol validation rules: [validation/protocol-validation-rules.md](./validation/protocol-validation-rules.md)
+
 ## Repository Overview
 
 * **Unified API** surface across exchanges (spot, linear futures, inverse futures).

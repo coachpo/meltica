@@ -6,6 +6,16 @@ Meltica is a **provider-agnostic Go SDK** that normalizes REST and WebSocket mar
 
 ---
 
+## Docs quick links
+
+- Start here: [START-HERE.md](./START-HERE.md)
+- Context map: [CONTEXT.md](./CONTEXT.md)
+- Expectations & standards: [expectations/](./expectations/)
+- How-to guides: [how-to/](./how-to/)
+- Protocol validation rules: [validation/protocol-validation-rules.md](./validation/protocol-validation-rules.md)
+- Venue support report: [Venue_Support_Report.md](./Venue_Support_Report.md)
+- Full docs index: [README.md](./README.md)
+
 ## Architecture at a glance
 
 * **core/** — Canonical domain models (orders, trades, tickers, balances), provider interfaces, capability bitset helpers, symbol/topic utilities, and normalized WS event types. This is the contract everything else targets. 
@@ -88,10 +98,11 @@ Meltica is a **provider-agnostic Go SDK** that normalizes REST and WebSocket mar
 
 ## Onboarding checklist
 
-1. Read **docs/START-HERE.md** to grok expectations and workflow.
-2. Review **docs/expectations/** and **docs/how-to/** for adapter standards and the migration path.
-3. Build & run **cmd/market-stream** against a test venue; inspect normalized events.
-4. Add or update a provider, then run: unit tests → conformance → `meltilint` → build. 
+1. Open **docs/README.md** for the full documentation index.
+2. Read **docs/START-HERE.md** to grok expectations and workflow.
+3. Review **docs/expectations/** and **docs/how-to/** for adapter standards and the migration path.
+4. Build & run **cmd/market-stream** against a test venue; inspect normalized events.
+5. Add or update a provider, then run: unit tests → conformance → `meltilint` → build. 
 
 ---
 
