@@ -28,15 +28,13 @@ type Provider interface {
 
 // WS implements the core.WS interface for Binance
 type WS struct {
-	p          Provider
-	orderBooks *OrderBookManager
+	p Provider
 }
 
 // New creates a new WebSocket handler for Binance
 func New(p Provider) *WS {
 	return &WS{
-		p:          p,
-		orderBooks: NewOrderBookManager(),
+		p: p,
 	}
 }
 
