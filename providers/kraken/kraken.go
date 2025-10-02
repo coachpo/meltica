@@ -670,27 +670,8 @@ func (t krakenTradeRecord) Timestamp() int64 {
 }
 
 func normalizeAsset(asset string) string {
-	asset = strings.TrimPrefix(asset, "X")
-	asset = strings.TrimPrefix(asset, "Z")
-	asset = strings.TrimPrefix(asset, "Z")
-	asset = strings.TrimPrefix(asset, "X")
-	switch asset {
-	case "XBT":
-		return "BTC"
-	case "XETH":
-		return "ETH"
-	case "XXBT":
-		return "BTC"
-	case "ZUSD":
-		return "USD"
-	case "ZEUR":
-		return "EUR"
-	case "ZJPY":
-		return "JPY"
-	case "USDT":
-		return "USDT"
-	}
-	return strings.TrimPrefix(strings.TrimPrefix(asset, "X"), "Z")
+	asset = strings.ToUpper(strings.TrimSpace(asset))
+	return asset
 }
 
 func parseDecimal(s string) (*big.Rat, bool) {

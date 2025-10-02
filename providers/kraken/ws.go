@@ -64,7 +64,7 @@ func (w ws) SubscribePublic(ctx context.Context, topics ...string) (core.Subscri
 		return nil, err
 	}
 	dialer := websocket.Dialer{HandshakeTimeout: 10 * time.Second}
-	conn, _, err := dialer.DialContext(ctx, "wss://ws.kraken.com", nil)
+	conn, _, err := dialer.DialContext(ctx, "wss://ws.kraken.com/v2", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -84,11 +84,12 @@ func (w ws) SubscribePublic(ctx context.Context, topics ...string) (core.Subscri
 		if native == "" {
 			native = canon
 		}
+		native = strings.ReplaceAll(native, "-", "/")
 		payload := map[string]any{
-			"event": "subscribe",
-			"pair":  []string{native},
-			"subscription": map[string]any{
-				"name": ch,
+			"method": "subscribe",
+			"params": map[string]any{
+				"channel": ch,
+				"symbol":  []string{native},
 			},
 		}
 		if err := conn.WriteJSON(payload); err != nil {
@@ -183,47 +184,78 @@ func (w ws) readLoopPrivate(sub *wsSub) {
 }
 
 func (w ws) parseMessage(msg *core.Message, data []byte, requested []string) error {
-	// Kraken WS responses are arrays or objects depending on event type.
 	if len(data) == 0 {
 		return nil
 	}
-	if data[0] == '[' {
-		var arr []any
-		if err := json.Unmarshal(data, &arr); err != nil {
-			return err
-		}
-		if len(arr) < 3 {
-			return nil
-		}
-		channelName, _ := arr[len(arr)-2].(map[string]any)
-		subInfo, ok := arr[len(arr)-1].(string)
-		if !ok {
-			return nil
-		}
-		canon := w.canonicalSymbol(subInfo, requested)
-		if canon == "" {
-			canon = subInfo
-		}
-		topic := topicFromChannel(channelName, canon)
-		msg.Topic = topic
-		eventType := channelNameName(channelName)
-		switch eventType {
-		case "trade":
-			return w.parseTrades(msg, arr[1], canon)
-		case "ticker":
-			return w.parseTicker(msg, arr[1], canon)
-		case "book", "spread":
-			return w.parseBook(msg, arr[1], canon)
-		}
-		return nil
-	}
-	// handle system messages
 	var env map[string]any
 	if err := json.Unmarshal(data, &env); err != nil {
 		return err
 	}
-	msg.Topic = fmt.Sprint(env["event"])
+	if channel := valueString(env["channel"]); channel != "" {
+		return w.parseV2Channel(msg, channel, env, requested)
+	}
+	if method := valueString(env["method"]); method != "" {
+		msg.Topic = method
+		return nil
+	}
+	msg.Topic = valueString(env["event"])
+	if msg.Topic == "" {
+		msg.Topic = valueString(env["type"])
+	}
 	return nil
+}
+
+func (w ws) parseV2Channel(msg *core.Message, channel string, env map[string]any, requested []string) error {
+	var data []any
+	switch typed := env["data"].(type) {
+	case []any:
+		data = typed
+	case map[string]any:
+		data = []any{typed}
+	case nil:
+		data = nil
+	default:
+		return nil
+	}
+	symbol := valueString(env["symbol"])
+	if symbol == "" {
+		for _, entry := range data {
+			rec, ok := entry.(map[string]any)
+			if !ok {
+				continue
+			}
+			if sym := valueString(rec["symbol"]); sym != "" {
+				symbol = sym
+				break
+			}
+		}
+	}
+	canon := w.canonicalSymbol(symbol, requested)
+	switch channel {
+	case "trade":
+		msg.Topic = topicFromChannelName(channel, canon)
+		return w.parseTrades(msg, data, canon)
+	case "ticker":
+		msg.Topic = topicFromChannelName(channel, canon)
+		var payload any
+		if len(data) > 0 {
+			payload = data[len(data)-1]
+		}
+		return w.parseTicker(msg, payload, canon)
+	case "book":
+		msg.Topic = topicFromChannelName(channel, canon)
+		var payload any
+		if len(data) > 0 {
+			payload = data[len(data)-1]
+		}
+		return w.parseBook(msg, payload, canon)
+	case "level3":
+		msg.Topic = core.BookTopic(canon)
+		return w.parseLevel3(msg, data, canon)
+	default:
+		msg.Topic = topicFromChannelName(channel, canon)
+		return nil
+	}
 }
 
 func (w ws) parsePrivate(msg *core.Message, data []byte, topics []string) error {
@@ -340,14 +372,23 @@ func (w ws) parseTrades(msg *core.Message, payload any, symbol string) error {
 	}
 	var events []*core.TradeEvent
 	for _, row := range rows {
-		rec, ok := row.([]any)
-		if !ok || len(rec) < 3 {
+		rec, ok := row.(map[string]any)
+		if !ok {
 			continue
 		}
-		price := parseDecimalStr(fmt.Sprint(rec[0]))
-		qty := parseDecimalStr(fmt.Sprint(rec[1]))
-		when := parseTradesTS(fmt.Sprint(rec[2]))
-		events = append(events, &core.TradeEvent{Symbol: symbol, Price: price, Quantity: qty, Time: when})
+		sym := symbol
+		if sym == "" {
+			if raw := valueString(rec["symbol"]); raw != "" {
+				sym = w.canonicalSymbol(raw, nil)
+			}
+		}
+		price := parseDecimalStr(valueString(firstPresent(rec, "price", "px")))
+		qty := parseDecimalStr(valueString(firstPresent(rec, "qty", "quantity", "volume")))
+		when := parseISOTime(valueString(firstPresent(rec, "timestamp", "time")))
+		if when.IsZero() {
+			when = time.Now().UTC()
+		}
+		events = append(events, &core.TradeEvent{Symbol: sym, Price: price, Quantity: qty, Time: when})
 	}
 	if len(events) > 0 {
 		msg.Event = "trade"
@@ -361,8 +402,8 @@ func (w ws) parseTicker(msg *core.Message, payload any, symbol string) error {
 	if !ok {
 		return nil
 	}
-	bid := parseDecimalStr(extractFirst(row, "b"))
-	ask := parseDecimalStr(extractFirst(row, "a"))
+	bid := parseDecimalStr(valueString(firstPresent(row, "bid", "best_bid")))
+	ask := parseDecimalStr(valueString(firstPresent(row, "ask", "best_ask")))
 	msg.Event = "ticker"
 	msg.Parsed = &core.TickerEvent{Symbol: symbol, Bid: bid, Ask: ask, Time: time.Now().UTC()}
 	return nil
@@ -374,23 +415,57 @@ func (w ws) parseBook(msg *core.Message, payload any, symbol string) error {
 		return nil
 	}
 	de := core.DepthEvent{Symbol: symbol, Time: time.Now().UTC()}
-	if bids, ok := row["b"].([]any); ok {
-		for _, b := range bids {
-			if lvl, ok := b.([]any); ok && len(lvl) >= 2 {
-				price := parseDecimalStr(fmt.Sprint(lvl[0]))
-				qty := parseDecimalStr(fmt.Sprint(lvl[1]))
-				de.Bids = append(de.Bids, core.DepthLevel{Price: price, Qty: qty})
+	if rawBids, ok := row["bids"]; ok {
+		appendDepthLevels(&de.Bids, rawBids)
+	}
+	if rawAsks, ok := row["asks"]; ok {
+		appendDepthLevels(&de.Asks, rawAsks)
+	}
+	msg.Event = "depth"
+	msg.Parsed = &de
+	return nil
+}
+
+func (w ws) parseLevel3(msg *core.Message, payload any, symbol string) error {
+	rows, ok := payload.([]any)
+	if !ok || len(rows) == 0 {
+		return nil
+	}
+	last := rows[len(rows)-1]
+	rec, ok := last.(map[string]any)
+	if !ok {
+		return nil
+	}
+	de := core.DepthEvent{Symbol: symbol, Time: time.Now().UTC()}
+	if rawBids, ok := rec["bids"]; ok {
+		appendDepthLevels(&de.Bids, rawBids)
+	}
+	if rawAsks, ok := rec["asks"]; ok {
+		appendDepthLevels(&de.Asks, rawAsks)
+	}
+	if orders, ok := rec["orders"]; ok {
+		if arr, ok := orders.([]any); ok {
+			for _, ordRaw := range arr {
+				ord, ok := ordRaw.(map[string]any)
+				if !ok {
+					continue
+				}
+				lvl := core.DepthLevel{
+					Price: parseDecimalStr(valueString(firstPresent(ord, "price", "px"))),
+					Qty:   parseDecimalStr(valueString(firstPresent(ord, "qty", "quantity", "volume", "size"))),
+				}
+				side := strings.ToLower(valueString(firstPresent(ord, "side", "type")))
+				switch side {
+				case "buy", "bid":
+					de.Bids = append(de.Bids, lvl)
+				case "sell", "ask":
+					de.Asks = append(de.Asks, lvl)
+				}
 			}
 		}
 	}
-	if asks, ok := row["a"].([]any); ok {
-		for _, a := range asks {
-			if lvl, ok := a.([]any); ok && len(lvl) >= 2 {
-				price := parseDecimalStr(fmt.Sprint(lvl[0]))
-				qty := parseDecimalStr(fmt.Sprint(lvl[1]))
-				de.Asks = append(de.Asks, core.DepthLevel{Price: price, Qty: qty})
-			}
-		}
+	if len(de.Bids) == 0 && len(de.Asks) == 0 {
+		return nil
 	}
 	msg.Event = "depth"
 	msg.Parsed = &de
@@ -405,21 +480,32 @@ func parseTopic(topic string) (channel, symbol string) {
 	return parts[0], parts[1]
 }
 
-func topicFromChannel(info map[string]any, symbol string) string {
-	if info == nil {
-		return ""
-	}
-	name, _ := info["name"].(string)
+func topicFromChannelName(name, symbol string) string {
 	switch name {
 	case "trade":
+		if symbol == "" {
+			return name
+		}
 		return core.TradeTopic(symbol)
 	case "ticker":
+		if symbol == "" {
+			return name
+		}
 		return core.TickerTopic(symbol)
 	case "spread", "book":
+		if symbol == "" {
+			return name
+		}
 		return core.DepthTopic(symbol)
-	case "ownTrades":
-		return core.OrderTopic(symbol)
-	case "openOrders":
+	case "level3":
+		if symbol == "" {
+			return name
+		}
+		return core.BookTopic(symbol)
+	case "ownTrades", "openOrders":
+		if symbol == "" {
+			return name
+		}
 		return core.OrderTopic(symbol)
 	default:
 		if symbol == "" {
@@ -429,51 +515,132 @@ func topicFromChannel(info map[string]any, symbol string) string {
 	}
 }
 
-func channelNameName(info map[string]any) string {
-	if info == nil {
-		return ""
+func appendDepthLevels(dst *[]core.DepthLevel, raw any) {
+	levels, ok := raw.([]any)
+	if !ok {
+		return
 	}
-	name, _ := info["name"].(string)
-	return name
+	for _, entry := range levels {
+		priceStr := ""
+		qtyStr := ""
+		switch lvl := entry.(type) {
+		case []any:
+			if len(lvl) > 0 {
+				priceStr = valueString(lvl[0])
+			}
+			if len(lvl) > 1 {
+				qtyStr = valueString(lvl[1])
+			}
+		case map[string]any:
+			priceStr = valueString(firstPresent(lvl, "price", "px", "bid", "ask"))
+			qtyStr = valueString(firstPresent(lvl, "qty", "quantity", "volume", "size"))
+		default:
+			continue
+		}
+		if priceStr == "" {
+			continue
+		}
+		price := parseDecimalStr(priceStr)
+		qty := parseDecimalStr(qtyStr)
+		*dst = append(*dst, core.DepthLevel{Price: price, Qty: qty})
+	}
 }
 
-func extractFirst(row map[string]any, key string) string {
-	vals, ok := row[key].([]any)
-	if !ok || len(vals) == 0 {
+func firstPresent(m map[string]any, keys ...string) any {
+	for _, key := range keys {
+		if v, ok := m[key]; ok && v != nil {
+			return v
+		}
+	}
+	return nil
+}
+
+func valueString(v any) string {
+	if v == nil {
 		return ""
 	}
-	inner, ok := vals[0].([]any)
-	if ok && len(inner) > 0 {
-		return fmt.Sprint(inner[0])
+	switch t := v.(type) {
+	case string:
+		return t
+	case json.Number:
+		return t.String()
+	default:
+		return strings.TrimSpace(fmt.Sprint(v))
 	}
-	return fmt.Sprint(vals[0])
 }
 
 func (w ws) canonicalSymbol(exch string, requested []string) string {
-	if w.p == nil {
+	if exch == "" {
 		return canonicalFromRequested(exch, requested)
 	}
-	canon := ""
-	for c, native := range w.p.canonToKraken {
-		if strings.EqualFold(native, exch) {
-			canon = c
-			break
+	upper := strings.ToUpper(strings.TrimSpace(exch))
+	if w.p != nil {
+		if w.p.nativeToCanon != nil {
+			if canon := w.p.nativeToCanon[upper]; canon != "" {
+				return canon
+			}
+			if canon := w.p.nativeToCanon[strings.ReplaceAll(upper, "/", "")]; canon != "" {
+				return canon
+			}
+		}
+		for c, native := range w.p.canonToKraken {
+			if strings.EqualFold(native, upper) {
+				return c
+			}
+		}
+		for c, native := range w.p.canonToKrakenWS {
+			if strings.EqualFold(native, upper) {
+				return c
+			}
 		}
 	}
-	if canon != "" {
-		return canon
-	}
-	return canonicalFromRequested(exch, requested)
+	return canonicalFromRequested(upper, requested)
 }
 
 func canonicalFromRequested(exch string, requested []string) string {
+	candidates := []string{exch}
+	if strings.Contains(exch, "/") {
+		candidates = append(candidates, strings.ReplaceAll(exch, "/", "-"))
+	} else if strings.Contains(exch, "-") {
+		candidates = append(candidates, strings.ReplaceAll(exch, "-", "/"))
+	}
 	for _, t := range requested {
 		_, sym := parseTopic(t)
-		if strings.EqualFold(sym, exch) {
-			return sym
+		if sym == "" {
+			continue
+		}
+		for _, cand := range candidates {
+			if cand != "" && strings.EqualFold(sym, cand) {
+				return sym
+			}
+		}
+		if strings.Contains(sym, "-") {
+			alt := strings.ReplaceAll(sym, "-", "/")
+			for _, cand := range candidates {
+				if cand != "" && strings.EqualFold(alt, cand) {
+					return sym
+				}
+			}
 		}
 	}
+	if strings.Contains(exch, "/") {
+		return strings.ReplaceAll(exch, "/", "-")
+	}
 	return exch
+}
+
+func parseISOTime(ts string) time.Time {
+	ts = strings.TrimSpace(ts)
+	if ts == "" {
+		return time.Time{}
+	}
+	layouts := []string{time.RFC3339Nano, time.RFC3339}
+	for _, layout := range layouts {
+		if t, err := time.Parse(layout, ts); err == nil {
+			return t.UTC()
+		}
+	}
+	return parseTradesTS(ts)
 }
 
 func parseTradesTS(ts string) time.Time {
