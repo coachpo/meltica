@@ -30,8 +30,8 @@ type TickerEvent struct {
 	Time   time.Time
 }
 
-// DepthEvent represents an order book snapshot.
-type DepthEvent struct {
+// BookEvent represents an order book snapshot.
+type BookEvent struct {
 	Symbol string
 	Bids   []DepthLevel
 	Asks   []DepthLevel

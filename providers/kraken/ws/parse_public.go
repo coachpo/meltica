@@ -135,7 +135,7 @@ func (w *WS) parseBook(msg *core.Message, payload any, symbol string) error {
 	if !ok {
 		return nil
 	}
-	de := corews.DepthEvent{Symbol: symbol, Time: time.Now().UTC()}
+	de := corews.BookEvent{Symbol: symbol, Time: time.Now().UTC()}
 	if rawBids, ok := row["bids"]; ok {
 		appendDepthLevels(&de.Bids, rawBids)
 	}
@@ -157,7 +157,7 @@ func (w *WS) parseLevel3(msg *core.Message, payload any, symbol string) error {
 	if !ok {
 		return nil
 	}
-	de := corews.DepthEvent{Symbol: symbol, Time: time.Now().UTC()}
+	de := corews.BookEvent{Symbol: symbol, Time: time.Now().UTC()}
 	if rawBids, ok := rec["bids"]; ok {
 		appendDepthLevels(&de.Bids, rawBids)
 	}

@@ -248,7 +248,7 @@ func formatEventMessage(msg core.Message) (string, bool) {
 		return fmt.Sprintf("[%s] %s trade price=%s qty=%s", ts, evt.Symbol, formatRat(evt.Price), formatRat(evt.Quantity)), true
 	case *corews.TickerEvent:
 		return fmt.Sprintf("[%s] %s ticker bid=%s ask=%s", ts, evt.Symbol, formatRat(evt.Bid), formatRat(evt.Ask)), true
-	case *corews.DepthEvent:
+	case *corews.BookEvent:
 		bid := "—"
 		ask := "—"
 		if len(evt.Bids) > 0 {

@@ -77,8 +77,8 @@ func (ob *OrderBook) UpdateFromSnapshot(bids, asks []corews.DepthLevel, updateTi
 	ob.LastUpdate = updateTime
 }
 
-// GetSnapshot returns the current order book as a core DepthEvent.
-func (ob *OrderBook) GetSnapshot() corews.DepthEvent {
+// GetSnapshot returns the current order book as a core BookEvent.
+func (ob *OrderBook) GetSnapshot() corews.BookEvent {
 	ob.mu.RLock()
 	defer ob.mu.RUnlock()
 
@@ -103,7 +103,7 @@ func (ob *OrderBook) GetSnapshot() corews.DepthEvent {
 		}
 	}
 
-	return corews.DepthEvent{
+	return corews.BookEvent{
 		Symbol: ob.Symbol,
 		Bids:   bids,
 		Asks:   asks,
