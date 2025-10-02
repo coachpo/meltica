@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/coachpo/meltica/core"
+	corews "github.com/coachpo/meltica/core/ws"
 )
 
 func (w *WS) parseMessage(msg *core.Message, payload []byte, private bool) error {
@@ -47,11 +48,11 @@ func (w *WS) parseMessage(msg *core.Message, payload []byte, private bool) error
 
 func (w *WS) parseTicker(msg *core.Message, env map[string]any) error {
 	symbol := w.canonicalSymbol(fmt.Sprint(env["product_id"]))
-	msg.Topic = core.TickerTopic(symbol)
+	msg.Topic = corews.TickerTopic(symbol)
 	msg.Event = "ticker"
 	bid := parseDecimal(fmt.Sprint(env["best_bid"]))
 	ask := parseDecimal(fmt.Sprint(env["best_ask"]))
-	msg.Parsed = &core.TickerEvent{Symbol: symbol, Bid: bid, Ask: ask, Time: time.Now().UTC()}
+	msg.Parsed = &corews.TickerEvent{Symbol: symbol, Bid: bid, Ask: ask, Time: time.Now().UTC()}
 	return nil
 }
 
@@ -59,18 +60,18 @@ func (w *WS) parseMatch(msg *core.Message, env map[string]any) error {
 	symbol := w.canonicalSymbol(fmt.Sprint(env["product_id"]))
 	price := parseDecimal(fmt.Sprint(env["price"]))
 	qty := parseDecimal(fmt.Sprint(env["size"]))
-	msg.Topic = core.TradeTopic(symbol)
+	msg.Topic = corews.TradeTopic(symbol)
 	msg.Event = "trade"
-	msg.Parsed = &core.TradeEvent{Symbol: symbol, Price: price, Quantity: qty, Time: parseTime(fmt.Sprint(env["time"]))}
+	msg.Parsed = &corews.TradeEvent{Symbol: symbol, Price: price, Quantity: qty, Time: parseTime(fmt.Sprint(env["time"]))}
 	return nil
 }
 
 func (w *WS) parseL2(msg *core.Message, env map[string]any) error {
 	symbol := w.canonicalSymbol(fmt.Sprint(env["product_id"]))
-	msg.Topic = core.DepthTopic(symbol)
+	msg.Topic = corews.DepthTopic(symbol)
 	msg.Event = "depth"
 	changes, _ := env["changes"].([]any)
-	event := &core.DepthEvent{Symbol: symbol, Time: parseTime(fmt.Sprint(env["time"]))}
+	event := &corews.DepthEvent{Symbol: symbol, Time: parseTime(fmt.Sprint(env["time"]))}
 	for _, change := range changes {
 		row, _ := change.([]any)
 		if len(row) < 3 {
@@ -79,7 +80,7 @@ func (w *WS) parseL2(msg *core.Message, env map[string]any) error {
 		side := fmt.Sprint(row[0])
 		price := parseDecimal(fmt.Sprint(row[1]))
 		qty := parseDecimal(fmt.Sprint(row[2]))
-		lvl := core.DepthLevel{Price: price, Qty: qty}
+		lvl := corews.DepthLevel{Price: price, Qty: qty}
 		if strings.EqualFold(side, "buy") {
 			event.Bids = append(event.Bids, lvl)
 		} else {
@@ -92,9 +93,9 @@ func (w *WS) parseL2(msg *core.Message, env map[string]any) error {
 
 func (w *WS) parseSnapshot(msg *core.Message, env map[string]any) error {
 	symbol := w.canonicalSymbol(fmt.Sprint(env["product_id"]))
-	msg.Topic = core.DepthTopic(symbol)
+	msg.Topic = corews.DepthTopic(symbol)
 	msg.Event = "depth"
-	event := &core.DepthEvent{Symbol: symbol, Time: parseTime(fmt.Sprint(env["time"]))}
+	event := &corews.DepthEvent{Symbol: symbol, Time: parseTime(fmt.Sprint(env["time"]))}
 	if bids, ok := env["bids"].([]any); ok {
 		event.Bids = append(event.Bids, buildLevels(bids)...)
 	}
@@ -105,8 +106,8 @@ func (w *WS) parseSnapshot(msg *core.Message, env map[string]any) error {
 	return nil
 }
 
-func buildLevels(raw []any) []core.DepthLevel {
-	out := make([]core.DepthLevel, 0, len(raw))
+func buildLevels(raw []any) []corews.DepthLevel {
+	out := make([]corews.DepthLevel, 0, len(raw))
 	for _, row := range raw {
 		vals, _ := row.([]any)
 		if len(vals) < 2 {
@@ -114,7 +115,7 @@ func buildLevels(raw []any) []core.DepthLevel {
 		}
 		price := parseDecimal(fmt.Sprint(vals[0]))
 		qty := parseDecimal(fmt.Sprint(vals[1]))
-		out = append(out, core.DepthLevel{Price: price, Qty: qty})
+		out = append(out, corews.DepthLevel{Price: price, Qty: qty})
 	}
 	return out
 }
@@ -125,23 +126,23 @@ func (w *WS) parseOrderEvent(msg *core.Message, env map[string]any) error {
 	status := mapStatus(fmt.Sprint(env["type"]), fmt.Sprint(env["reason"]))
 	filled := parseDecimal(fmt.Sprint(env["filled_size"]))
 	avg := parseDecimal(fmt.Sprint(env["price"]))
-	msg.Topic = core.OrderTopic(symbol)
+	msg.Topic = corews.OrderTopic(symbol)
 	msg.Event = "order"
-	msg.Parsed = &core.OrderEvent{Symbol: symbol, OrderID: id, Status: status, FilledQty: filled, AvgPrice: avg, Time: parseTime(fmt.Sprint(env["time"]))}
+	msg.Parsed = &corews.OrderEvent{Symbol: symbol, OrderID: id, Status: status, FilledQty: filled, AvgPrice: avg, Time: parseTime(fmt.Sprint(env["time"]))}
 	return nil
 }
 
 func (w *WS) parseBalance(msg *core.Message, env map[string]any) error {
 	accounts, _ := env["accounts"].([]any)
-	balances := make([]core.Balance, 0, len(accounts))
+	balances := make([]corews.Balance, 0, len(accounts))
 	for _, acct := range accounts {
 		row, _ := acct.(map[string]any)
 		asset := strings.ToUpper(fmt.Sprint(row["currency"]))
 		free := parseDecimal(fmt.Sprint(row["balance"]))
-		balances = append(balances, core.Balance{Asset: asset, Available: free, Time: parseTime(fmt.Sprint(env["time"]))})
+		balances = append(balances, corews.Balance{Asset: asset, Available: free, Time: parseTime(fmt.Sprint(env["time"]))})
 	}
-	msg.Topic = core.BalanceTopic()
+	msg.Topic = corews.BalanceTopic()
 	msg.Event = "balance"
-	msg.Parsed = &core.BalanceEvent{Balances: balances}
+	msg.Parsed = &corews.BalanceEvent{Balances: balances}
 	return nil
 }

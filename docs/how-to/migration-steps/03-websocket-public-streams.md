@@ -5,7 +5,7 @@
 ---
 ## What needs to be done
 1) Connect and maintain public WS with auto-reconnect, backoff, and heartbeats.
-2) Decode exchange messages into `core.TradeEvent`, `core.TickerEvent`, `core.DepthEvent`.
+2) Decode exchange messages into `core/ws.TradeEvent`, `core/ws.TickerEvent`, `core/ws.DepthEvent`.
 3) Canonicalize symbols and ensure typed (not `interface{}`) payloads.
 
 ---

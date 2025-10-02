@@ -3,23 +3,23 @@ package ws
 import (
 	"strings"
 
-	"github.com/coachpo/meltica/core"
+	corews "github.com/coachpo/meltica/core/ws"
 )
 
-var mapper = core.NewChannelMapper(core.ChannelMappingConfig{
+var mapper = corews.NewChannelMapper(corews.ChannelMappingConfig{
 	ProtocolToProvider: map[string]string{
-		core.TopicTrade:     "trade",
-		core.TopicTicker:    "bookTicker",
-		core.TopicDepth:     "depth5",
-		core.TopicFullBook:  "depth",
-		core.TopicSnapshot5: "depth5",
+		corews.TopicTrade:     "trade",
+		corews.TopicTicker:    "bookTicker",
+		corews.TopicDepth:     "depth5",
+		corews.TopicFullBook:  "depth",
+		corews.TopicSnapshot5: "depth5",
 	},
 	AdditionalProviderMappings: map[string]string{
-		"trade":       core.TopicTrade,
-		"bookTicker":  core.TopicTicker,
-		"depth5":      core.TopicDepth,
-		"depth":       core.TopicFullBook,
-		"depthUpdate": core.TopicDepth,
+		"trade":       corews.TopicTrade,
+		"bookTicker":  corews.TopicTicker,
+		"depth5":      corews.TopicDepth,
+		"depth":       corews.TopicFullBook,
+		"depthUpdate": corews.TopicDepth,
 	},
 })
 
@@ -36,12 +36,12 @@ func topicFromEvent(event, instrument string) string {
 		return protocolTopic
 	}
 	switch protocolTopic {
-	case core.TopicTrade:
-		return core.TradeTopic(instrument)
-	case core.TopicTicker:
-		return core.TickerTopic(instrument)
-	case core.TopicDepth, core.TopicFullBook:
-		return core.DepthTopic(instrument)
+	case corews.TopicTrade:
+		return corews.TradeTopic(instrument)
+	case corews.TopicTicker:
+		return corews.TickerTopic(instrument)
+	case corews.TopicDepth, corews.TopicFullBook:
+		return corews.DepthTopic(instrument)
 	default:
 		if protocolTopic == "" {
 			return event + ":" + instrument

@@ -3,7 +3,7 @@ package ws
 import (
 	"strings"
 
-	"github.com/coachpo/meltica/core"
+	corews "github.com/coachpo/meltica/core/ws"
 )
 
 // channelMapper provides bidirectional conversion between protocol topics and Kraken channels.
@@ -15,11 +15,11 @@ type channelMapper struct {
 // newChannelMapper creates a mapper with bidirectional conversion tables.
 func newChannelMapper() *channelMapper {
 	protocolToKraken := map[string]string{
-		core.TopicTrade:    "trade",
-		core.TopicTicker:   "ticker",
-		core.TopicDepth:    "book",
-		core.TopicFullBook: "level3",  // Level 3 order book (individual orders)
-		core.TopicBalance:  "balance", // for private streams
+		corews.TopicTrade:    "trade",
+		corews.TopicTicker:   "ticker",
+		corews.TopicDepth:    "book",
+		corews.TopicFullBook: "level3",  // Level 3 order book (individual orders)
+		corews.TopicBalance:  "balance", // for private streams
 	}
 
 	krakenToProtocol := make(map[string]string, len(protocolToKraken))
@@ -27,10 +27,10 @@ func newChannelMapper() *channelMapper {
 		krakenToProtocol[kraken] = protocol
 	}
 
-	krakenToProtocol["spread"] = core.TopicDepth
-	krakenToProtocol["ownTrades"] = core.TopicOrder
-	krakenToProtocol["openOrders"] = core.TopicOrder
-	krakenToProtocol["level3"] = core.TopicFullBook
+	krakenToProtocol["spread"] = corews.TopicDepth
+	krakenToProtocol["ownTrades"] = corews.TopicOrder
+	krakenToProtocol["openOrders"] = corews.TopicOrder
+	krakenToProtocol["level3"] = corews.TopicFullBook
 
 	return &channelMapper{
 		protocolToKraken: protocolToKraken,
@@ -83,18 +83,18 @@ func topicFromChannelName(name, symbol string) string {
 	}
 
 	switch protocolTopic {
-	case core.TopicTrade:
-		return core.TradeTopic(symbol)
-	case core.TopicTicker:
-		return core.TickerTopic(symbol)
-	case core.TopicDepth:
-		return core.DepthTopic(symbol)
-	case core.TopicOrder:
-		return core.OrderTopic(symbol)
-	case core.TopicFullBook:
-		return core.BookTopic(symbol)
-	case core.TopicBalance:
-		return core.BalanceTopic()
+	case corews.TopicTrade:
+		return corews.TradeTopic(symbol)
+	case corews.TopicTicker:
+		return corews.TickerTopic(symbol)
+	case corews.TopicDepth:
+		return corews.DepthTopic(symbol)
+	case corews.TopicOrder:
+		return corews.OrderTopic(symbol)
+	case corews.TopicFullBook:
+		return corews.BookTopic(symbol)
+	case corews.TopicBalance:
+		return corews.BalanceTopic()
 	default:
 		return protocolTopic + ":" + symbol
 	}

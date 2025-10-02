@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/coachpo/meltica/core"
+	corews "github.com/coachpo/meltica/core/ws"
 )
 
 type binanceEnvelope struct {
@@ -63,7 +64,7 @@ func (w *WS) parseTradeEvent(msg *core.Message, payload []byte, symbol, stream s
 	msg.Event = "trade"
 	price, _ := parseDecimalToRat(rec.Price)
 	qty, _ := parseDecimalToRat(rec.Qty)
-	msg.Parsed = &core.TradeEvent{Symbol: sym, Price: price, Quantity: qty, Time: time.UnixMilli(rec.Time)}
+	msg.Parsed = &corews.TradeEvent{Symbol: sym, Price: price, Quantity: qty, Time: time.UnixMilli(rec.Time)}
 	return nil
 }
 
@@ -91,7 +92,7 @@ func (w *WS) parseBookTicker(msg *core.Message, payload []byte, symbol, stream s
 	msg.Event = "ticker"
 	bid, _ := parseDecimalToRat(rec.Bid)
 	ask, _ := parseDecimalToRat(rec.Ask)
-	msg.Parsed = &core.TickerEvent{Symbol: sym, Bid: bid, Ask: ask, Time: time.UnixMilli(rec.Time)}
+	msg.Parsed = &corews.TickerEvent{Symbol: sym, Bid: bid, Ask: ask, Time: time.UnixMilli(rec.Time)}
 	return nil
 }
 
@@ -117,7 +118,7 @@ func (w *WS) parseDepthUpdate(msg *core.Message, payload []byte, symbol, stream 
 		msg.Topic = stream
 	}
 	msg.Event = "depth"
-	de := core.DepthEvent{Symbol: sym, Time: time.UnixMilli(rec.Time)}
+	de := corews.DepthEvent{Symbol: sym, Time: time.UnixMilli(rec.Time)}
 	de.Bids = append(de.Bids, depthLevelsFromPairs(rec.Bids)...)
 	de.Asks = append(de.Asks, depthLevelsFromPairs(rec.Asks)...)
 	msg.Parsed = &de
@@ -142,15 +143,15 @@ func (w *WS) parseByHeuristics(msg *core.Message, payload []byte, symbol, stream
 	return nil
 }
 
-func depthLevelsFromPairs(pairs [][]string) []core.DepthLevel {
-	levels := make([]core.DepthLevel, 0, len(pairs))
+func depthLevelsFromPairs(pairs [][]string) []corews.DepthLevel {
+	levels := make([]corews.DepthLevel, 0, len(pairs))
 	for _, pair := range pairs {
 		if len(pair) < 2 {
 			continue
 		}
 		price, _ := parseDecimalToRat(pair[0])
 		qty, _ := parseDecimalToRat(pair[1])
-		levels = append(levels, core.DepthLevel{Price: price, Qty: qty})
+		levels = append(levels, corews.DepthLevel{Price: price, Qty: qty})
 	}
 	return levels
 }

@@ -5,7 +5,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/coachpo/meltica/core"
+	corews "github.com/coachpo/meltica/core/ws"
 )
 
 func (w *WS) sendSubscriptions(conn *websocket.Conn, topics []string, private bool) error {
@@ -22,7 +22,7 @@ func (w *WS) sendSubscriptions(conn *websocket.Conn, topics []string, private bo
 		if providerChannel == "user" && !private {
 			continue
 		}
-		if channel == core.TopicBalance && private {
+		if channel == corews.TopicBalance && private {
 			channels[providerChannel] = append(channels[providerChannel], "*")
 			continue
 		}

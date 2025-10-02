@@ -3,29 +3,29 @@ package ws
 import (
 	"strings"
 
-	"github.com/coachpo/meltica/core"
+	corews "github.com/coachpo/meltica/core/ws"
 )
 
-var mapper = core.NewChannelMapper(core.ChannelMappingConfig{
+var mapper = corews.NewChannelMapper(corews.ChannelMappingConfig{
 	ProtocolToProvider: map[string]string{
-		core.TopicTrade:     "trades",
-		core.TopicTicker:    "tickers",
-		core.TopicDepth:     "books5",
-		core.TopicFullBook:  "books",
-		core.TopicSnapshot5: "books5",
-		core.TopicBalance:   "account",
-		core.TopicOrder:     "orders",
+		corews.TopicTrade:     "trades",
+		corews.TopicTicker:    "tickers",
+		corews.TopicDepth:     "books5",
+		corews.TopicFullBook:  "books",
+		corews.TopicSnapshot5: "books5",
+		corews.TopicBalance:   "account",
+		corews.TopicOrder:     "orders",
 	},
 	AdditionalProviderMappings: map[string]string{
-		"trades":         core.TopicTrade,
-		"tickers":        core.TopicTicker,
-		"books5":         core.TopicDepth,
-		"books":          core.TopicFullBook,
-		"books1":         core.TopicDepth,
-		"books-l2-tbt":   core.TopicDepth,
-		"books50-l2-tbt": core.TopicDepth,
-		"account":        core.TopicBalance,
-		"orders":         core.TopicOrder,
+		"trades":         corews.TopicTrade,
+		"tickers":        corews.TopicTicker,
+		"books5":         corews.TopicDepth,
+		"books":          corews.TopicFullBook,
+		"books1":         corews.TopicDepth,
+		"books-l2-tbt":   corews.TopicDepth,
+		"books50-l2-tbt": corews.TopicDepth,
+		"account":        corews.TopicBalance,
+		"orders":         corews.TopicOrder,
 	},
 })
 
@@ -36,18 +36,18 @@ func topicFromChannel(channel, instrument string) string {
 	}
 
 	switch protocolTopic {
-	case core.TopicTrade:
-		return core.TradeTopic(instrument)
-	case core.TopicTicker:
-		return core.TickerTopic(instrument)
-	case core.TopicDepth:
-		return core.DepthTopic(instrument)
-	case core.TopicFullBook:
-		return core.BookTopic(instrument)
-	case core.TopicOrder:
-		return core.OrderTopic(instrument)
-	case core.TopicBalance:
-		return core.BalanceTopic()
+	case corews.TopicTrade:
+		return corews.TradeTopic(instrument)
+	case corews.TopicTicker:
+		return corews.TickerTopic(instrument)
+	case corews.TopicDepth:
+		return corews.DepthTopic(instrument)
+	case corews.TopicFullBook:
+		return corews.BookTopic(instrument)
+	case corews.TopicOrder:
+		return corews.OrderTopic(instrument)
+	case corews.TopicBalance:
+		return corews.BalanceTopic()
 	default:
 		if protocolTopic == "" {
 			return instrument

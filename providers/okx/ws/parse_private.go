@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/coachpo/meltica/core"
+	corews "github.com/coachpo/meltica/core/ws"
 )
 
 type okxPrivateEnvelope struct {
@@ -54,9 +55,9 @@ func (w *WS) parseOrderUpdate(msg *core.Message, payload []json.RawMessage) erro
 	}
 	filled, _ := parseDecimalToRat(rec.AccFillSz)
 	avg, _ := parseDecimalToRat(rec.AvgPx)
-	msg.Topic = core.OrderTopic(rec.InstID)
+	msg.Topic = corews.OrderTopic(rec.InstID)
 	msg.Event = "order"
-	msg.Parsed = &core.OrderEvent{
+	msg.Parsed = &corews.OrderEvent{
 		Symbol:    rec.InstID,
 		OrderID:   rec.OrdID,
 		Status:    mapOKXStatus(rec.State),
@@ -68,7 +69,7 @@ func (w *WS) parseOrderUpdate(msg *core.Message, payload []json.RawMessage) erro
 }
 
 func (w *WS) parseBalanceUpdate(msg *core.Message, payload []json.RawMessage) error {
-	var balances []core.Balance
+	var balances []corews.Balance
 	for _, raw := range payload {
 		var entry struct {
 			BalData []struct {
@@ -81,14 +82,14 @@ func (w *WS) parseBalanceUpdate(msg *core.Message, payload []json.RawMessage) er
 		}
 		for _, bal := range entry.BalData {
 			amt, _ := parseDecimalToRat(bal.CashBal)
-			balances = append(balances, core.Balance{Asset: bal.Ccy, Available: amt, Time: time.Now()})
+			balances = append(balances, corews.Balance{Asset: bal.Ccy, Available: amt, Time: time.Now()})
 		}
 	}
 	if len(balances) == 0 {
 		return nil
 	}
-	msg.Topic = core.BalanceTopic()
+	msg.Topic = corews.BalanceTopic()
 	msg.Event = "balance"
-	msg.Parsed = &core.BalanceEvent{Balances: balances}
+	msg.Parsed = &corews.BalanceEvent{Balances: balances}
 	return nil
 }

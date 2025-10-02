@@ -1,8 +1,6 @@
-package core
+package ws
 
-import (
-	"strings"
-)
+import "strings"
 
 // ChannelMapper provides bidirectional conversion between protocol topics and provider-specific channels.
 // It enforces a consistent mapping pattern across all providers while allowing provider-specific customization.
@@ -14,11 +12,10 @@ type ChannelMapper struct {
 // ChannelMappingConfig defines the configuration for creating a channel mapper.
 // Providers should define their specific mappings using this structure.
 type ChannelMappingConfig struct {
-	// ProtocolToProvider defines the primary mappings from protocol topics to provider channels
+	// ProtocolToProvider defines the primary mappings from protocol topics to provider channels.
 	ProtocolToProvider map[string]string
 
-	// AdditionalProviderMappings defines additional provider-specific channel mappings
-	// that should map back to protocol topics (e.g., aliases, event types)
+	// AdditionalProviderMappings defines provider-specific aliases that map back to protocol topics.
 	AdditionalProviderMappings map[string]string
 }
 
@@ -32,13 +29,13 @@ func NewChannelMapper(config ChannelMappingConfig) *ChannelMapper {
 		config.AdditionalProviderMappings = make(map[string]string)
 	}
 
-	// Start with additional mappings (these take precedence for reverse mapping)
+	// Start with additional mappings (these take precedence for reverse mapping).
 	providerToProtocol := make(map[string]string)
 	for provider, protocol := range config.AdditionalProviderMappings {
 		providerToProtocol[provider] = protocol
 	}
 
-	// Add reverse mappings from ProtocolToProvider (only if not already set)
+	// Add reverse mappings from ProtocolToProvider (only if not already set).
 	for protocol, provider := range config.ProtocolToProvider {
 		if _, exists := providerToProtocol[provider]; !exists {
 			providerToProtocol[provider] = protocol
@@ -57,7 +54,7 @@ func (m *ChannelMapper) ToProviderChannel(protocolTopic string) string {
 	if channel, ok := m.protocolToProvider[protocolTopic]; ok {
 		return channel
 	}
-	return strings.ToLower(protocolTopic) // fallback to lowercase
+	return strings.ToLower(protocolTopic)
 }
 
 // ToProtocolTopic converts a provider-specific channel name to a protocol topic.
@@ -66,7 +63,7 @@ func (m *ChannelMapper) ToProtocolTopic(providerChannel string) string {
 	if topic, ok := m.providerToProtocol[providerChannel]; ok {
 		return topic
 	}
-	return providerChannel // fallback to original
+	return providerChannel
 }
 
 // TopicFromChannelName constructs a complete topic string from a provider channel and symbol.
@@ -78,7 +75,6 @@ func (m *ChannelMapper) TopicFromChannelName(providerChannel, symbol string) str
 		return protocolTopic
 	}
 
-	// Use the appropriate topic constructor based on protocol topic
 	switch protocolTopic {
 	case TopicTrade:
 		return TradeTopic(symbol)
@@ -100,7 +96,6 @@ func (m *ChannelMapper) TopicFromChannelName(providerChannel, symbol string) str
 }
 
 // GetProtocolToProviderMappings returns a copy of the protocol-to-provider mappings.
-// This is useful for debugging or introspection.
 func (m *ChannelMapper) GetProtocolToProviderMappings() map[string]string {
 	result := make(map[string]string, len(m.protocolToProvider))
 	for k, v := range m.protocolToProvider {
@@ -110,7 +105,6 @@ func (m *ChannelMapper) GetProtocolToProviderMappings() map[string]string {
 }
 
 // GetProviderToProtocolMappings returns a copy of the provider-to-protocol mappings.
-// This is useful for debugging or introspection.
 func (m *ChannelMapper) GetProviderToProtocolMappings() map[string]string {
 	result := make(map[string]string, len(m.providerToProtocol))
 	for k, v := range m.providerToProtocol {

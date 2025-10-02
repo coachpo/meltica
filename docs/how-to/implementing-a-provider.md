@@ -35,8 +35,8 @@ This guide walks through the minimal files, API checkpoints, and validation step
 
 ## Websocket Decoding
 
-- Public channels must emit `core.TradeEvent`, `core.TickerEvent`, or `core.DepthEvent`
-- Private channels emit `core.OrderEvent` and `core.BalanceEvent`
+- Public channels must emit `core/ws.TradeEvent`, `core/ws.TickerEvent`, or `core/ws.DepthEvent`
+- Private channels emit `core/ws.OrderEvent` and `core/ws.BalanceEvent`
 - Attach raw payloads to `core.Message.Raw` and populate `core.Message.Parsed` with the strongly typed event
 - Apply canonical symbol conversion before emitting events
 

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/coachpo/meltica/core"
+	corews "github.com/coachpo/meltica/core/ws"
 	"github.com/gorilla/websocket"
 )
 
@@ -69,7 +70,7 @@ func (w *WS) SubscribePrivate(ctx context.Context, topics ...string) (core.Subsc
 				filled, _ := parseDecimalToRat(ou.O.Z)
 				avg, _ := parseDecimalToRat(ou.O.Ap)
 				msg.Event = "order"
-				msg.Parsed = &core.OrderEvent{
+				msg.Parsed = &corews.OrderEvent{
 					Symbol:    ou.O.S,
 					OrderID:   fmt.Sprintf("%d", ou.O.I),
 					Status:    mapBStatus(ou.O.X),
@@ -78,7 +79,7 @@ func (w *WS) SubscribePrivate(ctx context.Context, topics ...string) (core.Subsc
 					Time:      time.UnixMilli(ou.O.T),
 				}
 			} else if env.E == "outboundAccountPosition" || env.E == "balanceUpdate" {
-				var be core.BalanceEvent
+				var be corews.BalanceEvent
 				// outboundAccountPosition: array balances
 				var oap struct {
 					E int64 `json:"E"`
@@ -90,7 +91,7 @@ func (w *WS) SubscribePrivate(ctx context.Context, topics ...string) (core.Subsc
 				if json.Unmarshal(data, &oap) == nil && len(oap.B) > 0 {
 					for _, b := range oap.B {
 						amt, _ := parseDecimalToRat(b.F)
-						be.Balances = append(be.Balances, core.Balance{Asset: b.A, Available: amt, Time: time.UnixMilli(oap.E)})
+						be.Balances = append(be.Balances, corews.Balance{Asset: b.A, Available: amt, Time: time.UnixMilli(oap.E)})
 					}
 					msg.Event = "balance"
 					msg.Parsed = &be
@@ -102,7 +103,7 @@ func (w *WS) SubscribePrivate(ctx context.Context, topics ...string) (core.Subsc
 					}
 					if json.Unmarshal(data, &bu) == nil && bu.A != "" {
 						amt, _ := parseDecimalToRat(bu.D)
-						be.Balances = append(be.Balances, core.Balance{Asset: bu.A, Available: amt, Time: time.UnixMilli(bu.E)})
+						be.Balances = append(be.Balances, corews.Balance{Asset: bu.A, Available: amt, Time: time.UnixMilli(bu.E)})
 						msg.Event = "balance"
 						msg.Parsed = &be
 					}

@@ -14,6 +14,10 @@ This package provides a unified interface for cryptocurrency exchange operations
 - **Capability-based**: Providers declare their supported features via capability bitsets
 - **Event-driven**: Structured WebSocket events for real-time market data
 
+## Subpackages
+
+- `ws`: WebSocket domain helpers, including canonical topics, channel mappers, and normalized event types
+
 ## Core Types
 
 ### Markets
@@ -117,11 +121,12 @@ type DepthLevel struct {
 }
 ```
 
-### WebSocket Events
+### WebSocket Events (`core/ws`)
 
-The package defines normalized WebSocket events for real-time data:
+The `core/ws` subpackage defines normalized WebSocket events for real-time data:
 
 ```go
+// core/ws/events.go
 type TradeEvent struct {
     Symbol   string
     Price    *big.Rat

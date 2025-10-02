@@ -308,7 +308,7 @@ How to contribute and the exact path for adding a new exchange adapter.
 * **Do:**
 
   * Implement `ws.go` client with jittered backoff, heartbeats, multiplexed subscriptions, and resubscribe on reconnect.
-  * Decode to concrete `core.TradeEvent`, `core.TickerEvent`, `core.DepthEvent`; canonicalize symbols **before** emitting; attach raw JSON where supported.
+  * Decode to concrete `core/ws.TradeEvent`, `core/ws.TickerEvent`, `core/ws.DepthEvent`; canonicalize symbols **before** emitting; attach raw JSON where supported.
   * Track sequence numbers and log/report gaps.
 * **Validate:**
 
@@ -326,7 +326,7 @@ How to contribute and the exact path for adding a new exchange adapter.
 * **Do:**
 
   * Implement `ws_private.go` session/auth (listen keys or signed frames); keep‑alive/refresh.
-  * Decode to **concrete** `core.OrderEvent` / `core.BalanceEvent`; canonicalize symbols.
+  * Decode to **concrete** `core/ws.OrderEvent` / `core/ws.BalanceEvent`; canonicalize symbols.
   * Track last seq/timestamp; on reconnect, fetch deltas via REST where supported; dedupe.
 * **Validate:**
 

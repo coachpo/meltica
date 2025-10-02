@@ -1,33 +1,33 @@
 package ws
 
 import (
-	"github.com/coachpo/meltica/core"
+	corews "github.com/coachpo/meltica/core/ws"
 )
 
-var mapper = core.NewChannelMapper(core.ChannelMappingConfig{
+var mapper = corews.NewChannelMapper(corews.ChannelMappingConfig{
 	ProtocolToProvider: map[string]string{
-		core.TopicTrade:     "matches",
-		core.TopicTicker:    "ticker",
-		core.TopicDepth:     "level2",
-		core.TopicFullBook:  "level2",
-		core.TopicSnapshot5: "level2",
-		core.TopicBalance:   "user",
-		core.TopicOrder:     "user",
+		corews.TopicTrade:     "matches",
+		corews.TopicTicker:    "ticker",
+		corews.TopicDepth:     "level2",
+		corews.TopicFullBook:  "level2",
+		corews.TopicSnapshot5: "level2",
+		corews.TopicBalance:   "user",
+		corews.TopicOrder:     "user",
 	},
 	AdditionalProviderMappings: map[string]string{
-		"matches":  core.TopicTrade,
-		"ticker":   core.TopicTicker,
-		"level2":   core.TopicDepth,
-		"user":     core.TopicBalance,
-		"match":    core.TopicTrade,
-		"l2update": core.TopicDepth,
-		"snapshot": core.TopicDepth,
-		"received": core.TopicOrder,
-		"open":     core.TopicOrder,
-		"done":     core.TopicOrder,
-		"change":   core.TopicOrder,
-		"activate": core.TopicOrder,
-		"wallet":   core.TopicBalance,
-		"profile":  core.TopicBalance,
+		"matches":  corews.TopicTrade,
+		"ticker":   corews.TopicTicker,
+		"level2":   corews.TopicDepth,
+		"user":     corews.TopicBalance,
+		"match":    corews.TopicTrade,
+		"l2update": corews.TopicDepth,
+		"snapshot": corews.TopicDepth,
+		"received": corews.TopicOrder,
+		"open":     corews.TopicOrder,
+		"done":     corews.TopicOrder,
+		"change":   corews.TopicOrder,
+		"activate": corews.TopicOrder,
+		"wallet":   corews.TopicBalance,
+		"profile":  corews.TopicBalance,
 	},
 })

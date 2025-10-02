@@ -1,17 +1,14 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"math/big"
 	"os"
 	"os/signal"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -26,101 +23,153 @@ import (
 
 func main() {
 	var (
-		exchangeFlag    = flag.String("exchange", "binance", "Exchange to connect to (binance, okx, coinbase, kraken)")
-		symbolFlag      = flag.String("symbol", "BTC-USDT", "Trading symbol in canonical BASE-QUOTE form")
-		channelFlag     = flag.String("channel", "ticker", "Market data stream to subscribe to (ticker, trades, depth)")
-		interactiveFlag = flag.Bool("interactive", true, "Launch interactive guide to confirm exchange, symbol, and channel")
+		exchangeFlag = flag.String("exchange", "binance,okx,coinbase,kraken", "Comma-separated list of exchanges to connect to")
+		symbolFlag   = flag.String("symbol", "BTC-USDT,BTC-USD,ETH-USDT,ETH-USD", "Comma-separated list of trading symbols in BASE-QUOTE form")
+		channelFlag  = flag.String("channel", "ticker,trades,depth", "Comma-separated list of market data streams to subscribe to")
+		durationFlag = flag.Duration("duration", 5*time.Second, "Streaming duration for each combination")
 	)
-
-	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), "Usage: market-stream [flags]\n")
-		fmt.Fprintf(flag.CommandLine.Output(), "Continuously stream public market data via meltica.\n\n")
-		flag.PrintDefaults()
-	}
 
 	flag.Parse()
 
-	interactive := *interactiveFlag
-	if stat, err := os.Stdin.Stat(); err == nil {
-		if stat.Mode()&os.ModeCharDevice == 0 {
-			interactive = false
+	exchanges := normalizeList(*exchangeFlag, strings.ToLower)
+	if len(exchanges) == 0 {
+		fatal("at least one exchange is required")
+	}
+
+	channels := normalizeList(*channelFlag, normalizeChannel)
+	if len(channels) == 0 {
+		fatal("at least one channel is required")
+	}
+
+	rawSymbols := normalizeList(*symbolFlag, func(s string) string {
+		return strings.TrimSpace(s)
+	})
+	var symbols []string
+	for _, sym := range rawSymbols {
+		normalized := normalizeSymbol(sym)
+		if normalized == "" {
+			fmt.Fprintf(os.Stderr, "warning: skipping invalid symbol %q\n", sym)
+			continue
 		}
+		symbols = append(symbols, normalized)
+	}
+	if len(symbols) == 0 {
+		fatal("at least one valid symbol is required")
 	}
 
-	exchangeInput := strings.TrimSpace(*exchangeFlag)
-	symbolInput := strings.TrimSpace(*symbolFlag)
-	channelInput := strings.TrimSpace(*channelFlag)
-
-	if interactive {
-		var err error
-		exchangeInput, symbolInput, channelInput, err = runInteractiveGuide(exchangeInput, symbolInput, channelInput)
-		if err != nil {
-			fatal("interactive guide: %v", err)
-		}
-	}
-
-	exchange := strings.ToLower(strings.TrimSpace(exchangeInput))
-	if exchange == "" {
-		fatal("exchange is required")
-	}
-
-	symbol := normalizeSymbol(symbolInput)
-	if symbol == "" {
-		fatal("symbol must be in BASE-QUOTE form, e.g. BTC-USDT")
-	}
-
-	channel := strings.TrimSpace(channelInput)
-	if channel == "" {
-		fatal("channel is required")
+	duration := *durationFlag
+	if duration <= 0 {
+		fatal("duration must be positive")
 	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
+	for _, exchange := range exchanges {
+		for _, symbol := range symbols {
+			for _, channel := range channels {
+				if ctx.Err() != nil {
+					return
+				}
+
+				fmt.Printf("\n=== exchange=%s symbol=%s channel=%s ===\n", exchange, symbol, channel)
+				if err := streamCombination(ctx, exchange, symbol, channel, duration); err != nil {
+					if errors.Is(err, context.Canceled) {
+						return
+					}
+					fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				}
+			}
+		}
+	}
+}
+
+func streamCombination(parent context.Context, exchange, symbol, channel string, duration time.Duration) error {
+	ctx, cancel := context.WithCancel(parent)
+	defer cancel()
+
 	provider, err := core.New(exchange, nil)
 	if err != nil {
-		fatal("create provider: %v", err)
+		return fmt.Errorf("create provider %s: %w", exchange, err)
 	}
 	defer provider.Close()
 
 	if !provider.Capabilities().Has(core.CapabilityWebsocketPublic) {
-		fatal("provider %s does not support public websocket market data", provider.Name())
+		return fmt.Errorf("provider %s does not support public websocket market data", provider.Name())
 	}
 
 	topic, err := resolveTopic(provider.Name(), channel, symbol)
 	if err != nil {
-		fatal("%v", err)
+		return err
 	}
 
 	sub, err := provider.WS().SubscribePublic(ctx, topic)
 	if err != nil {
-		fatal("subscribe: %v", err)
+		return fmt.Errorf("subscribe: %w", err)
 	}
 	defer sub.Close()
 
 	fmt.Printf("Streaming %s from %s (%s)\n", topic, provider.Name(), strings.ToUpper(exchange))
 
+	timer := time.NewTimer(duration)
+	defer timer.Stop()
+
 	for {
 		select {
-		case <-ctx.Done():
-			return
+		case <-parent.Done():
+			return parent.Err()
+		case <-timer.C:
+			fmt.Printf("Completed after %s\n", duration)
+			return nil
 		case err := <-sub.Err():
 			if err != nil {
-				fatal("stream error: %v", err)
+				return fmt.Errorf("stream error: %w", err)
 			}
-			return
+			return nil
 		case msg, ok := <-sub.C():
 			if !ok {
-				return
+				return nil
 			}
 			if out, ok := formatEventMessage(msg); ok {
 				fmt.Println(out)
 				continue
 			}
 			if err := handleMetaMessage(msg); err != nil {
-				fatal("%v", err)
+				return err
 			}
 		}
+	}
+}
+
+func normalizeList(raw string, norm func(string) string) []string {
+	parts := strings.Split(raw, ",")
+	result := make([]string, 0, len(parts))
+	seen := make(map[string]struct{})
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed == "" {
+			continue
+		}
+		normalized := norm(trimmed)
+		if normalized == "" {
+			continue
+		}
+		if _, exists := seen[normalized]; exists {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		result = append(result, normalized)
+	}
+	return result
+}
+
+func normalizeChannel(raw string) string {
+	c := strings.ToLower(strings.TrimSpace(raw))
+	switch c {
+	case "trades":
+		return "trade"
+	default:
+		return c
 	}
 }
 
@@ -185,124 +234,6 @@ func resolveTopic(providerName, channel, symbol string) (string, error) {
 	default:
 		return ch + ":" + symbol, nil
 	}
-}
-
-func runInteractiveGuide(exchange, symbol, channel string) (string, string, string, error) {
-	reader := bufio.NewReader(os.Stdin)
-
-	fmt.Println("Welcome to the meltica market-stream interactive guide.")
-	fmt.Println("Follow the prompts to choose an exchange, trading symbol, and channel.")
-	fmt.Println()
-
-	exchanges := []string{"binance", "okx", "coinbase", "kraken"}
-	channels := []string{"ticker", "trades", "depth"}
-
-	exchange = promptSelection(reader, "exchange", exchanges, exchange)
-	fmt.Println()
-
-	symbol = promptSymbol(reader, symbol)
-	fmt.Println()
-
-	channel = promptSelection(reader, "channel", channels, channel)
-	fmt.Println()
-
-	fmt.Printf("Using exchange=%s symbol=%s channel=%s\n", strings.ToLower(strings.TrimSpace(exchange)), normalizeSymbol(symbol), strings.TrimSpace(channel))
-	fmt.Println()
-
-	return exchange, symbol, channel, nil
-}
-
-func promptSelection(reader *bufio.Reader, name string, options []string, current string) string {
-	current = strings.TrimSpace(current)
-	if current == "" && len(options) > 0 {
-		current = options[0]
-	}
-
-	for {
-		fmt.Printf("Select %s:\n", name)
-		fmt.Println("  Type the number or name. Press Enter to accept the default.")
-		for i, opt := range options {
-			fmt.Printf("  %d) %s\n", i+1, opt)
-		}
-		prompt := fmt.Sprintf("Enter %s", name)
-		if len(options) > 0 {
-			prompt = fmt.Sprintf("Enter %s (1-%d)", name, len(options))
-		}
-		if current != "" {
-			fmt.Printf("%s [%s]: ", prompt, current)
-		} else {
-			fmt.Printf("%s: ", prompt)
-		}
-
-		line, err := readLine(reader)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "warning: unable to read %s: %v\n", name, err)
-			return current
-		}
-		input := strings.TrimSpace(line)
-
-		if input == "" {
-			if current != "" {
-				return current
-			}
-			continue
-		}
-
-		if idx, err := strconv.Atoi(input); err == nil {
-			if idx >= 1 && idx <= len(options) {
-				return options[idx-1]
-			}
-		}
-
-		for _, opt := range options {
-			if strings.EqualFold(opt, input) {
-				return opt
-			}
-		}
-
-		return input
-	}
-}
-
-func promptSymbol(reader *bufio.Reader, current string) string {
-	normalized := normalizeSymbol(current)
-	if normalized != "" {
-		current = normalized
-	}
-	if current == "" {
-		current = "BTC-USDT"
-	}
-
-	for {
-		fmt.Printf("Enter trading symbol in BASE-QUOTE form (e.g. BTC-USDT) [%s]: ", current)
-		line, err := readLine(reader)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "warning: unable to read symbol: %v\n", err)
-			return current
-		}
-		input := strings.TrimSpace(line)
-		if input == "" {
-			return current
-		}
-
-		normalized = normalizeSymbol(input)
-		if normalized == "" {
-			fmt.Println("Symbol must be in BASE-QUOTE form like BTC-USDT. Please try again.")
-			continue
-		}
-		return normalized
-	}
-}
-
-func readLine(reader *bufio.Reader) (string, error) {
-	line, err := reader.ReadString('\n')
-	if err != nil {
-		if errors.Is(err, io.EOF) {
-			return line, nil
-		}
-		return line, err
-	}
-	return line, nil
 }
 
 func normalizeSymbol(raw string) string {

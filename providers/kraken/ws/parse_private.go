@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/coachpo/meltica/core"
+	corews "github.com/coachpo/meltica/core/ws"
 )
 
 func (w *WS) parsePrivate(msg *core.Message, data []byte, topics []string) error {
@@ -52,7 +53,7 @@ func (w *WS) parseOwnTrades(msg *core.Message, payload any) error {
 		if evt == nil {
 			continue
 		}
-		msg.Topic = core.OrderTopic(evt.Symbol)
+		msg.Topic = corews.OrderTopic(evt.Symbol)
 		msg.Event = "order"
 		msg.Parsed = evt
 	}
@@ -73,19 +74,19 @@ func (w *WS) parseOpenOrders(msg *core.Message, payload any) error {
 		if evt == nil {
 			continue
 		}
-		msg.Topic = core.OrderTopic(evt.Symbol)
+		msg.Topic = corews.OrderTopic(evt.Symbol)
 		msg.Event = "order"
 		msg.Parsed = evt
 	}
 	return nil
 }
 
-func (w *WS) orderEventFromTrade(id string, rec map[string]any) *core.OrderEvent {
+func (w *WS) orderEventFromTrade(id string, rec map[string]any) *corews.OrderEvent {
 	canon := w.p.MapNativeToCanon(strings.ToUpper(fmt.Sprint(rec["pair"])))
 	filled := parseDecimalStr(fmt.Sprint(rec["vol"]))
 	avg := parseDecimalStr(fmt.Sprint(rec["price"]))
 	status := mapStatus(fmt.Sprint(rec["status"]))
-	return &core.OrderEvent{
+	return &corews.OrderEvent{
 		Symbol:    canon,
 		OrderID:   id,
 		Status:    status,
@@ -95,7 +96,7 @@ func (w *WS) orderEventFromTrade(id string, rec map[string]any) *core.OrderEvent
 	}
 }
 
-func (w *WS) orderEventFromOpenOrder(id string, rec map[string]any) *core.OrderEvent {
+func (w *WS) orderEventFromOpenOrder(id string, rec map[string]any) *corews.OrderEvent {
 	descr, _ := rec["descr"].(map[string]any)
 	pair := ""
 	if descr != nil {
@@ -106,7 +107,7 @@ func (w *WS) orderEventFromOpenOrder(id string, rec map[string]any) *core.OrderE
 	priceMap, _ := rec["price"].(map[string]any)
 	avg := parseDecimalStr(fmt.Sprint(priceMap["last"]))
 	filled := parseDecimalStr(fmt.Sprint(rec["vol_exec"]))
-	return &core.OrderEvent{
+	return &corews.OrderEvent{
 		Symbol:    canon,
 		OrderID:   id,
 		Status:    status,

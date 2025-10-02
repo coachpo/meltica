@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/coachpo/meltica/core"
+	corews "github.com/coachpo/meltica/core/ws"
 )
 
 func (w *WS) parseMessage(msg *core.Message, data []byte, requested []string) error {
@@ -78,7 +79,7 @@ func (w *WS) parseV2Channel(msg *core.Message, channel string, env map[string]an
 		}
 		return w.parseBook(msg, payload, canon)
 	case "level3":
-		msg.Topic = core.BookTopic(canon)
+		msg.Topic = corews.BookTopic(canon)
 		return w.parseLevel3(msg, data, canon)
 	default:
 		return nil
@@ -90,7 +91,7 @@ func (w *WS) parseTrades(msg *core.Message, payload any, symbol string) error {
 	if !ok || len(rows) == 0 {
 		return nil
 	}
-	var events []*core.TradeEvent
+	var events []*corews.TradeEvent
 	for _, row := range rows {
 		rec, ok := row.(map[string]any)
 		if !ok {
@@ -108,7 +109,7 @@ func (w *WS) parseTrades(msg *core.Message, payload any, symbol string) error {
 		if when.IsZero() {
 			when = time.Now().UTC()
 		}
-		events = append(events, &core.TradeEvent{Symbol: sym, Price: price, Quantity: qty, Time: when})
+		events = append(events, &corews.TradeEvent{Symbol: sym, Price: price, Quantity: qty, Time: when})
 	}
 	if len(events) > 0 {
 		msg.Event = "trade"
@@ -125,7 +126,7 @@ func (w *WS) parseTicker(msg *core.Message, payload any, symbol string) error {
 	bid := parseDecimalStr(valueString(firstPresent(row, "bid", "best_bid")))
 	ask := parseDecimalStr(valueString(firstPresent(row, "ask", "best_ask")))
 	msg.Event = "ticker"
-	msg.Parsed = &core.TickerEvent{Symbol: symbol, Bid: bid, Ask: ask, Time: time.Now().UTC()}
+	msg.Parsed = &corews.TickerEvent{Symbol: symbol, Bid: bid, Ask: ask, Time: time.Now().UTC()}
 	return nil
 }
 
@@ -134,7 +135,7 @@ func (w *WS) parseBook(msg *core.Message, payload any, symbol string) error {
 	if !ok {
 		return nil
 	}
-	de := core.DepthEvent{Symbol: symbol, Time: time.Now().UTC()}
+	de := corews.DepthEvent{Symbol: symbol, Time: time.Now().UTC()}
 	if rawBids, ok := row["bids"]; ok {
 		appendDepthLevels(&de.Bids, rawBids)
 	}
@@ -156,7 +157,7 @@ func (w *WS) parseLevel3(msg *core.Message, payload any, symbol string) error {
 	if !ok {
 		return nil
 	}
-	de := core.DepthEvent{Symbol: symbol, Time: time.Now().UTC()}
+	de := corews.DepthEvent{Symbol: symbol, Time: time.Now().UTC()}
 	if rawBids, ok := rec["bids"]; ok {
 		appendDepthLevels(&de.Bids, rawBids)
 	}
@@ -170,7 +171,7 @@ func (w *WS) parseLevel3(msg *core.Message, payload any, symbol string) error {
 				if !ok {
 					continue
 				}
-				lvl := core.DepthLevel{
+				lvl := corews.DepthLevel{
 					Price: parseDecimalStr(valueString(firstPresent(ord, "price", "px"))),
 					Qty:   parseDecimalStr(valueString(firstPresent(ord, "qty", "quantity", "volume", "size"))),
 				}

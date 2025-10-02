@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/coachpo/meltica/core"
+	corews "github.com/coachpo/meltica/core/ws"
 )
 
 type okxPublicEnvelope struct {
@@ -66,7 +67,7 @@ func (w *WS) parseTradeSnapshot(msg *core.Message, payload []json.RawMessage, in
 		when = time.Now()
 	}
 	msg.Event = "trade"
-	msg.Parsed = &core.TradeEvent{Symbol: instrument, Price: price, Quantity: qty, Time: when}
+	msg.Parsed = &corews.TradeEvent{Symbol: instrument, Price: price, Quantity: qty, Time: when}
 	return nil
 }
 
@@ -89,7 +90,7 @@ func (w *WS) parseTickerSnapshot(msg *core.Message, payload []json.RawMessage, i
 		when = time.Now()
 	}
 	msg.Event = "ticker"
-	msg.Parsed = &core.TickerEvent{Symbol: instrument, Bid: bid, Ask: ask, Time: when}
+	msg.Parsed = &corews.TickerEvent{Symbol: instrument, Bid: bid, Ask: ask, Time: when}
 	return nil
 }
 
@@ -105,7 +106,7 @@ func (w *WS) parseBookSnapshot(msg *core.Message, payload []json.RawMessage, ins
 	if err := json.Unmarshal(payload[len(payload)-1], &rec); err != nil {
 		return err
 	}
-	de := core.DepthEvent{Symbol: instrument, Time: parseMillis(rec.Ts)}
+	de := corews.DepthEvent{Symbol: instrument, Time: parseMillis(rec.Ts)}
 	de.Bids = append(de.Bids, depthLevelsFromPairs(rec.Bids)...)
 	de.Asks = append(de.Asks, depthLevelsFromPairs(rec.Asks)...)
 	msg.Event = "depth"
