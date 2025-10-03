@@ -37,11 +37,10 @@ var mapper = corews.NewChannelMapper(corews.ChannelMappingConfig{
 
 // parseTopic splits a topic "channel:instrument" into channel and instrument parts.
 func parseTopic(topic string) (channel, instrument string) {
-	parts := strings.Split(topic, ":")
-	if len(parts) != 2 {
-		return "", ""
+	if idx := strings.IndexByte(topic, ':'); idx > 0 {
+		return topic[:idx], topic[idx+1:]
 	}
-	return parts[0], parts[1]
+	return topic, ""
 }
 
 // normalizePublicChannel maps a protocol topic to Kraken's channel naming.

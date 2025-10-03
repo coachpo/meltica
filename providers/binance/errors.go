@@ -37,6 +37,3 @@ func mapHTTPError(status int, body []byte) error {
 }
 
 func jsonInt(i int) string { return fmt.Sprintf("%d", i) }
-
-// TestOnly_MapHTTPError exposes mapping for unit tests
-func TestOnly_MapHTTPError(status int, body []byte) error { return mapHTTPError(status, body) }
