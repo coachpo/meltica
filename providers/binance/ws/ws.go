@@ -63,7 +63,7 @@ func newWSSub(conn *websocket.Conn) *wsSub {
 	}
 }
 
-func (w *WS) SubscribePublic(ctx context.Context, topics ...core.Topic) (core.Subscription, error) {
+func (w *WS) SubscribePublic(ctx context.Context, topics ...string) (core.Subscription, error) {
 	if len(topics) == 0 {
 		return nil, fmt.Errorf("no topics provided")
 	}
@@ -99,13 +99,13 @@ func (w *WS) WSCanonicalSymbol(native string) string {
 	panic(fmt.Errorf("binance ws: unsupported native symbol %s", native))
 }
 
-func (w *WS) buildStreams(topics []core.Topic) []string {
+func (w *WS) buildStreams(topics []string) []string {
 	streams := make([]string, 0, len(topics))
 	for _, topic := range topics {
-		channel, instrument := corews.ParseTopic(string(topic))
+		channel, instrument := corews.ParseTopic(topic)
 		providerChannel := mapper.ToProviderChannel(channel)
 		if instrument == "" {
-			streams = append(streams, string(topic))
+			streams = append(streams, topic)
 			continue
 		}
 		if providerChannel == "" {

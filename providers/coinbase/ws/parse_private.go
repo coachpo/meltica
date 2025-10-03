@@ -17,16 +17,16 @@ func (w *WS) parsePrivateMessage(msg *core.Message, payload []byte) error {
 	typeVal := fmt.Sprint(env["type"])
 	switch typeVal {
 	case "subscriptions", "heartbeat", "error":
-		msg.Topic = core.Topic(typeVal)
-		msg.Event = core.Event(typeVal)
+		msg.Topic = typeVal
+		msg.Event = typeVal
 		return nil
 	case "received", "open", "done", "change", "activate":
 		return w.parseOrderEvent(msg, typeVal, env)
 	case "wallet", "profile":
 		return w.parseBalance(msg, typeVal, env)
 	default:
-		msg.Topic = core.Topic(typeVal)
-		msg.Event = core.Event(typeVal)
+		msg.Topic = typeVal
+		msg.Event = typeVal
 		return nil
 	}
 }
@@ -38,7 +38,7 @@ func (w *WS) parseOrderEvent(msg *core.Message, event string, env map[string]any
 	filled := parseDecimal(fmt.Sprint(env["filled_size"]))
 	avg := parseDecimal(fmt.Sprint(env["price"]))
 	msg.Topic = topicFromProviderName(event, symbol)
-	msg.Event = corews.EventOrderUpdate
+	msg.Event = corews.TopicUserOrder
 	msg.Parsed = &corews.OrderEvent{Symbol: symbol, OrderID: id, Status: status, FilledQty: filled, AvgPrice: avg, Time: parseTime(fmt.Sprint(env["time"]))}
 	return nil
 }
@@ -53,7 +53,7 @@ func (w *WS) parseBalance(msg *core.Message, event string, env map[string]any) e
 		balances = append(balances, corews.Balance{Asset: asset, Available: free, Time: parseTime(fmt.Sprint(env["time"]))})
 	}
 	msg.Topic = topicFromProviderName(event, "")
-	msg.Event = corews.EventBalanceUpdate
+	msg.Event = corews.TopicUserBalance
 	msg.Parsed = &corews.BalanceEvent{Balances: balances}
 	return nil
 }

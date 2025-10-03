@@ -18,10 +18,10 @@ func (w *WS) parsePublicMessage(msg *core.Message, payload []byte) error {
 	typeVal := fmt.Sprint(env["type"])
 	switch typeVal {
 	case "subscriptions", "heartbeat", "error":
-		msg.Topic = core.Topic(typeVal)
-		msg.Event = core.Event(typeVal)
+		msg.Topic = typeVal
+		msg.Event = typeVal
 		return nil
-	case string(CNBTopicTicker):
+	case CNBTopicTicker:
 		return w.parseTicker(msg, env)
 	case "l2update":
 		return w.parseL2(msg, env)
@@ -30,16 +30,16 @@ func (w *WS) parsePublicMessage(msg *core.Message, payload []byte) error {
 	case "match":
 		return w.parseMatch(msg, env)
 	default:
-		msg.Topic = core.Topic(typeVal)
-		msg.Event = core.Event(typeVal)
+		msg.Topic = typeVal
+		msg.Event = typeVal
 		return nil
 	}
 }
 
 func (w *WS) parseTicker(msg *core.Message, env map[string]any) error {
 	symbol := w.WSCanonicalSymbol(fmt.Sprint(env["product_id"]))
-	msg.Topic = topicFromProviderName(string(CNBTopicTicker), symbol)
-	msg.Event = corews.EventNewTicker
+	msg.Topic = topicFromProviderName(CNBTopicTicker, symbol)
+	msg.Event = corews.TopicTicker
 	bid := parseDecimal(fmt.Sprint(env["best_bid"]))
 	ask := parseDecimal(fmt.Sprint(env["best_ask"]))
 	msg.Parsed = &corews.TickerEvent{Symbol: symbol, Bid: bid, Ask: ask, Time: time.Now().UTC()}
@@ -50,8 +50,8 @@ func (w *WS) parseMatch(msg *core.Message, env map[string]any) error {
 	symbol := w.WSCanonicalSymbol(fmt.Sprint(env["product_id"]))
 	price := parseDecimal(fmt.Sprint(env["price"]))
 	qty := parseDecimal(fmt.Sprint(env["size"]))
-	msg.Topic = topicFromProviderName(string(CNBTopicTrade), symbol)
-	msg.Event = corews.EventNewTrade
+	msg.Topic = topicFromProviderName(CNBTopicTrade, symbol)
+	msg.Event = corews.TopicTrade
 	msg.Parsed = &corews.TradeEvent{Symbol: symbol, Price: price, Quantity: qty, Time: parseTime(fmt.Sprint(env["time"]))}
 	return nil
 }
@@ -89,7 +89,7 @@ func (w *WS) parseL2(msg *core.Message, env map[string]any) error {
 	completeSnapshot := orderBook.GetSnapshot()
 
 	msg.Topic = topicFromProviderName("l2update", symbol)
-	msg.Event = corews.EventBookUpdate
+	msg.Event = corews.TopicBook
 	msg.Parsed = &completeSnapshot
 	return nil
 }
@@ -117,7 +117,7 @@ func (w *WS) parseSnapshot(msg *core.Message, env map[string]any) error {
 	completeSnapshot := orderBook.GetSnapshot()
 
 	msg.Topic = topicFromProviderName("snapshot", symbol)
-	msg.Event = corews.EventBookSnapshot
+	msg.Event = corews.TopicBook
 	msg.Parsed = &completeSnapshot
 	return nil
 }

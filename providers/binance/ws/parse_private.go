@@ -69,7 +69,7 @@ func (w *WS) SubscribePrivate(ctx context.Context, topics ...string) (core.Subsc
 				_ = json.Unmarshal(data, &ou)
 				filled, _ := parseDecimalToRat(ou.O.Z)
 				avg, _ := parseDecimalToRat(ou.O.Ap)
-				msg.Event = core.Event(BNXOrderChannel)
+				msg.Event = BNXOrderChannel
 				msg.Parsed = &corews.OrderEvent{
 					Symbol:    ou.O.S,
 					OrderID:   fmt.Sprintf("%d", ou.O.I),
@@ -93,7 +93,7 @@ func (w *WS) SubscribePrivate(ctx context.Context, topics ...string) (core.Subsc
 						amt, _ := parseDecimalToRat(b.F)
 						be.Balances = append(be.Balances, corews.Balance{Asset: b.A, Available: amt, Time: time.UnixMilli(oap.E)})
 					}
-					msg.Event = corews.EventBalanceUpdate
+					msg.Event = corews.TopicUserBalance
 					msg.Parsed = &be
 				} else {
 					var bu struct {
@@ -104,7 +104,7 @@ func (w *WS) SubscribePrivate(ctx context.Context, topics ...string) (core.Subsc
 					if json.Unmarshal(data, &bu) == nil && bu.A != "" {
 						amt, _ := parseDecimalToRat(bu.D)
 						be.Balances = append(be.Balances, corews.Balance{Asset: bu.A, Available: amt, Time: time.UnixMilli(bu.E)})
-						msg.Event = corews.EventBalanceUpdate
+						msg.Event = corews.TopicUserBalance
 						msg.Parsed = &be
 					}
 				}

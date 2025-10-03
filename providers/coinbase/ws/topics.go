@@ -1,78 +1,75 @@
 package ws
 
 import (
-	"github.com/coachpo/meltica/core"
-
 	corews "github.com/coachpo/meltica/core/ws"
 )
 
-// Coinbase-specific provider channel type and constants
-type CoinbaseChannel string
-
 // Coinbase-specific topic constants
 const (
-	CNBTopicTrade     CoinbaseChannel = "matches"
-	CNBTopicTicker    CoinbaseChannel = "ticker"
-	CNBTopicBookDepth CoinbaseChannel = "level2_batch"
-	CNBTopicUser      CoinbaseChannel = "user"
-	CNBTopicLevel2    CoinbaseChannel = "level2"
-	CNBTopicMatches   CoinbaseChannel = "matches"
+	CNBTopicTrade     = "matches"
+	CNBTopicTicker    = "ticker"
+	CNBTopicBookDepth = "level2_batch"
+	CNBTopicUser      = "user"
+	CNBTopicLevel2    = "level2"
+	CNBTopicMatches   = "matches"
 )
 
-var mapper = corews.NewChannelMapperFromMap(map[core.Topic]string{
-	core.Topic(string(corews.TopicTrade)):  string(CNBTopicTrade),
-	core.Topic(string(corews.TopicTicker)): string(CNBTopicTicker),
-	// corews.TopicBook:        "level2", need authentication
-	core.Topic(string(corews.TopicBook)):        string(CNBTopicBookDepth),
-	core.Topic(string(corews.TopicUserBalance)): string(CNBTopicUser),
-	core.Topic(string(corews.TopicUserOrder)):   string(CNBTopicUser),
+var mapper = corews.NewChannelMapper(corews.ChannelMappingConfig{
+	ProtocolToProvider: map[string]string{
+		corews.TopicTrade:  CNBTopicTrade,
+		corews.TopicTicker: CNBTopicTicker,
+		// corews.TopicBook:        "level2", need authentication
+		corews.TopicBook:        CNBTopicBookDepth,
+		corews.TopicUserBalance: CNBTopicUser,
+		corews.TopicUserOrder:   CNBTopicUser,
+	},
 })
 
-var providerToProtocol = map[CoinbaseChannel]core.Topic{
-	CNBTopicTrade:               core.Topic(string(corews.TopicTrade)),
-	CNBTopicTicker:              core.Topic(string(corews.TopicTicker)),
-	CNBTopicBookDepth:           core.Topic(string(corews.TopicBook)),
-	CNBTopicUser:                core.Topic(string(corews.TopicUserBalance)),
-	CoinbaseChannel("match"):    core.Topic(string(corews.TopicTrade)),
-	CoinbaseChannel("l2update"): core.Topic(string(corews.TopicBook)),
-	CoinbaseChannel("snapshot"): core.Topic(string(corews.TopicBook)),
-	CoinbaseChannel("received"): core.Topic(string(corews.TopicUserOrder)),
-	CoinbaseChannel("open"):     core.Topic(string(corews.TopicUserOrder)),
-	CoinbaseChannel("done"):     core.Topic(string(corews.TopicUserOrder)),
-	CoinbaseChannel("change"):   core.Topic(string(corews.TopicUserOrder)),
-	CoinbaseChannel("activate"): core.Topic(string(corews.TopicUserOrder)),
-	CoinbaseChannel("wallet"):   core.Topic(string(corews.TopicUserBalance)),
-	CoinbaseChannel("profile"):  core.Topic(string(corews.TopicUserBalance)),
+var providerToProtocol = map[string]string{
+	CNBTopicTrade:     corews.TopicTrade,
+	CNBTopicTicker:    corews.TopicTicker,
+	CNBTopicBookDepth: corews.TopicBook,
+	CNBTopicUser:      corews.TopicUserBalance,
+	"match":           corews.TopicTrade,
+	"l2update":        corews.TopicBook,
+	"snapshot":        corews.TopicBook,
+	"received":        corews.TopicUserOrder,
+	"open":            corews.TopicUserOrder,
+	"done":            corews.TopicUserOrder,
+	"change":          corews.TopicUserOrder,
+	"activate":        corews.TopicUserOrder,
+	"wallet":          corews.TopicUserBalance,
+	"profile":         corews.TopicUserBalance,
 }
 
-func protocolTopicFor(name string) core.Topic {
-	if topic, ok := providerToProtocol[CoinbaseChannel(name)]; ok {
+func protocolTopicFor(name string) string {
+	if topic, ok := providerToProtocol[name]; ok {
 		return topic
 	}
-	return core.Topic(name)
+	return name
 }
 
-func topicFromProviderName(name, instrument string) core.Topic {
+func topicFromProviderName(name, instrument string) string {
 	protocolTopic := protocolTopicFor(name)
 	if instrument == "" {
 		return protocolTopic
 	}
 
 	switch protocolTopic {
-	case core.Topic(string(corews.TopicTrade)):
+	case corews.TopicTrade:
 		return corews.TradeTopic(instrument)
-	case core.Topic(string(corews.TopicTicker)):
+	case corews.TopicTicker:
 		return corews.TickerTopic(instrument)
-	case core.Topic(string(corews.TopicBook)):
+	case corews.TopicBook:
 		return corews.BookTopic(instrument)
-	case core.Topic(string(corews.TopicUserOrder)):
+	case corews.TopicUserOrder:
 		return corews.UserOrderTopic(instrument)
-	case core.Topic(string(corews.TopicUserBalance)):
+	case corews.TopicUserBalance:
 		return corews.UserBalanceTopic()
 	default:
-		if protocolTopic == core.Topic(name) || protocolTopic == core.TopicNone {
-			return core.Topic(name + ":" + instrument)
+		if protocolTopic == name || protocolTopic == "" {
+			return name + ":" + instrument
 		}
-		return core.Topic(string(protocolTopic) + ":" + instrument)
+		return protocolTopic + ":" + instrument
 	}
 }

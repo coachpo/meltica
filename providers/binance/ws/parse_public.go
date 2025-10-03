@@ -18,12 +18,12 @@ type binanceEnvelope struct {
 type messageHandler func(*WS, *core.Message, []byte, string, string) error
 
 var eventHandlers = map[string]messageHandler{
-	string(BNXTradeChannel): (*WS).parseTradeEvent,
+	BNXTradeChannel: (*WS).parseTradeEvent,
 }
 
 var channelHandlers = map[string]messageHandler{
-	string(BNXTickerChannel):    (*WS).parseBookTicker,
-	string(BNXBookDepthChannel): (*WS).parsePartialDepthStream,
+	BNXTickerChannel:    (*WS).parseBookTicker,
+	BNXBookDepthChannel: (*WS).parsePartialDepthStream,
 }
 
 // parsePublicMessage is the entry point for Binance public WS payloads.
@@ -108,7 +108,7 @@ func (w *WS) parseTradeEvent(msg *core.Message, payload []byte, symbol, stream s
 	}
 	topic := topicFromChannel(BNXTradeChannel, sym)
 	msg.Topic = topic
-	msg.Event = corews.EventNewTrade
+	msg.Event = corews.TopicTrade
 	price, _ := parseDecimalToRat(rec.Price)
 	qty, _ := parseDecimalToRat(rec.Qty)
 	msg.Parsed = &corews.TradeEvent{Symbol: sym, Price: price, Quantity: qty, Time: time.UnixMilli(rec.Time)}
@@ -147,7 +147,7 @@ func (w *WS) parseBookTicker(msg *core.Message, payload []byte, symbol, stream s
 	}
 	topic := topicFromChannel(BNXTickerChannel, sym)
 	msg.Topic = topic
-	msg.Event = corews.EventNewTicker
+	msg.Event = corews.TopicTicker
 	bid, _ := parseDecimalToRat(rec.Bid)
 	ask, _ := parseDecimalToRat(rec.Ask)
 	msg.Parsed = &corews.TickerEvent{Symbol: sym, Bid: bid, Ask: ask, Time: time.UnixMilli(rec.Time)}
@@ -218,7 +218,7 @@ func (w *WS) parsePartialDepthStream(msg *core.Message, payload []byte, symbol, 
 	}
 
 	msg.Topic = corews.BookTopic(symbol)
-	msg.Event = corews.EventBookSnapshot
+	msg.Event = corews.TopicBook
 	msg.Parsed = &bookEvent
 	return nil
 }

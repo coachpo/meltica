@@ -7,11 +7,11 @@ import (
 // Canonical websocket topic helpers (provider-agnostic).
 // Topics are expressed as "channel:SYMBOL" where SYMBOL is canonical (e.g., BTC-USDT).
 const (
-	TopicTrade       string = "trade"
-	TopicTicker      string = "ticker"
-	TopicBook        string = "book"
-	TopicUserOrder   string = "order"
-	TopicUserBalance string = "balance"
+	TopicTrade       corepkg.TopicTemplate = "trade"
+	TopicTicker      corepkg.TopicTemplate = "ticker"
+	TopicBook        corepkg.TopicTemplate = "book"
+	TopicUserOrder   corepkg.TopicTemplate = "order"
+	TopicUserBalance corepkg.TopicTemplate = "balance"
 )
 
 func TradeTopic(symbol string) corepkg.Topic { return corepkg.Topic(string(TopicTrade) + ":" + symbol) }

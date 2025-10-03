@@ -1,64 +1,65 @@
 package ws
 
 import (
-	"github.com/coachpo/meltica/core"
 	corews "github.com/coachpo/meltica/core/ws"
 )
 
-// OKX-specific topic constants (as plain strings)
+// OKX-specific topic constants
 const (
-	OKXTopicTrade   string = "trades"
-	OKXTopicTicker  string = "tickers"
-	OKXTopicBook    string = "books" // 400 depth levels, 100ms updates - best balance of depth and performance
-	OKXTopicAccount string = "account"
-	OKXTopicOrders  string = "orders"
-	OKXTopicBalance string = "balance"
+	OKXTopicTrade   = "trades"
+	OKXTopicTicker  = "tickers"
+	OKXTopicBook    = "books" // 400 depth levels, 100ms updates - best balance of depth and performance
+	OKXTopicAccount = "account"
+	OKXTopicOrders  = "orders"
+	OKXTopicBalance = "balance"
 )
 
-var mapper = corews.NewChannelMapperFromMap(map[core.Topic]string{
-	core.Topic(string(corews.TopicTrade)):       OKXTopicTrade,
-	core.Topic(string(corews.TopicTicker)):      OKXTopicTicker,
-	core.Topic(string(corews.TopicBook)):        OKXTopicBook,
-	core.Topic(string(corews.TopicUserBalance)): OKXTopicAccount,
-	core.Topic(string(corews.TopicUserOrder)):   OKXTopicOrders,
+var mapper = corews.NewChannelMapper(corews.ChannelMappingConfig{
+	ProtocolToProvider: map[string]string{
+		corews.TopicTrade:       OKXTopicTrade,
+		corews.TopicTicker:      OKXTopicTicker,
+		corews.TopicBook:        OKXTopicBook,
+		corews.TopicUserBalance: OKXTopicAccount,
+		corews.TopicUserOrder:   OKXTopicOrders,
+	},
 })
 
-var providerToProtocol = map[string]core.Topic{
-	OKXTopicTrade:   core.Topic(string(corews.TopicTrade)),
-	OKXTopicTicker:  core.Topic(string(corews.TopicTicker)),
-	OKXTopicBook:    core.Topic(string(corews.TopicBook)),
-	OKXTopicAccount: core.Topic(string(corews.TopicUserBalance)),
-	OKXTopicOrders:  core.Topic(string(corews.TopicUserOrder)),
+var providerToProtocol = map[string]string{
+	OKXTopicTrade:   corews.TopicTrade,
+	OKXTopicTicker:  corews.TopicTicker,
+	OKXTopicBook:    corews.TopicBook,
+	OKXTopicAccount: corews.TopicUserBalance,
+	OKXTopicOrders:  corews.TopicUserOrder,
 }
 
-func protocolTopicFor(channel string) core.Topic {
+func protocolTopicFor(channel string) string {
 	if topic, ok := providerToProtocol[channel]; ok {
 		return topic
 	}
-	return core.Topic(channel)
+	return channel
 }
 
-func topicFromChannel(channel string, instrument string) core.Topic {
+func topicFromChannel(channel, instrument string) string {
 	protocolTopic := protocolTopicFor(channel)
 	if instrument == "" {
 		return protocolTopic
 	}
 
 	switch protocolTopic {
-	case core.Topic(string(corews.TopicTrade)):
+	case corews.TopicTrade:
 		return corews.TradeTopic(instrument)
-	case core.Topic(string(corews.TopicTicker)):
+	case corews.TopicTicker:
 		return corews.TickerTopic(instrument)
-	case core.Topic(string(corews.TopicBook)):
+	case corews.TopicBook:
 		return corews.BookTopic(instrument)
-	case core.Topic(string(corews.TopicUserOrder)):
+	case corews.TopicUserOrder:
 		return corews.UserOrderTopic(instrument)
-	case core.Topic(string(corews.TopicUserBalance)):
+	case corews.TopicUserBalance:
 		return corews.UserBalanceTopic()
 	default:
-		if protocolTopic == core.Topic(channel) || protocolTopic == core.TopicNone {
-			return core.Topic(channel + ":" + instrument)
+		if protocolTopic == channel || protocolTopic == "" {
+			return channel + ":" + instrument
 		}
-		return core.Topic(string(protocolTopic) + ":" + instrument)
+		return protocolTopic + ":" + instrument
 	}
 }

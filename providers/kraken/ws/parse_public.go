@@ -8,7 +8,7 @@ import (
 	corews "github.com/coachpo/meltica/core/ws"
 )
 
-func (w *WS) parseMessage(msg *core.Message, data []byte, requested []core.Topic) error {
+func (w *WS) parseMessage(msg *core.Message, data []byte, requested []string) error {
 	if len(data) == 0 {
 		return nil
 	}
@@ -20,17 +20,17 @@ func (w *WS) parseMessage(msg *core.Message, data []byte, requested []core.Topic
 		return w.parseV2Channel(msg, channel, env, requested)
 	}
 	if method := valueString(env["method"]); method != "" {
-		msg.Topic = core.Topic(method)
+		msg.Topic = method
 		return nil
 	}
-	msg.Topic = core.Topic(valueString(env["event"]))
+	msg.Topic = valueString(env["event"])
 	if msg.Topic == "" {
-		msg.Topic = core.Topic(valueString(env["type"]))
+		msg.Topic = valueString(env["type"])
 	}
 	return nil
 }
 
-func (w *WS) parseV2Channel(msg *core.Message, channel string, env map[string]any, requested []core.Topic) error {
+func (w *WS) parseV2Channel(msg *core.Message, channel string, env map[string]any, requested []string) error {
 	var data []any
 	switch typed := env["data"].(type) {
 	case []any:
@@ -56,8 +56,8 @@ func (w *WS) parseV2Channel(msg *core.Message, channel string, env map[string]an
 		}
 	}
 	canon := w.WSCanonicalSymbol(symbol)
-	msg.Topic = topicFromChannel(KrakenChannel(channel), canon)
-	switch KrakenChannel(channel) {
+	msg.Topic = topicFromChannel(channel, canon)
+	switch channel {
 	case KRKTopicTrade:
 		return w.parseTrades(msg, data, canon)
 	case KRKTopicTicker:
@@ -103,7 +103,7 @@ func (w *WS) parseTrades(msg *core.Message, payload any, symbol string) error {
 		events = append(events, &corews.TradeEvent{Symbol: sym, Price: price, Quantity: qty, Time: when})
 	}
 	if len(events) > 0 {
-		msg.Event = corews.EventNewTrade
+		msg.Event = KRKTopicTrade
 		msg.Parsed = events[len(events)-1]
 	}
 	return nil
@@ -116,7 +116,7 @@ func (w *WS) parseTicker(msg *core.Message, payload any, symbol string) error {
 	}
 	bid := parseDecimalStr(valueString(firstPresent(row, "bid", "best_bid")))
 	ask := parseDecimalStr(valueString(firstPresent(row, "ask", "best_ask")))
-	msg.Event = corews.EventNewTicker
+	msg.Event = KRKTopicTicker
 	msg.Parsed = &corews.TickerEvent{Symbol: symbol, Bid: bid, Ask: ask, Time: time.Now().UTC()}
 	return nil
 }
@@ -133,7 +133,7 @@ func (w *WS) parseBook(msg *core.Message, payload any, symbol string) error {
 	if rawAsks, ok := row["asks"]; ok {
 		appendDepthLevels(&de.Asks, rawAsks)
 	}
-	msg.Event = corews.EventBookUpdate
+	msg.Event = KRKTopicBook
 	msg.Parsed = &de
 	return nil
 }

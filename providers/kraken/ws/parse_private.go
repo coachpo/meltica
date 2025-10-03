@@ -24,9 +24,9 @@ func (w *WS) parsePrivate(msg *core.Message, data []byte, topics []string) error
 		channelName, _ := arr[len(arr)-2].(string)
 		payload := arr[2]
 		switch channelName {
-		case string(KRKTopicOwnTrades):
+		case KRKTopicOwnTrades:
 			return w.parseOwnTrades(msg, payload)
-		case string(KRKTopicOpenOrders):
+		case KRKTopicOpenOrders:
 			return w.parseOpenOrders(msg, payload)
 		}
 		return nil
@@ -35,7 +35,7 @@ func (w *WS) parsePrivate(msg *core.Message, data []byte, topics []string) error
 	if err := json.Unmarshal(data, &env); err != nil {
 		return err
 	}
-	msg.Topic = core.Topic(fmt.Sprint(env["event"]))
+	msg.Topic = fmt.Sprint(env["event"])
 	return nil
 }
 
@@ -54,7 +54,7 @@ func (w *WS) parseOwnTrades(msg *core.Message, payload any) error {
 			continue
 		}
 		msg.Topic = corews.UserOrderTopic(evt.Symbol)
-		msg.Event = corews.EventOrderUpdate
+		msg.Event = "order"
 		msg.Parsed = evt
 	}
 	return nil
@@ -75,7 +75,7 @@ func (w *WS) parseOpenOrders(msg *core.Message, payload any) error {
 			continue
 		}
 		msg.Topic = corews.UserOrderTopic(evt.Symbol)
-		msg.Event = corews.EventOrderUpdate
+		msg.Event = "order"
 		msg.Parsed = evt
 	}
 	return nil
