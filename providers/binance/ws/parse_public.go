@@ -15,29 +15,27 @@ type binanceEnvelope struct {
 	Data   json.RawMessage `json:"data"`
 }
 
-// parsePublicMessage is the entry point for Binance public WS payloads.
+// parsePublicMessage routes Binance public WS payloads.
+//
+// Subscription mode:
+//   - Only combined streams are supported. Incoming data is expected to be
+//     wrapped as {"stream":"<streamName>", "data":{...}}.
+//
+// Routing rule (combined streams only):
+//   - Route by substring in `stream`:
+//     contains BNXBookDepthChannel (e.g. "@depth20@100ms") → parseBookStream
+//     contains BNXTradeChannel      (e.g. "@trade")        → parseTradeEvent
+//     contains BNXTickerChannel     (e.g. "@bookTicker")   → parseBookTicker
+//     Any other streams are dropped (return nil).
+//   - If `stream` is empty (non-combined payload), the message is dropped.
 //
 // Symbol flow:
-//   - Combined streams may carry the event inside an outer envelope
-//     {"stream": "<binanceSymbol>@<channel>", "data": {...}}. The method
-//     unwraps that envelope and immediately canonicalizes the upstream
-//     symbol code via `WSCanonicalSymbol`.
-//   - If the payload already includes a symbol (e.g. trade/ticker events), that
-//     value wins and is canonicalized, producing the authoritative symbol that
-//     gets propagated to downstream parsers.
-//   - When the payload omits a symbol (e.g. partial depth snapshots), the method
-//     reconstructs it from the stream name and again canonicalizes it. Unknown
-//     symbols bubble up as panics through the provider’s canonicalizer.
-//
-// Function behavior:
-//   - After the symbol pipeline settles, the function delegates to
-//     event-specific handlers. Each handler receives the resolved symbol along
-//     with the raw stream name so it can fallback if needed.
-//   - If the event type cannot be determined, the message is intentionally
-//     dropped (nil error) because the data does not map to any supported topic.
+//   - Trade/Ticker: prefer the `s` field in payload, canonicalized via
+//     `WSCanonicalSymbol` (provided upfront here and again in handlers as needed).
+//   - Partial depth snapshots: payload has no symbol; the handler extracts the
+//     native symbol from `stream`, canonicalizes it, and errors if unresolved.
 func (w *WS) parsePublicMessage(msg *core.Message, raw []byte) error {
 	payload, stream := unwrapCombinedPayload(raw)
-	channel := streamChannel(stream)
 
 	var meta struct {
 		Event  string `json:"e"`
@@ -49,27 +47,18 @@ func (w *WS) parsePublicMessage(msg *core.Message, raw []byte) error {
 	}
 
 	symbol := w.WSCanonicalSymbol(meta.Symbol)
-
-	// Handle event-based routing first
-	switch meta.Event {
-	case BNXTradeChannel:
-		return w.parseTradeEvent(msg, payload, symbol, stream)
-	}
-
-	// Handle channel-based routing
-	switch channel {
-	case BNXTickerChannel:
-		return w.parseBookTicker(msg, payload, symbol, stream)
-	case BNXBookDepthChannel:
-		return w.parseBookStream(msg, payload, symbol, stream)
-	}
-
-	// Some feeds reuse the channel name as the event type (e.g. futures book ticker).
-	switch meta.Event {
-	case BNXTickerChannel:
-		return w.parseBookTicker(msg, payload, symbol, stream)
-	case BNXBookDepthChannel:
-		return w.parseBookStream(msg, payload, symbol, stream)
+	if stream != "" {
+		switch {
+		// TODO: Book depth is not supported yet it needs specific support for that
+		// case strings.Contains(stream, BNXBookDepthChannel):
+		// 	return w.parseBookStream(msg, payload, symbol, stream)
+		case strings.Contains(stream, BNXTradeChannel):
+			return w.parseTradeEvent(msg, payload, symbol, stream)
+		case strings.Contains(stream, BNXTickerChannel):
+			return w.parseBookTicker(msg, payload, symbol, stream)
+		default:
+			return nil
+		}
 	}
 
 	return nil
@@ -154,14 +143,27 @@ func (w *WS) parseBookTicker(msg *core.Message, payload []byte, symbol, stream s
 
 // depthLevelsFromPairs converts [price, quantity] string pairs into structured
 // depth levels using rational number parsing. Invalid pairs are skipped.
-func depthLevelsFromPairs(pairs [][]string) []corews.DepthLevel {
+func depthLevelsFromPairs(pairs [][]interface{}) []corews.DepthLevel {
 	levels := make([]corews.DepthLevel, 0, len(pairs))
 	for _, pair := range pairs {
 		if len(pair) < 2 {
 			continue
 		}
-		price, _ := parseDecimalToRat(pair[0])
-		qty, _ := parseDecimalToRat(pair[1])
+		var pStr, qStr string
+		switch v := pair[0].(type) {
+		case string:
+			pStr = v
+		default:
+			pStr = fmt.Sprint(v)
+		}
+		switch v := pair[1].(type) {
+		case string:
+			qStr = v
+		default:
+			qStr = fmt.Sprint(v)
+		}
+		price, _ := parseDecimalToRat(pStr)
+		qty, _ := parseDecimalToRat(qStr)
 		levels = append(levels, corews.DepthLevel{Price: price, Qty: qty})
 	}
 	return levels
@@ -183,9 +185,9 @@ func depthLevelsFromPairs(pairs [][]string) []corews.DepthLevel {
 //     depth snapshots.
 func (w *WS) parseBookStream(msg *core.Message, payload []byte, symbol, stream string) error {
 	var rec struct {
-		LastUpdateID int64      `json:"lastUpdateId"`
-		Bids         [][]string `json:"bids"`
-		Asks         [][]string `json:"asks"`
+		LastUpdateID int64           `json:"lastUpdateId"`
+		Bids         [][]interface{} `json:"bids"`
+		Asks         [][]interface{} `json:"asks"`
 	}
 	if err := json.Unmarshal(payload, &rec); err != nil {
 		return err
