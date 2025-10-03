@@ -15,17 +15,6 @@ type binanceEnvelope struct {
 	Data   json.RawMessage `json:"data"`
 }
 
-type messageHandler func(*WS, *core.Message, []byte, string, string) error
-
-var eventHandlers = map[string]messageHandler{
-	BNXTradeChannel: (*WS).parseTradeEvent,
-}
-
-var channelHandlers = map[string]messageHandler{
-	BNXTickerChannel:    (*WS).parseBookTicker,
-	BNXBookDepthChannel: (*WS).parsePartialDepthStream,
-}
-
 // parsePublicMessage is the entry point for Binance public WS payloads.
 //
 // Symbol flow:
@@ -61,17 +50,26 @@ func (w *WS) parsePublicMessage(msg *core.Message, raw []byte) error {
 
 	symbol := w.WSCanonicalSymbol(meta.Symbol)
 
-	if handler, ok := eventHandlers[meta.Event]; ok {
-		return handler(w, msg, payload, symbol, stream)
+	// Handle event-based routing first
+	switch meta.Event {
+	case BNXTradeChannel:
+		return w.parseTradeEvent(msg, payload, symbol, stream)
 	}
 
-	if handler, ok := channelHandlers[channel]; ok {
-		return handler(w, msg, payload, symbol, stream)
+	// Handle channel-based routing
+	switch channel {
+	case BNXTickerChannel:
+		return w.parseBookTicker(msg, payload, symbol, stream)
+	case BNXBookDepthChannel:
+		return w.parseBookStream(msg, payload, symbol, stream)
 	}
 
 	// Some feeds reuse the channel name as the event type (e.g. futures book ticker).
-	if handler, ok := channelHandlers[meta.Event]; ok {
-		return handler(w, msg, payload, symbol, stream)
+	switch meta.Event {
+	case BNXTickerChannel:
+		return w.parseBookTicker(msg, payload, symbol, stream)
+	case BNXBookDepthChannel:
+		return w.parseBookStream(msg, payload, symbol, stream)
 	}
 
 	return nil
@@ -169,7 +167,7 @@ func depthLevelsFromPairs(pairs [][]string) []corews.DepthLevel {
 	return levels
 }
 
-// parsePartialDepthStream handles partial depth snapshots like
+// parseBookStream handles partial depth snapshots like
 // `<binanceSymbol>@depth<levels>`.
 //
 // Symbol flow:
@@ -183,7 +181,7 @@ func depthLevelsFromPairs(pairs [][]string) []corews.DepthLevel {
 //     into a `corews.BookEvent` stamped with `corews.TopicBook`.
 //   - Uses `time.Now()` because Binance does not supply a timestamp for partial
 //     depth snapshots.
-func (w *WS) parsePartialDepthStream(msg *core.Message, payload []byte, symbol, stream string) error {
+func (w *WS) parseBookStream(msg *core.Message, payload []byte, symbol, stream string) error {
 	var rec struct {
 		LastUpdateID int64      `json:"lastUpdateId"`
 		Bids         [][]string `json:"bids"`
