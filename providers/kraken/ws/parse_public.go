@@ -55,7 +55,7 @@ func (w *WS) parseV2Channel(msg *core.Message, channel string, env map[string]an
 			}
 		}
 	}
-	canon := w.p.CanonicalSymbol(symbol, requested)
+	canon := w.WSCanonicalSymbol(symbol)
 	msg.Topic = topicFromChannel(channel, canon)
 	switch channel {
 	case KRKTopicTrade:
@@ -91,7 +91,7 @@ func (w *WS) parseTrades(msg *core.Message, payload any, symbol string) error {
 		sym := symbol
 		if sym == "" {
 			if raw := valueString(rec["symbol"]); raw != "" {
-				sym = w.p.CanonicalSymbol(raw, nil)
+				sym = w.WSCanonicalSymbol(raw)
 			}
 		}
 		price := parseDecimalStr(valueString(firstPresent(rec, "price", "px")))

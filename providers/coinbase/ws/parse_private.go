@@ -32,7 +32,7 @@ func (w *WS) parsePrivateMessage(msg *core.Message, payload []byte) error {
 }
 
 func (w *WS) parseOrderEvent(msg *core.Message, event string, env map[string]any) error {
-	symbol := w.canonicalSymbol(fmt.Sprint(env["product_id"]))
+	symbol := w.WSCanonicalSymbol(fmt.Sprint(env["product_id"]))
 	id := fmt.Sprint(env["order_id"]) + fmt.Sprint(env["client_oid"])
 	status := mapStatus(fmt.Sprint(env["type"]), fmt.Sprint(env["reason"]))
 	filled := parseDecimal(fmt.Sprint(env["filled_size"]))

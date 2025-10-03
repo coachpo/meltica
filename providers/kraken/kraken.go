@@ -541,6 +541,22 @@ func (s spotAPI) CancelOrder(ctx context.Context, symbol, id, clientID string) e
 	return resultError(resp.Error)
 }
 
+// Symbol conversion (static demo): only BTCUSDT <-> BTC-USDT
+func (s spotAPI) SpotNativeSymbol(canonical string) string {
+	if strings.EqualFold(canonical, "BTC-USDT") {
+		return "XBTUSDT"
+	}
+	panic(fmt.Errorf("kraken spotAPI: unsupported canonical symbol %s", canonical))
+}
+
+func (s spotAPI) SpotCanonicalSymbol(native string) string {
+	n := strings.ToUpper(strings.ReplaceAll(native, "/", ""))
+	if n == "XBTUSDT" || n == "BTCUSDT" {
+		return "BTC-USDT"
+	}
+	panic(fmt.Errorf("kraken spotAPI: unsupported native symbol %s", native))
+}
+
 // futuresAPI implementations
 func (f futuresAPI) Instruments(ctx context.Context) ([]core.Instrument, error) {
 	var resp struct {
@@ -661,6 +677,22 @@ func (f futuresAPI) Positions(ctx context.Context, symbols ...string) ([]core.Po
 		})
 	}
 	return out, nil
+}
+
+// Symbol conversion (static demo): only BTCUSDT <-> BTC-USDT
+func (f futuresAPI) FutureNativeSymbol(canonical string) string {
+	if strings.EqualFold(canonical, "BTC-USDT") {
+		return "XBTUSDT"
+	}
+	panic(fmt.Errorf("kraken futuresAPI: unsupported canonical symbol %s", canonical))
+}
+
+func (f futuresAPI) FutureCanonicalSymbol(native string) string {
+	n := strings.ToUpper(strings.ReplaceAll(native, "/", ""))
+	if n == "XBTUSDT" || n == "BTCUSDT" {
+		return "BTC-USDT"
+	}
+	panic(fmt.Errorf("kraken futuresAPI: unsupported native symbol %s", native))
 }
 
 func (p *Provider) ensureInstruments(ctx context.Context) error {

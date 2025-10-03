@@ -80,7 +80,7 @@ func (p *Provider) Close() error                                       { return 
 func (p *Provider) CanonicalSymbol(binanceSymbol string) string {
 	s := strings.ToUpper(strings.TrimSpace(binanceSymbol))
 	if s == "" {
-		panic("binance: empty symbol in CanonicalSymbol")
+		panic("binance: empty symbol in WSCanonicalSymbol")
 	}
 	if s == "BTCUSDT" {
 		return "BTC-USDT"
@@ -289,6 +289,21 @@ func (s spotAPI) CancelOrder(ctx context.Context, symbol, id, clientID string) e
 	return s.p.sapi.Do(ctx, http.MethodDelete, "/api/v3/order", q, nil, true, nil)
 }
 
+// Symbol conversion (static demo): only BTCUSDT <-> BTC-USDT
+func (s spotAPI) SpotNativeSymbol(canonical string) string {
+	if strings.EqualFold(canonical, "BTC-USDT") {
+		return "BTCUSDT"
+	}
+	panic(fmt.Errorf("binance spotAPI: unsupported canonical symbol %s", canonical))
+}
+
+func (s spotAPI) SpotCanonicalSymbol(native string) string {
+	if strings.EqualFold(native, "BTCUSDT") {
+		return "BTC-USDT"
+	}
+	panic(fmt.Errorf("binance spotAPI: unsupported native symbol %s", native))
+}
+
 func (f fapi) Instruments(ctx context.Context) ([]core.Instrument, error) {
 	var resp struct {
 		Symbols []struct {
@@ -398,6 +413,21 @@ func (f fapi) Positions(ctx context.Context, symbols ...string) ([]core.Position
 	return out, nil
 }
 
+// Symbol conversion (static demo): only BTCUSDT <-> BTC-USDT
+func (f fapi) FutureNativeSymbol(canonical string) string {
+	if strings.EqualFold(canonical, "BTC-USDT") {
+		return "BTCUSDT"
+	}
+	panic(fmt.Errorf("binance futuresAPI: unsupported canonical symbol %s", canonical))
+}
+
+func (f fapi) FutureCanonicalSymbol(native string) string {
+	if strings.EqualFold(native, "BTCUSDT") {
+		return "BTC-USDT"
+	}
+	panic(fmt.Errorf("binance futuresAPI: unsupported native symbol %s", native))
+}
+
 func (d dapi) Instruments(ctx context.Context) ([]core.Instrument, error) {
 	var resp struct {
 		Symbols []struct {
@@ -504,6 +534,21 @@ func (d dapi) Positions(ctx context.Context, symbols ...string) ([]core.Position
 		out = append(out, core.Position{Symbol: sym, Side: side, Quantity: qty, EntryPrice: ep, Unrealized: up})
 	}
 	return out, nil
+}
+
+// Symbol conversion (static demo): only BTCUSDT <-> BTC-USDT
+func (d dapi) FutureNativeSymbol(canonical string) string {
+	if strings.EqualFold(canonical, "BTC-USDT") {
+		return "BTCUSDT"
+	}
+	panic(fmt.Errorf("binance inverse futuresAPI: unsupported canonical symbol %s", canonical))
+}
+
+func (d dapi) FutureCanonicalSymbol(native string) string {
+	if strings.EqualFold(native, "BTCUSDT") {
+		return "BTC-USDT"
+	}
+	panic(fmt.Errorf("binance inverse futuresAPI: unsupported native symbol %s", native))
 }
 
 // WebSocket methods are implemented in ws.go

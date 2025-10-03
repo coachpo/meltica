@@ -37,7 +37,7 @@ func (w *WS) parsePublicMessage(msg *core.Message, payload []byte) error {
 }
 
 func (w *WS) parseTicker(msg *core.Message, env map[string]any) error {
-	symbol := w.canonicalSymbol(fmt.Sprint(env["product_id"]))
+	symbol := w.WSCanonicalSymbol(fmt.Sprint(env["product_id"]))
 	msg.Topic = topicFromProviderName(CNBTopicTicker, symbol)
 	msg.Event = corews.TopicTicker
 	bid := parseDecimal(fmt.Sprint(env["best_bid"]))
@@ -47,7 +47,7 @@ func (w *WS) parseTicker(msg *core.Message, env map[string]any) error {
 }
 
 func (w *WS) parseMatch(msg *core.Message, env map[string]any) error {
-	symbol := w.canonicalSymbol(fmt.Sprint(env["product_id"]))
+	symbol := w.WSCanonicalSymbol(fmt.Sprint(env["product_id"]))
 	price := parseDecimal(fmt.Sprint(env["price"]))
 	qty := parseDecimal(fmt.Sprint(env["size"]))
 	msg.Topic = topicFromProviderName(CNBTopicTrade, symbol)
@@ -57,7 +57,7 @@ func (w *WS) parseMatch(msg *core.Message, env map[string]any) error {
 }
 
 func (w *WS) parseL2(msg *core.Message, env map[string]any) error {
-	symbol := w.canonicalSymbol(fmt.Sprint(env["product_id"]))
+	symbol := w.WSCanonicalSymbol(fmt.Sprint(env["product_id"]))
 
 	// Get or create order book for this symbol
 	orderBook := w.orderBooks.GetOrCreateOrderBook(symbol)

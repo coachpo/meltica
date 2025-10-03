@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"time"
 
+	"strings"
+
 	"github.com/coachpo/meltica/core"
 	corews "github.com/coachpo/meltica/core/ws"
 	"github.com/gorilla/websocket"
@@ -113,6 +115,21 @@ func (w *WS) SubscribePrivate(ctx context.Context, topics ...string) (core.Subsc
 	sub := newWSSub(conn)
 	go w.readLoopPrivate(sub)
 	return sub, nil
+}
+
+// Symbol conversion (static demo): only BTCUSDT <-> BTC-USDT
+func (w *WS) WSNativeSymbol(canonical string) string {
+	if strings.EqualFold(canonical, "BTC-USDT") {
+		return "BTC-USDT"
+	}
+	panic(fmt.Errorf("okx ws: unsupported canonical symbol %s", canonical))
+}
+
+func (w *WS) WSCanonicalSymbol(native string) string {
+	if strings.EqualFold(native, "BTC-USDT") {
+		return "BTC-USDT"
+	}
+	panic(fmt.Errorf("okx ws: unsupported native symbol %s", native))
 }
 
 func (w *WS) readLoopPublic(sub *wsSub) {

@@ -159,6 +159,21 @@ func (unsupportedFutures) Positions(ctx context.Context, symbols ...string) ([]c
 	return nil, core.ErrNotSupported
 }
 
+// Symbol conversion stubs to satisfy core.FuturesAPI; panic per instruction
+func (unsupportedFutures) FutureNativeSymbol(canonical string) string {
+	if strings.EqualFold(canonical, "BTC-USDT") {
+		return "BTC-USDT"
+	}
+	panic(fmt.Errorf("coinbase futures unsupported: %s", canonical))
+}
+
+func (unsupportedFutures) FutureCanonicalSymbol(native string) string {
+	if strings.EqualFold(native, "BTC-USDT") {
+		return "BTC-USDT"
+	}
+	panic(fmt.Errorf("coinbase futures unsupported: %s", native))
+}
+
 func (s spotAPI) ServerTime(ctx context.Context) (time.Time, error) {
 	var resp struct {
 		Epoch float64 `json:"epoch"`
@@ -387,6 +402,22 @@ func (s spotAPI) CancelOrder(ctx context.Context, symbol, id, clientID string) e
 		return errors.New("coinbase: cancel requires order id or client id")
 	}
 	return s.p.rest.Do(ctx, http.MethodDelete, path, nil, nil, true, nil)
+}
+
+// Symbol conversion (static demo): only BTC-USD style to BTC-USDT is not 1:1 on Coinbase,
+// but per instruction, support BTCUSDT <-> BTC-USDT only, panic otherwise.
+func (s spotAPI) SpotNativeSymbol(canonical string) string {
+	if strings.EqualFold(canonical, "BTC-USDT") {
+		return "BTC-USDT"
+	}
+	panic(fmt.Errorf("coinbase spotAPI: unsupported canonical symbol %s", canonical))
+}
+
+func (s spotAPI) SpotCanonicalSymbol(native string) string {
+	if strings.EqualFold(native, "BTC-USDT") {
+		return "BTC-USDT"
+	}
+	panic(fmt.Errorf("coinbase spotAPI: unsupported native symbol %s", native))
 }
 
 func (p *Provider) ensureProduct(ctx context.Context, symbol string) (string, error) {

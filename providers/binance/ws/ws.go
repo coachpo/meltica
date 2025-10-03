@@ -84,6 +84,21 @@ func (w *WS) SubscribePublic(ctx context.Context, topics ...string) (core.Subscr
 	return sub, nil
 }
 
+// Symbol conversion (static demo): only BTCUSDT <-> BTC-USDT
+func (w *WS) WSNativeSymbol(canonical string) string {
+	if strings.EqualFold(canonical, "BTC-USDT") {
+		return "BTCUSDT"
+	}
+	panic(fmt.Errorf("binance ws: unsupported canonical symbol %s", canonical))
+}
+
+func (w *WS) WSCanonicalSymbol(native string) string {
+	if strings.EqualFold(native, "BTCUSDT") {
+		return "BTC-USDT"
+	}
+	panic(fmt.Errorf("binance ws: unsupported native symbol %s", native))
+}
+
 func (w *WS) buildStreams(topics []string) []string {
 	streams := make([]string, 0, len(topics))
 	for _, topic := range topics {
@@ -118,11 +133,4 @@ func (w *WS) readLoop(sub *wsSub) {
 		}
 		sub.c <- msg
 	}
-}
-
-func (w *WS) canonicalSymbol(bin string) string {
-	if bin == "" {
-		return bin
-	}
-	return w.p.CanonicalSymbol(strings.ToUpper(bin))
 }

@@ -2,6 +2,7 @@ package ws
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -14,12 +15,40 @@ type binanceEnvelope struct {
 	Data   json.RawMessage `json:"data"`
 }
 
+type messageHandler func(*WS, *core.Message, []byte, string, string) error
+
+var eventHandlers = map[string]messageHandler{
+	BNXTradeChannel: (*WS).parseTradeEvent,
+}
+
+var channelHandlers = map[string]messageHandler{
+	BNXTickerChannel:    (*WS).parseBookTicker,
+	BNXBookDepthChannel: (*WS).parsePartialDepthStream,
+}
+
+// parsePublicMessage is the entry point for Binance public WS payloads.
+//
+// Symbol flow:
+//   - Combined streams may carry the event inside an outer envelope
+//     {"stream": "<binanceSymbol>@<channel>", "data": {...}}. The method
+//     unwraps that envelope and immediately canonicalizes the upstream
+//     symbol code via `WSCanonicalSymbol`.
+//   - If the payload already includes a symbol (e.g. trade/ticker events), that
+//     value wins and is canonicalized, producing the authoritative symbol that
+//     gets propagated to downstream parsers.
+//   - When the payload omits a symbol (e.g. partial depth snapshots), the method
+//     reconstructs it from the stream name and again canonicalizes it. Unknown
+//     symbols bubble up as panics through the provider’s canonicalizer.
+//
+// Function behavior:
+//   - After the symbol pipeline settles, the function delegates to
+//     event-specific handlers. Each handler receives the resolved symbol along
+//     with the raw stream name so it can fallback if needed.
+//   - If the event type cannot be determined, the message is intentionally
+//     dropped (nil error) because the data does not map to any supported topic.
 func (w *WS) parsePublicMessage(msg *core.Message, raw []byte) error {
-	payload := raw
-	var envelope binanceEnvelope
-	if err := json.Unmarshal(raw, &envelope); err == nil && len(envelope.Data) > 0 {
-		payload = envelope.Data
-	}
+	payload, stream := unwrapCombinedPayload(raw)
+	channel := streamChannel(stream)
 
 	var meta struct {
 		Event  string `json:"e"`
@@ -30,43 +59,36 @@ func (w *WS) parsePublicMessage(msg *core.Message, raw []byte) error {
 		return nil
 	}
 
-	symbol := w.canonicalSymbol(meta.Symbol)
-	stream := envelope.Stream
+	symbol := w.WSCanonicalSymbol(meta.Symbol)
 
-	// Handle partial depth streams (no event type, different payload structure)
-	if meta.Event == "" && stream != "" {
-		// Extract channel from stream name (e.g., "btcusdt@depth20" -> "depth20")
-		parts := strings.Split(stream, "@")
-		if len(parts) >= 2 {
-			channel := parts[1]
-			// If symbol is not set, try to extract it from the stream name
-			if symbol == "" {
-				binanceSymbol := parts[0]
-				if binanceSymbol != "" {
-					canonical := w.canonicalSymbol(strings.ToUpper(binanceSymbol))
-					if canonical != "" {
-						symbol = canonical
-					} else {
-						symbol = strings.ToUpper(binanceSymbol)
-					}
-				}
-			}
-			if strings.HasPrefix(channel, "depth") {
-				return w.parsePartialDepthStream(msg, payload, symbol, stream)
-			}
-		}
+	if handler, ok := eventHandlers[meta.Event]; ok {
+		return handler(w, msg, payload, symbol, stream)
 	}
 
-	switch meta.Event {
-	case BNXTopicTrade:
-		return w.parseTradeEvent(msg, payload, symbol, stream)
-	case BNXTopicTicker:
-		return w.parseBookTicker(msg, payload, symbol, stream)
-	default:
-		return nil
+	if handler, ok := channelHandlers[channel]; ok {
+		return handler(w, msg, payload, symbol, stream)
 	}
+
+	// Some feeds reuse the channel name as the event type (e.g. futures book ticker).
+	if handler, ok := channelHandlers[meta.Event]; ok {
+		return handler(w, msg, payload, symbol, stream)
+	}
+
+	return nil
 }
 
+// parseTradeEvent parses a single trade event.
+//
+// Symbol flow:
+//   - Prefers the symbol supplied by `parsePublicMessage` so combined streams
+//     keep sharing the same canonical identifier.
+//   - When the caller cannot resolve the symbol, the function falls back to the
+//     payload's raw symbol, canonicalizes it, and errors if the result is still
+//     empty (prevents silent routing gaps).
+//
+// Function behavior:
+//   - Produces a `corews.TradeEvent` populated with rational prices/quantities
+//     and stamps the canonical topic via `topicFromChannel`.
 func (w *WS) parseTradeEvent(msg *core.Message, payload []byte, symbol, stream string) error {
 	var rec struct {
 		Symbol string `json:"s"`
@@ -79,24 +101,33 @@ func (w *WS) parseTradeEvent(msg *core.Message, payload []byte, symbol, stream s
 	}
 	sym := symbol
 	if sym == "" {
-		sym = w.canonicalSymbol(rec.Symbol)
+		sym = w.WSCanonicalSymbol(rec.Symbol)
 	}
 	if sym == "" {
-		sym = rec.Symbol
+		return fmt.Errorf("binance ws trade: missing symbol; stream=%s", stream)
 	}
-	topic := topicFromChannel(BNXTopicTrade, sym)
-	if sym == "" {
-		msg.Topic = stream
-	} else {
-		msg.Topic = topic
-	}
-	msg.Event = BNXTopicTrade
+	topic := topicFromChannel(BNXTradeChannel, sym)
+	msg.Topic = topic
+	msg.Event = corews.TopicTrade
 	price, _ := parseDecimalToRat(rec.Price)
 	qty, _ := parseDecimalToRat(rec.Qty)
 	msg.Parsed = &corews.TradeEvent{Symbol: sym, Price: price, Quantity: qty, Time: time.UnixMilli(rec.Time)}
 	return nil
 }
 
+// parseBookTicker parses best bid/ask updates.
+//
+// Symbol flow:
+//   - Leverages the caller-provided canonical symbol whenever possible so the
+//     topic emitted here lines up with trade/other book feeds.
+//   - If the caller could not determine the symbol, the handler inspects the
+//     payload, canonicalizes it, and errors when resolution fails. The error is
+//     surfaced so the caller can log/alert instead of routing an ambiguous
+//     message.
+//
+// Function behavior:
+//   - Emits a `corews.TickerEvent` tagged with `corews.TopicTicker` and parsed
+//     rational bid/ask levels.
 func (w *WS) parseBookTicker(msg *core.Message, payload []byte, symbol, stream string) error {
 	var rec struct {
 		Symbol string `json:"s"`
@@ -109,17 +140,13 @@ func (w *WS) parseBookTicker(msg *core.Message, payload []byte, symbol, stream s
 	}
 	sym := symbol
 	if sym == "" {
-		sym = w.canonicalSymbol(rec.Symbol)
+		sym = w.WSCanonicalSymbol(rec.Symbol)
 	}
 	if sym == "" {
-		sym = rec.Symbol
+		return fmt.Errorf("binance ws bookTicker: missing symbol; stream=%s", stream)
 	}
-	topic := topicFromChannel(BNXTopicTicker, sym)
-	if sym == "" {
-		msg.Topic = stream
-	} else {
-		msg.Topic = topic
-	}
+	topic := topicFromChannel(BNXTickerChannel, sym)
+	msg.Topic = topic
 	msg.Event = corews.TopicTicker
 	bid, _ := parseDecimalToRat(rec.Bid)
 	ask, _ := parseDecimalToRat(rec.Ask)
@@ -127,6 +154,8 @@ func (w *WS) parseBookTicker(msg *core.Message, payload []byte, symbol, stream s
 	return nil
 }
 
+// depthLevelsFromPairs converts [price, quantity] string pairs into structured
+// depth levels using rational number parsing. Invalid pairs are skipped.
 func depthLevelsFromPairs(pairs [][]string) []corews.DepthLevel {
 	levels := make([]corews.DepthLevel, 0, len(pairs))
 	for _, pair := range pairs {
@@ -140,7 +169,20 @@ func depthLevelsFromPairs(pairs [][]string) []corews.DepthLevel {
 	return levels
 }
 
-// parsePartialDepthStream handles partial depth stream payloads (depth20)
+// parsePartialDepthStream handles partial depth snapshots like
+// `<binanceSymbol>@depth<levels>`.
+//
+// Symbol flow:
+//   - These payloads never include a symbol field, so the handler rebuilds the
+//     Binance symbol from the stream name, canonicalizes it, and stores the
+//     canonical value back in `msg.Topic`. Unknown symbols panic via the
+//     provider’s canonicalizer.
+//
+// Function behavior:
+//   - Converts bid/ask string pairs into rational depth levels and packages them
+//     into a `corews.BookEvent` stamped with `corews.TopicBook`.
+//   - Uses `time.Now()` because Binance does not supply a timestamp for partial
+//     depth snapshots.
 func (w *WS) parsePartialDepthStream(msg *core.Message, payload []byte, symbol, stream string) error {
 	var rec struct {
 		LastUpdateID int64      `json:"lastUpdateId"`
@@ -153,22 +195,19 @@ func (w *WS) parsePartialDepthStream(msg *core.Message, payload []byte, symbol, 
 
 	// If symbol is not set, try to extract it from the stream name
 	if symbol == "" && stream != "" {
-		parts := strings.Split(stream, "@")
-		if len(parts) > 0 {
-			binanceSymbol := parts[0]
-			if binanceSymbol != "" {
-				if canonical := w.canonicalSymbol(strings.ToUpper(binanceSymbol)); canonical != "" {
-					symbol = canonical
-				} else {
-					symbol = strings.ToUpper(binanceSymbol)
-				}
-			}
+		if native := streamSymbol(stream); native != "" {
+			symbol = w.WSCanonicalSymbol(native)
 		}
 	}
 
 	// Parse depth levels
 	bids := depthLevelsFromPairs(rec.Bids)
 	asks := depthLevelsFromPairs(rec.Asks)
+
+	// Enforce symbol presence. If we cannot determine it, error out so callers can log/crash.
+	if symbol == "" {
+		return fmt.Errorf("binance ws partial depth: missing symbol; stream=%s", stream)
+	}
 
 	// Create book event
 	bookEvent := corews.BookEvent{
@@ -179,10 +218,38 @@ func (w *WS) parsePartialDepthStream(msg *core.Message, payload []byte, symbol, 
 	}
 
 	msg.Topic = corews.BookTopic(symbol)
-	if msg.Topic == "" {
-		msg.Topic = stream
-	}
 	msg.Event = corews.TopicBook
 	msg.Parsed = &bookEvent
 	return nil
+}
+
+func unwrapCombinedPayload(raw []byte) ([]byte, string) {
+	payload := raw
+	var envelope binanceEnvelope
+	if err := json.Unmarshal(raw, &envelope); err == nil && envelope.Stream != "" && len(envelope.Data) > 0 {
+		return envelope.Data, envelope.Stream
+	}
+	return payload, ""
+}
+
+func streamChannel(stream string) string {
+	if stream == "" {
+		return ""
+	}
+	parts := strings.SplitN(stream, "@", 2)
+	if len(parts) < 2 {
+		return ""
+	}
+	return parts[1]
+}
+
+func streamSymbol(stream string) string {
+	if stream == "" {
+		return ""
+	}
+	parts := strings.SplitN(stream, "@", 2)
+	if len(parts) == 0 {
+		return ""
+	}
+	return parts[0]
 }

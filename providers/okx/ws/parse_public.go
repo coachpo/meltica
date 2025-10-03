@@ -35,15 +35,16 @@ func (w *WS) parsePublicMessage(msg *core.Message, raw []byte) error {
 	}
 	channel := env.Arg.Channel
 	instrument := env.Arg.InstID
-	msg.Topic = topicFromChannel(channel, instrument)
+	canon := w.WSCanonicalSymbol(instrument)
+	msg.Topic = topicFromChannel(channel, canon)
 
 	switch {
 	case channel == OKXTopicTrade:
-		return w.parseTradeSnapshot(msg, env.Data, instrument)
+		return w.parseTradeSnapshot(msg, env.Data, canon)
 	case channel == OKXTopicTicker:
-		return w.parseTickerSnapshot(msg, env.Data, instrument)
+		return w.parseTickerSnapshot(msg, env.Data, canon)
 	case strings.HasPrefix(channel, OKXTopicBook):
-		return w.parseBookData(msg, env.Data, instrument, env.Action)
+		return w.parseBookData(msg, env.Data, canon, env.Action)
 	default:
 		return nil
 	}

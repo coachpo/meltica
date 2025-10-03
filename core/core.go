@@ -134,8 +134,8 @@ type OrderBook struct {
 	Time   time.Time
 }
 
-// Kline is a normalized candlestick record.
-type Kline struct {
+// Candlestick is a normalized candlestick record.
+type Candlestick struct {
 	Symbol   string
 	Interval time.Duration
 	Open     *big.Rat
@@ -203,6 +203,10 @@ type SpotAPI interface {
 	PlaceOrder(ctx context.Context, req OrderRequest) (Order, error)
 	GetOrder(ctx context.Context, symbol, id, clientID string) (Order, error)
 	CancelOrder(ctx context.Context, symbol, id, clientID string) error
+	// SpotNativeSymbol Symbol conversion from canonical to exchange-native formats
+	SpotNativeSymbol(spotCanonical string) string
+	// SpotCanonicalSymbol Symbol conversion from native to canonical formats
+	SpotCanonicalSymbol(spotNative string) string
 }
 
 // FuturesAPI exposes canonicalized linear or inverse futures REST endpoints.
@@ -211,12 +215,20 @@ type FuturesAPI interface {
 	Ticker(ctx context.Context, symbol string) (Ticker, error)
 	PlaceOrder(ctx context.Context, req OrderRequest) (Order, error)
 	Positions(ctx context.Context, symbols ...string) ([]Position, error)
+	// FutureNativeSymbol Symbol conversion from canonical to exchange-native formats
+	FutureNativeSymbol(futureCanonical string) string
+	// FutureCanonicalSymbol Symbol conversion from native to canonical formats
+	FutureCanonicalSymbol(futureNative string) string
 }
 
 // WS exposes public and private websocket subscriptions.
 type WS interface {
 	SubscribePublic(ctx context.Context, topics ...string) (Subscription, error)
 	SubscribePrivate(ctx context.Context, topics ...string) (Subscription, error)
+	// WSNativeSymbol Symbol conversion from canonical to exchange-native formats
+	WSNativeSymbol(wsCanonical string) string
+	// WSCanonicalSymbol Symbol conversion from native to canonical formats
+	WSCanonicalSymbol(wsNative string) string
 }
 
 // Subscription delivers normalized websocket messages for a topic set.

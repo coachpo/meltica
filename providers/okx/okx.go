@@ -261,6 +261,21 @@ func (s spotAPI) CancelOrder(ctx context.Context, symbol, id, clientID string) e
 	return s.p.do(ctx, http.MethodPost, "/api/v5/trade/cancel-order", nil, b, true, nil)
 }
 
+// Symbol conversion (static demo): only BTCUSDT <-> BTC-USDT
+func (s spotAPI) SpotNativeSymbol(canonical string) string {
+	if strings.EqualFold(canonical, "BTC-USDT") {
+		return "BTC-USDT"
+	}
+	panic(fmt.Errorf("okx spotAPI: unsupported canonical symbol %s", canonical))
+}
+
+func (s spotAPI) SpotCanonicalSymbol(native string) string {
+	if strings.EqualFold(native, "BTC-USDT") {
+		return "BTC-USDT"
+	}
+	panic(fmt.Errorf("okx spotAPI: unsupported native symbol %s", native))
+}
+
 func (f futAPI) Instruments(ctx context.Context) ([]core.Instrument, error) {
 	var list []struct {
 		InstId string `json:"instId"`
@@ -352,6 +367,21 @@ func (f futAPI) Positions(ctx context.Context, symbols ...string) ([]core.Positi
 		out = append(out, core.Position{Symbol: sym, Side: side, Quantity: qty, EntryPrice: ep, Unrealized: up})
 	}
 	return out, nil
+}
+
+// Symbol conversion (static demo): only BTCUSDT <-> BTC-USDT
+func (f futAPI) FutureNativeSymbol(canonical string) string {
+	if strings.EqualFold(canonical, "BTC-USDT") {
+		return "BTC-USDT"
+	}
+	panic(fmt.Errorf("okx futuresAPI: unsupported canonical symbol %s", canonical))
+}
+
+func (f futAPI) FutureCanonicalSymbol(native string) string {
+	if strings.EqualFold(native, "BTC-USDT") {
+		return "BTC-USDT"
+	}
+	panic(fmt.Errorf("okx futuresAPI: unsupported native symbol %s", native))
 }
 
 func (f futAPI) Ticker(ctx context.Context, symbol string) (core.Ticker, error) {

@@ -150,6 +150,22 @@ func (w *WS) SubscribePrivate(ctx context.Context, topics ...string) (core.Subsc
 	return sub, nil
 }
 
+// Symbol conversion (static demo): only BTCUSDT <-> BTC-USDT
+func (w *WS) WSNativeSymbol(canonical string) string {
+	if strings.EqualFold(canonical, "BTC-USDT") {
+		return "XBT/USDT"
+	}
+	panic(fmt.Errorf("kraken ws: unsupported canonical symbol %s", canonical))
+}
+
+func (w *WS) WSCanonicalSymbol(native string) string {
+	n := strings.ToUpper(strings.ReplaceAll(native, "/", ""))
+	if n == "XBTUSDT" || n == "BTCUSDT" {
+		return "BTC-USDT"
+	}
+	panic(fmt.Errorf("kraken ws: unsupported native symbol %s", native))
+}
+
 // readLoop processes public websocket messages until the connection closes.
 func (w *WS) readLoop(sub *wsSub, requested []string) {
 	defer close(sub.c)
