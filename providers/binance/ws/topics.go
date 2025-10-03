@@ -1,8 +1,6 @@
 package ws
 
 import (
-	"strings"
-
 	corews "github.com/coachpo/meltica/core/ws"
 )
 
@@ -23,27 +21,29 @@ var mapper = corews.NewChannelMapper(corews.ChannelMappingConfig{
 		corews.TopicUserOrder:   BNXTopicOrder,
 		corews.TopicUserBalance: BNXTopicBalance,
 	},
-	AdditionalProviderMappings: map[string]string{
-		BNXTopicTrade:     corews.TopicTrade,
-		BNXTopicTicker:    corews.TopicTicker,
-		BNXTopicBookDepth: corews.TopicBook,
-		BNXTopicOrder:     corews.TopicUserOrder,
-		BNXTopicBalance:   corews.TopicUserBalance,
-	},
 })
 
-func parseTopic(topic string) (channel, instrument string) {
-	if idx := strings.IndexByte(topic, ':'); idx > 0 {
-		return topic[:idx], topic[idx+1:]
+var providerToProtocol = map[string]string{
+	BNXTopicTrade:     corews.TopicTrade,
+	BNXTopicTicker:    corews.TopicTicker,
+	BNXTopicBookDepth: corews.TopicBook,
+	BNXTopicOrder:     corews.TopicUserOrder,
+	BNXTopicBalance:   corews.TopicUserBalance,
+}
+
+func protocolTopicFor(channel string) string {
+	if topic, ok := providerToProtocol[channel]; ok {
+		return topic
 	}
-	return topic, ""
+	return channel
 }
 
 func topicFromChannel(channel, instrument string) string {
-	protocolTopic := mapper.ToProtocolTopic(channel)
+	protocolTopic := protocolTopicFor(channel)
 	if instrument == "" {
 		return protocolTopic
 	}
+
 	switch protocolTopic {
 	case corews.TopicTrade:
 		return corews.TradeTopic(instrument)
@@ -51,8 +51,12 @@ func topicFromChannel(channel, instrument string) string {
 		return corews.TickerTopic(instrument)
 	case corews.TopicBook:
 		return corews.BookTopic(instrument)
+	case corews.TopicUserOrder:
+		return corews.UserOrderTopic(instrument)
+	case corews.TopicUserBalance:
+		return corews.UserBalanceTopic()
 	default:
-		if protocolTopic == "" {
+		if protocolTopic == channel || protocolTopic == "" {
 			return channel + ":" + instrument
 		}
 		return protocolTopic + ":" + instrument

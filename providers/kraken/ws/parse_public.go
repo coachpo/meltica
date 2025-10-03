@@ -31,11 +31,6 @@ func (w *WS) parseMessage(msg *core.Message, data []byte, requested []string) er
 }
 
 func (w *WS) parseV2Channel(msg *core.Message, channel string, env map[string]any, requested []string) error {
-	normalized := normalizePublicChannel(channel)
-	if normalized == "" {
-		msg.Topic = channel
-		return nil
-	}
 	var data []any
 	switch typed := env["data"].(type) {
 	case []any:
@@ -61,8 +56,8 @@ func (w *WS) parseV2Channel(msg *core.Message, channel string, env map[string]an
 		}
 	}
 	canon := w.p.CanonicalSymbol(symbol, requested)
-	msg.Topic = topicFromChannel(normalized, canon)
-	switch normalized {
+	msg.Topic = topicFromChannel(channel, canon)
+	switch channel {
 	case KRKTopicTrade:
 		return w.parseTrades(msg, data, canon)
 	case KRKTopicTicker:

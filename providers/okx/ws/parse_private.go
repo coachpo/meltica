@@ -33,7 +33,7 @@ func (w *WS) parsePrivateMessage(msg *core.Message, raw []byte) error {
 	case "balance_and_position":
 		return w.parseBalanceUpdate(msg, env.Data)
 	default:
-		msg.Topic = mapper.ToProtocolTopic(env.Arg.Channel)
+		msg.Topic = protocolTopicFor(env.Arg.Channel)
 		return nil
 	}
 }

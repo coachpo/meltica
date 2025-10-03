@@ -84,9 +84,11 @@ func (w *WS) parseTradeEvent(msg *core.Message, payload []byte, symbol, stream s
 	if sym == "" {
 		sym = rec.Symbol
 	}
-	msg.Topic = topicFromChannel(BNXTopicTrade, sym)
-	if msg.Topic == "" {
+	topic := topicFromChannel(BNXTopicTrade, sym)
+	if sym == "" {
 		msg.Topic = stream
+	} else {
+		msg.Topic = topic
 	}
 	msg.Event = BNXTopicTrade
 	price, _ := parseDecimalToRat(rec.Price)
@@ -112,9 +114,11 @@ func (w *WS) parseBookTicker(msg *core.Message, payload []byte, symbol, stream s
 	if sym == "" {
 		sym = rec.Symbol
 	}
-	msg.Topic = topicFromChannel("bookTicker", sym)
-	if msg.Topic == "" {
+	topic := topicFromChannel(BNXTopicTicker, sym)
+	if sym == "" {
 		msg.Topic = stream
+	} else {
+		msg.Topic = topic
 	}
 	msg.Event = corews.TopicTicker
 	bid, _ := parseDecimalToRat(rec.Bid)

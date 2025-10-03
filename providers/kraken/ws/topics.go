@@ -1,8 +1,6 @@
 package ws
 
 import (
-	"strings"
-
 	corews "github.com/coachpo/meltica/core/ws"
 )
 
@@ -12,7 +10,6 @@ const (
 	KRKTopicTicker     = "ticker"
 	KRKTopicBook       = "book"
 	KRKTopicBalance    = "balance"
-	KRKTopicSpread     = "spread"
 	KRKTopicOwnTrades  = "ownTrades"
 	KRKTopicOpenOrders = "openOrders"
 )
@@ -24,37 +21,26 @@ var mapper = corews.NewChannelMapper(corews.ChannelMappingConfig{
 		corews.TopicBook:        KRKTopicBook,
 		corews.TopicUserBalance: KRKTopicBalance, // for private streams
 	},
-	AdditionalProviderMappings: map[string]string{
-		KRKTopicTrade:      corews.TopicTrade,
-		KRKTopicTicker:     corews.TopicTicker,
-		KRKTopicBook:       corews.TopicBook,
-		KRKTopicBalance:    corews.TopicUserBalance,
-		KRKTopicSpread:     corews.TopicBook,
-		KRKTopicOwnTrades:  corews.TopicUserOrder,
-		KRKTopicOpenOrders: corews.TopicUserOrder,
-	},
 })
 
-// parseTopic splits a topic "channel:instrument" into channel and instrument parts.
-func parseTopic(topic string) (channel, instrument string) {
-	if idx := strings.IndexByte(topic, ':'); idx > 0 {
-		return topic[:idx], topic[idx+1:]
-	}
-	return topic, ""
+var providerToProtocol = map[string]string{
+	KRKTopicTrade:      corews.TopicTrade,
+	KRKTopicTicker:     corews.TopicTicker,
+	KRKTopicBook:       corews.TopicBook,
+	KRKTopicBalance:    corews.TopicUserBalance,
+	KRKTopicOwnTrades:  corews.TopicUserOrder,
+	KRKTopicOpenOrders: corews.TopicUserOrder,
 }
 
-// normalizePublicChannel maps a protocol topic to Kraken's channel naming.
-func normalizePublicChannel(name string) string {
-	trimmed := strings.TrimSpace(name)
-	if trimmed == "" {
-		return ""
+func protocolTopicFor(channel string) string {
+	if topic, ok := providerToProtocol[channel]; ok {
+		return topic
 	}
-	return mapper.ToProviderChannel(trimmed)
+	return channel
 }
 
-// topicFromChannel builds the protocol topic for a channel and instrument.
 func topicFromChannel(channel, instrument string) string {
-	protocolTopic := mapper.ToProtocolTopic(channel)
+	protocolTopic := protocolTopicFor(channel)
 	if instrument == "" {
 		return protocolTopic
 	}
@@ -64,13 +50,16 @@ func topicFromChannel(channel, instrument string) string {
 		return corews.TradeTopic(instrument)
 	case corews.TopicTicker:
 		return corews.TickerTopic(instrument)
-	case corews.TopicUserOrder:
-		return corews.UserOrderTopic(instrument)
 	case corews.TopicBook:
 		return corews.BookTopic(instrument)
+	case corews.TopicUserOrder:
+		return corews.UserOrderTopic(instrument)
 	case corews.TopicUserBalance:
 		return corews.UserBalanceTopic()
 	default:
+		if protocolTopic == channel || protocolTopic == "" {
+			return channel + ":" + instrument
+		}
 		return protocolTopic + ":" + instrument
 	}
 }

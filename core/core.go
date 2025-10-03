@@ -241,7 +241,7 @@ type Message struct {
 	Topic  string
 	Raw    []byte
 	At     time.Time
-	Event  string
+	Event  string // we have to define the universal event type in protocol
 	Parsed any
 }
 

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/coachpo/meltica/core"
+	corews "github.com/coachpo/meltica/core/ws"
 	"github.com/gorilla/websocket"
 )
 
@@ -80,19 +81,15 @@ func (w *WS) SubscribePublic(ctx context.Context, topics ...string) (core.Subscr
 	}
 	// Build subscriptions.
 	for _, topic := range topics {
-		ch, canon := parseTopic(topic)
+		ch, canon := corews.ParseTopic(topic)
 		if ch == "" || canon == "" {
-			continue
-		}
-		channelName := normalizePublicChannel(ch)
-		if channelName == "" {
 			continue
 		}
 		native := strings.ReplaceAll(w.p.NativeSymbolForWS(canon), "-", "/")
 		payload := map[string]any{
 			"method": "subscribe",
 			"params": map[string]any{
-				"channel": channelName,
+				"channel": ch,
 				"symbol":  []string{native},
 			},
 		}
@@ -132,7 +129,7 @@ func (w *WS) SubscribePrivate(ctx context.Context, topics ...string) (core.Subsc
 		return nil, err
 	}
 	for _, topic := range topics {
-		ch, _ := parseTopic(topic)
+		ch, _ := corews.ParseTopic(topic)
 		if ch != KRKTopicOpenOrders {
 			continue
 		}

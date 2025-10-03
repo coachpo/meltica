@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/coachpo/meltica/core"
+	corews "github.com/coachpo/meltica/core/ws"
 	"github.com/gorilla/websocket"
 )
 
@@ -86,7 +87,7 @@ func (w *WS) SubscribePublic(ctx context.Context, topics ...string) (core.Subscr
 func (w *WS) buildStreams(topics []string) []string {
 	streams := make([]string, 0, len(topics))
 	for _, topic := range topics {
-		channel, instrument := parseTopic(topic)
+		channel, instrument := corews.ParseTopic(topic)
 		providerChannel := mapper.ToProviderChannel(channel)
 		if instrument == "" {
 			streams = append(streams, topic)

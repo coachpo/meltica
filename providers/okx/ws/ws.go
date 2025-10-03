@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/coachpo/meltica/core"
+	corews "github.com/coachpo/meltica/core/ws"
 	"github.com/gorilla/websocket"
 )
 
@@ -153,7 +154,7 @@ func (w *WS) readLoopPrivate(sub *wsSub) {
 func (w *WS) buildSubscriptionArgs(topics []string) []map[string]string {
 	args := make([]map[string]string, 0, len(topics))
 	for _, topic := range topics {
-		channel, instrument := parseTopic(topic)
+		channel, instrument := corews.ParseTopic(topic)
 		providerChannel := mapper.ToProviderChannel(channel)
 		if providerChannel == "" {
 			continue

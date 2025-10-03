@@ -1,8 +1,6 @@
 package ws
 
 import (
-	"strings"
-
 	corews "github.com/coachpo/meltica/core/ws"
 )
 
@@ -25,37 +23,38 @@ var mapper = corews.NewChannelMapper(corews.ChannelMappingConfig{
 		corews.TopicUserBalance: CNBTopicUser,
 		corews.TopicUserOrder:   CNBTopicUser,
 	},
-	AdditionalProviderMappings: map[string]string{
-		CNBTopicTrade:  corews.TopicTrade,
-		CNBTopicTicker: corews.TopicTicker,
-		// corews.TopicBook:        "level2", need authentication
-		CNBTopicBookDepth: corews.TopicBook,
-		CNBTopicUser:      corews.TopicUserBalance,
-		"match":           corews.TopicTrade,
-		"l2update":        corews.TopicBook,
-		"snapshot":        corews.TopicBook,
-		"received":        corews.TopicUserOrder,
-		"open":            corews.TopicUserOrder,
-		"done":            corews.TopicUserOrder,
-		"change":          corews.TopicUserOrder,
-		"activate":        corews.TopicUserOrder,
-		"wallet":          corews.TopicUserBalance,
-		"profile":         corews.TopicUserBalance,
-	},
 })
 
-func parseTopic(topic string) (channel, instrument string) {
-	if idx := strings.IndexByte(topic, ':'); idx > 0 {
-		return topic[:idx], topic[idx+1:]
-	}
-	return topic, ""
+var providerToProtocol = map[string]string{
+	CNBTopicTrade:     corews.TopicTrade,
+	CNBTopicTicker:    corews.TopicTicker,
+	CNBTopicBookDepth: corews.TopicBook,
+	CNBTopicUser:      corews.TopicUserBalance,
+	"match":           corews.TopicTrade,
+	"l2update":        corews.TopicBook,
+	"snapshot":        corews.TopicBook,
+	"received":        corews.TopicUserOrder,
+	"open":            corews.TopicUserOrder,
+	"done":            corews.TopicUserOrder,
+	"change":          corews.TopicUserOrder,
+	"activate":        corews.TopicUserOrder,
+	"wallet":          corews.TopicUserBalance,
+	"profile":         corews.TopicUserBalance,
 }
 
-func topicFromChannel(channel, instrument string) string {
-	protocolTopic := mapper.ToProtocolTopic(channel)
+func protocolTopicFor(name string) string {
+	if topic, ok := providerToProtocol[name]; ok {
+		return topic
+	}
+	return name
+}
+
+func topicFromProviderName(name, instrument string) string {
+	protocolTopic := protocolTopicFor(name)
 	if instrument == "" {
 		return protocolTopic
 	}
+
 	switch protocolTopic {
 	case corews.TopicTrade:
 		return corews.TradeTopic(instrument)
@@ -68,8 +67,8 @@ func topicFromChannel(channel, instrument string) string {
 	case corews.TopicUserBalance:
 		return corews.UserBalanceTopic()
 	default:
-		if protocolTopic == "" {
-			return channel + ":" + instrument
+		if protocolTopic == name || protocolTopic == "" {
+			return name + ":" + instrument
 		}
 		return protocolTopic + ":" + instrument
 	}

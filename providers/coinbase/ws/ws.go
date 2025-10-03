@@ -163,7 +163,7 @@ func (w *WS) canonicalSymbol(native string) string {
 func (w *WS) sendSubscriptions(conn *websocket.Conn, topics []string, private bool) error {
 	channels := map[string][]string{}
 	for _, topic := range topics {
-		channel, symbol := parseTopic(topic)
+		channel, symbol := corews.ParseTopic(topic)
 		if channel == "" || symbol == "" {
 			continue
 		}

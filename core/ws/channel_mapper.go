@@ -2,11 +2,10 @@ package ws
 
 import "strings"
 
-// ChannelMapper provides bidirectional conversion between protocol topics and provider-specific channels.
+// ChannelMapper provides conversion from protocol topics to provider-specific channels.
 // It enforces a consistent mapping pattern across all providers while allowing provider-specific customization.
 type ChannelMapper struct {
 	protocolToProvider map[string]string
-	providerToProtocol map[string]string
 }
 
 // ChannelMappingConfig defines the configuration for creating a channel mapper.
@@ -14,37 +13,16 @@ type ChannelMapper struct {
 type ChannelMappingConfig struct {
 	// ProtocolToProvider defines the primary mappings from protocol topics to provider channels.
 	ProtocolToProvider map[string]string
-
-	// AdditionalProviderMappings defines provider-specific aliases that map back to protocol topics.
-	AdditionalProviderMappings map[string]string
 }
 
 // NewChannelMapper creates a new channel mapper with the provided configuration.
-// It automatically generates the reverse mapping and combines it with additional mappings.
 func NewChannelMapper(config ChannelMappingConfig) *ChannelMapper {
 	if config.ProtocolToProvider == nil {
 		config.ProtocolToProvider = make(map[string]string)
 	}
-	if config.AdditionalProviderMappings == nil {
-		config.AdditionalProviderMappings = make(map[string]string)
-	}
-
-	// Start with additional mappings (these take precedence for reverse mapping).
-	providerToProtocol := make(map[string]string)
-	for provider, protocol := range config.AdditionalProviderMappings {
-		providerToProtocol[provider] = protocol
-	}
-
-	// Add reverse mappings from ProtocolToProvider (only if not already set).
-	for protocol, provider := range config.ProtocolToProvider {
-		if _, exists := providerToProtocol[provider]; !exists {
-			providerToProtocol[provider] = protocol
-		}
-	}
 
 	return &ChannelMapper{
 		protocolToProvider: config.ProtocolToProvider,
-		providerToProtocol: providerToProtocol,
 	}
 }
 
@@ -57,54 +35,11 @@ func (m *ChannelMapper) ToProviderChannel(protocolTopic string) string {
 	return strings.ToLower(protocolTopic)
 }
 
-// ToProtocolTopic converts a provider-specific channel name to a protocol topic.
-// Returns the mapped protocol topic or falls back to the original channel name.
-func (m *ChannelMapper) ToProtocolTopic(providerChannel string) string {
-	if topic, ok := m.providerToProtocol[providerChannel]; ok {
-		return topic
+// ParseTopic splits a topic string in the form "channel:symbol" into its components.
+// If no separator is present the entire topic is returned as the channel with an empty symbol.
+func ParseTopic(topic string) (channel, symbol string) {
+	if idx := strings.IndexByte(topic, ':'); idx > 0 {
+		return topic[:idx], topic[idx+1:]
 	}
-	return providerChannel
-}
-
-// TopicFromChannelName constructs a complete topic string from a provider channel and symbol.
-// This is a helper function that handles the common pattern of building topic:symbol strings.
-func (m *ChannelMapper) TopicFromChannelName(providerChannel, symbol string) string {
-	protocolTopic := m.ToProtocolTopic(providerChannel)
-
-	if symbol == "" {
-		return protocolTopic
-	}
-
-	switch protocolTopic {
-	case TopicTrade:
-		return TradeTopic(symbol)
-	case TopicTicker:
-		return TickerTopic(symbol)
-	case TopicUserOrder:
-		return UserOrderTopic(symbol)
-	case TopicBook:
-		return BookTopic(symbol)
-	case TopicUserBalance:
-		return UserBalanceTopic()
-	default:
-		return protocolTopic + ":" + symbol
-	}
-}
-
-// GetProtocolToProviderMappings returns a copy of the protocol-to-provider mappings.
-func (m *ChannelMapper) GetProtocolToProviderMappings() map[string]string {
-	result := make(map[string]string, len(m.protocolToProvider))
-	for k, v := range m.protocolToProvider {
-		result[k] = v
-	}
-	return result
-}
-
-// GetProviderToProtocolMappings returns a copy of the provider-to-protocol mappings.
-func (m *ChannelMapper) GetProviderToProtocolMappings() map[string]string {
-	result := make(map[string]string, len(m.providerToProtocol))
-	for k, v := range m.providerToProtocol {
-		result[k] = v
-	}
-	return result
+	return topic, ""
 }
