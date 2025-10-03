@@ -11,9 +11,6 @@ import (
 // Version 1.2.0 introduces WebSocket code organization refactoring and Channel Mapper architecture.
 const ProtocolVersion = "1.2.0"
 
-// Market enumerates the product families supported by the protocol.
-type Market string
-
 const (
 	// MarketSpot reports spot instruments traded on a cash ledger.
 	MarketSpot Market = "spot"
@@ -223,8 +220,8 @@ type FuturesAPI interface {
 
 // WS exposes public and private websocket subscriptions.
 type WS interface {
-	SubscribePublic(ctx context.Context, topics ...string) (Subscription, error)
-	SubscribePrivate(ctx context.Context, topics ...string) (Subscription, error)
+	SubscribePublic(ctx context.Context, topics ...Topic) (Subscription, error)
+	SubscribePrivate(ctx context.Context, topics ...Topic) (Subscription, error)
 	// WSNativeSymbol Symbol conversion from canonical to exchange-native formats
 	WSNativeSymbol(wsCanonical string) string
 	// WSCanonicalSymbol Symbol conversion from native to canonical formats
@@ -240,10 +237,10 @@ type Subscription interface {
 
 // Message is the canonical websocket envelope emitted by subscriptions.
 type Message struct {
-	Topic  string
+	Topic  Topic
 	Raw    []byte
 	At     time.Time
-	Event  string // we have to define the universal event type in protocol
+	Event  Event // mapped from native exchange
 	Parsed any
 }
 
