@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"math/big"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/coachpo/meltica/core"
+	corews "github.com/coachpo/meltica/core/ws"
 	"github.com/coachpo/meltica/providers/binance/ws"
 	"github.com/coachpo/meltica/transport"
 )
@@ -80,11 +82,35 @@ func (p *Provider) Close() error                                       { return 
 func (p *Provider) CanonicalSymbol(binanceSymbol string) string {
 	s := strings.ToUpper(strings.TrimSpace(binanceSymbol))
 	if s == "" {
+		fmt.Fprintf(os.Stderr, "ERROR: binance: empty symbol in WSCanonicalSymbol\n")
 		panic("binance: empty symbol in WSCanonicalSymbol")
 	}
+
+	// Check if we have a mapping for this symbol
+	if p.binToCanon != nil {
+		if canonical, exists := p.binToCanon[s]; exists {
+			return canonical
+		}
+	}
+
+	// Fallback for common symbols
 	if s == "BTCUSDT" {
 		return "BTC-USDT"
 	}
+
+	// For unknown symbols, try to parse them
+	// Binance symbols are typically BASEQUOTE (e.g., ETHUSDT, ADAUSDC)
+	// Try to split into base and quote
+	for i := len(s) - 4; i >= 3; i-- {
+		if s[i:] == "USDT" || s[i:] == "BUSD" || s[i:] == "USDC" {
+			base := s[:i]
+			quote := s[i:]
+			return fmt.Sprintf("%s-%s", base, quote)
+		}
+	}
+
+	// If we can't parse it, print the abnormal symbol and panic
+	fmt.Fprintf(os.Stderr, "ERROR: binance: unsupported symbol '%s'\n", s)
 	panic(fmt.Errorf("binance: unsupported symbol %s", s))
 }
 
@@ -302,6 +328,37 @@ func (s spotAPI) SpotCanonicalSymbol(native string) string {
 		return "BTC-USDT"
 	}
 	panic(fmt.Errorf("binance spotAPI: unsupported native symbol %s", native))
+}
+
+// DepthSnapshot fetches the current order book snapshot for a symbol
+func (s spotAPI) DepthSnapshot(ctx context.Context, symbol string, limit int) (corews.BookEvent, int64, error) {
+	params := map[string]string{
+		"symbol": core.CanonicalToBinance(symbol),
+		"limit":  fmt.Sprintf("%d", limit),
+	}
+
+	var resp struct {
+		LastUpdateID int64           `json:"lastUpdateId"`
+		Bids         [][]interface{} `json:"bids"`
+		Asks         [][]interface{} `json:"asks"`
+	}
+
+	if err := s.p.sapi.Do(ctx, http.MethodGet, "/api/v3/depth", params, nil, false, &resp); err != nil {
+		return corews.BookEvent{}, 0, err
+	}
+
+	// Parse depth levels
+	bids := depthLevelsFromPairs(resp.Bids)
+	asks := depthLevelsFromPairs(resp.Asks)
+
+	bookEvent := corews.BookEvent{
+		Symbol: symbol,
+		Bids:   bids,
+		Asks:   asks,
+		Time:   time.Now(),
+	}
+
+	return bookEvent, resp.LastUpdateID, nil
 }
 
 func (f fapi) Instruments(ctx context.Context) ([]core.Instrument, error) {
@@ -552,3 +609,30 @@ func (d dapi) FutureCanonicalSymbol(native string) string {
 }
 
 // WebSocket methods are implemented in ws.go
+
+// depthLevelsFromPairs converts [price, quantity] string pairs into structured depth levels
+func depthLevelsFromPairs(pairs [][]interface{}) []corews.DepthLevel {
+	levels := make([]corews.DepthLevel, 0, len(pairs))
+	for _, pair := range pairs {
+		if len(pair) < 2 {
+			continue
+		}
+		var pStr, qStr string
+		switch v := pair[0].(type) {
+		case string:
+			pStr = v
+		default:
+			pStr = fmt.Sprint(v)
+		}
+		switch v := pair[1].(type) {
+		case string:
+			qStr = v
+		default:
+			qStr = fmt.Sprint(v)
+		}
+		price, _ := parseDecimalToRat(pStr)
+		qty, _ := parseDecimalToRat(qStr)
+		levels = append(levels, corews.DepthLevel{Price: price, Qty: qty})
+	}
+	return levels
+}

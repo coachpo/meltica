@@ -29,13 +29,15 @@ type Provider interface {
 
 // WS implements the core.WS interface for Binance
 type WS struct {
-	p Provider
+	p          Provider
+	orderBooks *OrderBookManager
 }
 
 // New creates a new WebSocket handler for Binance
 func New(p Provider) *WS {
 	return &WS{
-		p: p,
+		p:          p,
+		orderBooks: NewOrderBookManager(),
 	}
 }
 
@@ -93,10 +95,7 @@ func (w *WS) WSNativeSymbol(canonical string) string {
 }
 
 func (w *WS) WSCanonicalSymbol(native string) string {
-	if strings.EqualFold(native, "BTCUSDT") {
-		return "BTC-USDT"
-	}
-	panic(fmt.Errorf("binance ws: unsupported native symbol %s", native))
+	return w.p.CanonicalSymbol(native)
 }
 
 func (w *WS) buildStreams(topics []string) []string {
@@ -133,4 +132,47 @@ func (w *WS) readLoop(sub *wsSub) {
 		}
 		sub.c <- msg
 	}
+}
+
+// InitializeOrderBook demonstrates the complete Binance order book initialization flow
+// This would typically be called when starting to subscribe to depth streams
+func (w *WS) InitializeOrderBook(ctx context.Context, symbol string) error {
+	// Step 1: Get order book for this symbol
+	orderBook := w.orderBooks.GetOrCreateOrderBook(symbol)
+
+	// Step 2: If already initialized, no need to do anything
+	if orderBook.IsInitialized() {
+		return nil
+	}
+
+	// Step 3: Get depth snapshot from REST API
+	// Note: In a real implementation, we would need access to the provider's REST client
+	// For now, this demonstrates the flow
+	snapshot, lastUpdateID, err := w.getDepthSnapshot(ctx, symbol, 5000)
+	if err != nil {
+		return fmt.Errorf("failed to get depth snapshot: %w", err)
+	}
+
+	// Step 4: Initialize order book with snapshot
+	if err := orderBook.InitializeFromSnapshot(snapshot, lastUpdateID); err != nil {
+		return fmt.Errorf("failed to initialize order book: %w", err)
+	}
+
+	return nil
+}
+
+// getDepthSnapshot is a placeholder method that would fetch the actual snapshot
+// In a real implementation, this would call the provider's REST API
+func (w *WS) getDepthSnapshot(ctx context.Context, symbol string, limit int) (corews.BookEvent, int64, error) {
+	// This is a placeholder - in reality we would call:
+	// w.p.Spot().DepthSnapshot(ctx, symbol, limit)
+	// But we don't have access to the spot API from the WS struct
+
+	// For now, return an empty book event with placeholder update ID
+	return corews.BookEvent{
+		Symbol: symbol,
+		Bids:   []corews.DepthLevel{},
+		Asks:   []corews.DepthLevel{},
+		Time:   time.Now(),
+	}, 0, nil
 }

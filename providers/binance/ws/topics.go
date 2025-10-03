@@ -8,7 +8,7 @@ import (
 const (
 	BNXTradeChannel     = "trade"
 	BNXTickerChannel    = "bookTicker"
-	BNXBookDepthChannel = "depth20@100ms"
+	BNXBookDepthChannel = "depth@100ms"
 	BNXOrderChannel     = "order"
 	BNXBalanceChannel   = "balance"
 )

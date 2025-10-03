@@ -3,6 +3,7 @@ package ws
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -46,12 +47,28 @@ func (w *WS) parsePublicMessage(msg *core.Message, raw []byte) error {
 		return nil
 	}
 
-	symbol := w.WSCanonicalSymbol(meta.Symbol)
+	// Only canonicalize if we have a symbol
+	// TODO: as far as I know all streams provide the symbol
+	var symbol string
+	if meta.Symbol != "" {
+		symbol = w.WSCanonicalSymbol(meta.Symbol)
+	} else if stream != "" {
+		// Extract symbol from stream name (e.g., "btcusdt@trade" -> "BTCUSDT")
+		if native := streamSymbol(stream); native != "" {
+			symbol = w.WSCanonicalSymbol(native)
+		}
+	}
+
+	// Strict policy: require symbol for all messages
+	if symbol == "" {
+		fmt.Fprintf(os.Stderr, "ERROR: binance ws: missing symbol in message; stream=%s, event=%s, meta.Symbol=%s\n", stream, meta.Event, meta.Symbol)
+		return fmt.Errorf("binance ws: missing symbol in message; stream=%s, event=%s", stream, meta.Event)
+	}
+
 	if stream != "" {
 		switch {
-		// TODO: Book depth is not supported yet it needs specific support for that
-		// case strings.Contains(stream, BNXBookDepthChannel):
-		// 	return w.parseBookStream(msg, payload, symbol, stream)
+		case strings.Contains(stream, BNXBookDepthChannel):
+			return w.parseBookStream(msg, payload, symbol, stream)
 		case strings.Contains(stream, BNXTradeChannel):
 			return w.parseTradeEvent(msg, payload, symbol, stream)
 		case strings.Contains(stream, BNXTickerChannel):
@@ -169,28 +186,37 @@ func depthLevelsFromPairs(pairs [][]interface{}) []corews.DepthLevel {
 	return levels
 }
 
-// parseBookStream handles partial depth snapshots like
-// `<binanceSymbol>@depth<levels>`.
+// parseBookStream handles depth updates like `<binanceSymbol>@depth@100ms`.
+//
+// According to Binance documentation:
+// - These are incremental updates to the order book
+// - They contain U (first update ID) and u (last update ID) for synchronization
+// - The order book must be initialized with a snapshot before applying these updates
 //
 // Symbol flow:
-//   - These payloads never include a symbol field, so the handler rebuilds the
-//     Binance symbol from the stream name, canonicalizes it, and stores the
-//     canonical value back in `msg.Topic`. Unknown symbols panic via the
-//     provider’s canonicalizer.
+//   - These payloads include a symbol field, but we also extract from stream name as fallback
 //
 // Function behavior:
-//   - Converts bid/ask string pairs into rational depth levels and packages them
-//     into a `corews.BookEvent` stamped with `corews.TopicBook`.
-//   - Uses `time.Now()` because Binance does not supply a timestamp for partial
-//     depth snapshots.
+//   - If the order book is not initialized, buffers the event
+//   - If the order book is initialized, applies the update directly
+//   - Returns an error if out of sync (needs restart with snapshot)
 func (w *WS) parseBookStream(msg *core.Message, payload []byte, symbol, stream string) error {
 	var rec struct {
-		LastUpdateID int64           `json:"lastUpdateId"`
-		Bids         [][]interface{} `json:"bids"`
-		Asks         [][]interface{} `json:"asks"`
+		Event         string          `json:"e"`
+		Symbol        string          `json:"s"`
+		FirstUpdateID int64           `json:"U"`
+		LastUpdateID  int64           `json:"u"`
+		Bids          [][]interface{} `json:"b"`
+		Asks          [][]interface{} `json:"a"`
+		EventTime     int64           `json:"E"`
 	}
 	if err := json.Unmarshal(payload, &rec); err != nil {
 		return err
+	}
+
+	// Validate event type
+	if rec.Event != "depthUpdate" {
+		return fmt.Errorf("binance ws: unexpected event type in depth stream: %s", rec.Event)
 	}
 
 	// If symbol is not set, try to extract it from the stream name
@@ -200,26 +226,40 @@ func (w *WS) parseBookStream(msg *core.Message, payload []byte, symbol, stream s
 		}
 	}
 
+	// Fallback to payload symbol if still not resolved
+	if symbol == "" && rec.Symbol != "" {
+		symbol = w.WSCanonicalSymbol(rec.Symbol)
+	}
+
 	// Parse depth levels
 	bids := depthLevelsFromPairs(rec.Bids)
 	asks := depthLevelsFromPairs(rec.Asks)
 
 	// Enforce symbol presence. If we cannot determine it, error out so callers can log/crash.
 	if symbol == "" {
+		fmt.Fprintf(os.Stderr, "ERROR: binance ws partial depth: missing symbol; stream=%s, rec.Symbol=%s\n", stream, rec.Symbol)
 		return fmt.Errorf("binance ws partial depth: missing symbol; stream=%s", stream)
 	}
 
-	// Create book event
-	bookEvent := corews.BookEvent{
+	// Get the order book for this symbol
+	orderBook := w.orderBooks.GetOrCreateOrderBook(symbol)
+
+	// Convert event time to time.Time
+	eventTime := time.UnixMilli(rec.EventTime)
+
+	// Buffer or apply the event based on initialization state
+	orderBook.BufferEvent(rec.FirstUpdateID, rec.LastUpdateID, bids, asks, eventTime)
+
+	// Update the message topic and payload
+	msg.Topic = corews.BookTopic(symbol)
+	msg.Event = corews.TopicBook
+	msg.Parsed = &corews.BookEvent{
 		Symbol: symbol,
 		Bids:   bids,
 		Asks:   asks,
-		Time:   time.Now(),
+		Time:   eventTime,
 	}
 
-	msg.Topic = corews.BookTopic(symbol)
-	msg.Event = corews.TopicBook
-	msg.Parsed = &bookEvent
 	return nil
 }
 
@@ -230,17 +270,6 @@ func unwrapCombinedPayload(raw []byte) ([]byte, string) {
 		return envelope.Data, envelope.Stream
 	}
 	return payload, ""
-}
-
-func streamChannel(stream string) string {
-	if stream == "" {
-		return ""
-	}
-	parts := strings.SplitN(stream, "@", 2)
-	if len(parts) < 2 {
-		return ""
-	}
-	return parts[1]
 }
 
 func streamSymbol(stream string) string {

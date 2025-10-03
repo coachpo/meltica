@@ -1,6 +1,6 @@
 GO111MODULE=on
 
-.PHONY: test lint vet tidy build standards ci clean
+.PHONY: test lint vet tidy build standards ci clean binance-ws-test
 
 lint:
 	golangci-lint run || true
@@ -29,3 +29,15 @@ tidy:
 
 clean:
 	rm -rf out/
+
+binance-ws-test:
+	go build -o bin/ ./cmd/binance-ws-test
+	./bin/binance-ws-test
+
+binance-ws-validation:
+	go build -o bin/ ./cmd/binance-ws-validation
+	./bin/binance-ws-validation
+
+binance-orderbook-validation:
+	go build -o bin/ ./cmd/binance-orderbook-validation
+	./bin/binance-orderbook-validation
