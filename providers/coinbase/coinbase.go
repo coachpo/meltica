@@ -159,18 +159,6 @@ func (unsupportedFutures) Positions(ctx context.Context, symbols ...string) ([]c
 	return nil, core.ErrNotSupported
 }
 
-func init() {
-	core.Register("coinbase", func(cfg any) (core.Provider, error) {
-		type C struct {
-			APIKey     string
-			Secret     string
-			Passphrase string
-		}
-		c, _ := cfg.(C)
-		return New(c.APIKey, c.Secret, c.Passphrase)
-	})
-}
-
 func (s spotAPI) ServerTime(ctx context.Context) (time.Time, error) {
 	var resp struct {
 		Epoch float64 `json:"epoch"`
@@ -512,11 +500,11 @@ func mapTimeInForce(t core.TimeInForce) (string, error) {
 	switch t {
 	case "":
 		return "", nil
-	case core.TIFGTC:
+	case core.GTC:
 		return "GTC", nil
-	case core.TIFIC:
+	case core.ICO:
 		return "IOC", nil
-	case core.TIFFOK:
+	case core.FOK:
 		return "FOK", nil
 	default:
 		return "", &errs.E{

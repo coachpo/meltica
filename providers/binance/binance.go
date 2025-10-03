@@ -78,16 +78,14 @@ func (p *Provider) Close() error                                       { return 
 
 // WebSocket support methods
 func (p *Provider) CanonicalSymbol(binanceSymbol string) string {
-	if binanceSymbol == "" {
-		return binanceSymbol
+	s := strings.ToUpper(strings.TrimSpace(binanceSymbol))
+	if s == "" {
+		panic("binance: empty symbol in CanonicalSymbol")
 	}
-	binanceSymbol = strings.ToUpper(binanceSymbol)
-	if p.binToCanon != nil {
-		if canon := p.binToCanon[binanceSymbol]; canon != "" {
-			return canon
-		}
+	if s == "BTCUSDT" {
+		return "BTC-USDT"
 	}
-	return binanceSymbol
+	panic(fmt.Errorf("binance: unsupported symbol %s", s))
 }
 
 func (p *Provider) CreateListenKey(ctx context.Context) (string, error) {
@@ -108,15 +106,6 @@ func (p *Provider) KeepAliveListenKey(ctx context.Context, key string) error {
 func (p *Provider) CloseListenKey(ctx context.Context, key string) error {
 	q := map[string]string{"listenKey": key}
 	return p.sapi.Do(ctx, http.MethodDelete, "/api/v3/userDataStream", q, nil, false, nil)
-}
-
-// Register with core registry
-func init() {
-	core.Register("binance", func(cfg any) (core.Provider, error) {
-		type C struct{ APIKey, Secret string }
-		c, _ := cfg.(C)
-		return New(c.APIKey, c.Secret)
-	})
 }
 
 type spotAPI struct{ p *Provider }

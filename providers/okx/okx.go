@@ -373,9 +373,3 @@ func (f futAPI) Ticker(ctx context.Context, symbol string) (core.Ticker, error) 
 // WebSocket methods implemented in ws.go
 
 // register
-func init() {
-	core.Register("okx", func(cfg any) (core.Provider, error) {
-		// for MVP just build without signing
-		return New("", "", "")
-	})
-}

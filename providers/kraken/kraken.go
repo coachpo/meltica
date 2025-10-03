@@ -250,15 +250,6 @@ type futuresAPI struct {
 	mode string // "linear" or "inverse"
 }
 
-// init registers the provider factory.
-func init() {
-	core.Register("kraken", func(cfg any) (core.Provider, error) {
-		type C struct{ APIKey, Secret string }
-		c, _ := cfg.(C)
-		return New(c.APIKey, c.Secret)
-	})
-}
-
 func (s spotAPI) ServerTime(ctx context.Context) (time.Time, error) {
 	var resp struct {
 		Error  []string `json:"error"`
@@ -777,9 +768,9 @@ func mapTimeInForce(t core.TimeInForce) (string, error) {
 	switch t {
 	case "":
 		return "", nil
-	case core.TIFIC:
+	case core.ICO:
 		return "IOC", nil
-	case core.TIFFOK:
+	case core.FOK:
 		return "FOK", nil
 	default:
 		return "", &errs.E{

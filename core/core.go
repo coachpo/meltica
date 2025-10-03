@@ -3,7 +3,6 @@ package core
 import (
 	"context"
 	"errors"
-	"fmt"
 	"math/big"
 	"time"
 )
@@ -44,12 +43,12 @@ const (
 	// TypeLimit rests at a limit price.
 	TypeLimit OrderType = "limit"
 
-	// TIFGTC keeps the order on the book until filled or cancelled.
-	TIFGTC TimeInForce = "gtc"
-	// TIFFOK is fill-or-kill.
-	TIFFOK TimeInForce = "fok"
-	// TIFIC is immediate-or-cancel.
-	TIFIC TimeInForce = "ioc"
+	// GTC is good-till-cancelled.
+	GTC TimeInForce = "gtc"
+	// FOK is fill-or-kill.
+	FOK TimeInForce = "fok"
+	// ICO is immediate-or-cancel.
+	ICO TimeInForce = "ioc"
 )
 
 // Instrument is the canonical contract definition returned by every provider.
@@ -187,16 +186,11 @@ func (pc ProviderCapabilities) Has(cap Capability) bool {
 	return uint64(pc)&uint64(cap) != 0
 }
 
-// Provider is the stable abstraction implemented by every concrete exchange adapter.
-type Provider interface {
+// Exchange is the stable abstraction implemented by every concrete exchange adapter.
+type Exchange interface {
 	Name() string
 	Capabilities() ProviderCapabilities
 	SupportedProtocolVersion() string
-	Spot(ctx context.Context) SpotAPI
-	LinearFutures(ctx context.Context) FuturesAPI
-	InverseFutures(ctx context.Context) FuturesAPI
-	WS() WS
-	Close() error
 }
 
 // SpotAPI exposes canonicalized spot REST endpoints.
@@ -205,10 +199,6 @@ type SpotAPI interface {
 	Instruments(ctx context.Context) ([]Instrument, error)
 	Ticker(ctx context.Context, symbol string) (Ticker, error)
 	Balances(ctx context.Context) ([]Balance, error)
-	// Trades returns private fill history for a symbol. The meaning of the since cursor
-	// is provider-defined: adapters either expect a unix timestamp (e.g., Kraken) or the
-	// last trade identifier (e.g., Coinbase). Implementations must document their exact
-	// semantics and support forward pagination without duplicating trades.
 	Trades(ctx context.Context, symbol string, since int64) ([]Trade, error)
 	PlaceOrder(ctx context.Context, req OrderRequest) (Order, error)
 	GetOrder(ctx context.Context, symbol, id, clientID string) (Order, error)
@@ -247,20 +237,3 @@ type Message struct {
 
 // ErrNotSupported indicates that a capability is not available for a provider.
 var ErrNotSupported = errors.New("not supported")
-
-// Factory constructs a provider using an adapter-specific configuration.
-type Factory func(cfg any) (Provider, error)
-
-var providers = map[string]Factory{}
-
-// Register adds a provider factory to the global registry.
-func Register(name string, f Factory) { providers[name] = f }
-
-// New instantiates a provider using a previously registered factory.
-func New(name string, cfg any) (Provider, error) {
-	f, ok := providers[name]
-	if !ok {
-		return nil, fmt.Errorf("unknown provider: %s", name)
-	}
-	return f(cfg)
-}

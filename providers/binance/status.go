@@ -21,11 +21,11 @@ func mapBStatus(s string) core.OrderStatus {
 
 func mapBTIF(t core.TimeInForce) string {
 	switch t {
-	case core.TIFGTC:
+	case core.GTC:
 		return "GTC"
-	case core.TIFIC:
+	case core.ICO:
 		return "IOC"
-	case core.TIFFOK:
+	case core.FOK:
 		return "FOK"
 	default:
 		return ""
