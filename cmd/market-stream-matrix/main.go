@@ -26,7 +26,7 @@ func main() {
 		exchangeFlag = flag.String("exchange", "binance,okx,coinbase,kraken", "Comma-separated list of exchanges to connect to")
 		symbolFlag   = flag.String("symbol", "BTC-USDT,BTC-USD,ETH-USDT,ETH-USD", "Comma-separated list of trading symbols in BASE-QUOTE form")
 		channelFlag  = flag.String("channel", "ticker,trade,book", "Comma-separated list of market data streams to subscribe to")
-		durationFlag = flag.Duration("duration", 3*time.Second, "Streaming duration for each combination")
+		durationFlag = flag.Duration("duration", 1*time.Second, "Streaming duration for each combination")
 	)
 
 	flag.Parse()

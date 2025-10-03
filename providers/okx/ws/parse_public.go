@@ -38,11 +38,11 @@ func (w *WS) parsePublicMessage(msg *core.Message, raw []byte) error {
 	msg.Topic = topicFromChannel(channel, instrument)
 
 	switch {
-	case channel == "trades":
+	case channel == TopicTrade:
 		return w.parseTradeSnapshot(msg, env.Data, instrument)
-	case channel == "tickers":
+	case channel == TopicTicker:
 		return w.parseTickerSnapshot(msg, env.Data, instrument)
-	case strings.HasPrefix(channel, "books"):
+	case strings.HasPrefix(channel, TopicBook):
 		return w.parseBookData(msg, env.Data, instrument, env.Action)
 	default:
 		return nil
@@ -67,7 +67,7 @@ func (w *WS) parseTradeSnapshot(msg *core.Message, payload []json.RawMessage, in
 	if when.IsZero() {
 		when = time.Now()
 	}
-	msg.Event = "trade"
+	msg.Event = corews.TopicTrade
 	msg.Parsed = &corews.TradeEvent{Symbol: instrument, Price: price, Quantity: qty, Time: when}
 	return nil
 }
@@ -90,7 +90,7 @@ func (w *WS) parseTickerSnapshot(msg *core.Message, payload []json.RawMessage, i
 	if when.IsZero() {
 		when = time.Now()
 	}
-	msg.Event = "ticker"
+	msg.Event = corews.TopicTicker
 	msg.Parsed = &corews.TickerEvent{Symbol: instrument, Bid: bid, Ask: ask, Time: when}
 	return nil
 }
@@ -146,7 +146,7 @@ func (w *WS) parseBookData(msg *core.Message, payload []json.RawMessage, instrum
 	// Get the complete order book snapshot
 	completeSnapshot := orderBook.GetSnapshot()
 
-	msg.Event = "book"
+	msg.Event = corews.TopicBook
 	msg.Parsed = &completeSnapshot
 	return nil
 }

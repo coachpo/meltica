@@ -11,18 +11,24 @@ const (
 	TopicTrade     = "trade"
 	TopicTicker    = "bookTicker"
 	TopicBookDepth = "depth20@100ms"
+	TopicOrder     = "order"
+	TopicBalance   = "balance"
 )
 
 var mapper = corews.NewChannelMapper(corews.ChannelMappingConfig{
 	ProtocolToProvider: map[string]string{
-		corews.TopicTrade:  TopicTrade,
-		corews.TopicTicker: TopicTicker,
-		corews.TopicBook:   TopicBookDepth,
+		corews.TopicTrade:       TopicTrade,
+		corews.TopicTicker:      TopicTicker,
+		corews.TopicBook:        TopicBookDepth,
+		corews.TopicUserOrder:   TopicOrder,
+		corews.TopicUserBalance: TopicBalance,
 	},
 	AdditionalProviderMappings: map[string]string{
 		TopicTrade:     corews.TopicTrade,
 		TopicTicker:    corews.TopicTicker,
 		TopicBookDepth: corews.TopicBook,
+		TopicOrder:     corews.TopicUserOrder,
+		TopicBalance:   corews.TopicUserBalance,
 	},
 })
 

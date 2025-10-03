@@ -24,9 +24,9 @@ func (w *WS) parsePrivate(msg *core.Message, data []byte, topics []string) error
 		channelName, _ := arr[len(arr)-2].(string)
 		payload := arr[2]
 		switch channelName {
-		case "ownTrades":
+		case TopicOwnTrades:
 			return w.parseOwnTrades(msg, payload)
-		case "openOrders":
+		case TopicOpenOrders:
 			return w.parseOpenOrders(msg, payload)
 		}
 		return nil

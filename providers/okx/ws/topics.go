@@ -13,6 +13,7 @@ const (
 	TopicBook    = "books" // 400 depth levels, 100ms updates - best balance of depth and performance
 	TopicAccount = "account"
 	TopicOrders  = "orders"
+	TopicBalance = "balance"
 )
 
 var mapper = corews.NewChannelMapper(corews.ChannelMappingConfig{

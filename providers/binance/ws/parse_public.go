@@ -58,14 +58,12 @@ func (w *WS) parsePublicMessage(msg *core.Message, raw []byte) error {
 	}
 
 	switch meta.Event {
-	case "trade":
+	case TopicTrade:
 		return w.parseTradeEvent(msg, payload, symbol, stream)
-	case "bookTicker":
+	case TopicTicker:
 		return w.parseBookTicker(msg, payload, symbol, stream)
-	case "depthUpdate":
-		return w.parseDepthUpdate(msg, payload, symbol, stream)
 	default:
-		return w.parseByHeuristics(msg, payload, symbol, stream)
+		return nil
 	}
 }
 
@@ -86,11 +84,11 @@ func (w *WS) parseTradeEvent(msg *core.Message, payload []byte, symbol, stream s
 	if sym == "" {
 		sym = rec.Symbol
 	}
-	msg.Topic = topicFromChannel("trade", sym)
+	msg.Topic = topicFromChannel(TopicTrade, sym)
 	if msg.Topic == "" {
 		msg.Topic = stream
 	}
-	msg.Event = "trade"
+	msg.Event = TopicTrade
 	price, _ := parseDecimalToRat(rec.Price)
 	qty, _ := parseDecimalToRat(rec.Qty)
 	msg.Parsed = &corews.TradeEvent{Symbol: sym, Price: price, Quantity: qty, Time: time.UnixMilli(rec.Time)}
@@ -118,100 +116,10 @@ func (w *WS) parseBookTicker(msg *core.Message, payload []byte, symbol, stream s
 	if msg.Topic == "" {
 		msg.Topic = stream
 	}
-	msg.Event = "ticker"
+	msg.Event = corews.TopicTicker
 	bid, _ := parseDecimalToRat(rec.Bid)
 	ask, _ := parseDecimalToRat(rec.Ask)
 	msg.Parsed = &corews.TickerEvent{Symbol: sym, Bid: bid, Ask: ask, Time: time.UnixMilli(rec.Time)}
-	return nil
-}
-
-func (w *WS) parseDepthUpdate(msg *core.Message, payload []byte, symbol, stream string) error {
-	var rec struct {
-		Symbol        string     `json:"s"`
-		Time          int64      `json:"E"`
-		FirstUpdateID int64      `json:"U"`
-		LastUpdateID  int64      `json:"u"`
-		Bids          [][]string `json:"b"`
-		Asks          [][]string `json:"a"`
-	}
-	if err := json.Unmarshal(payload, &rec); err != nil {
-		return err
-	}
-	sym := symbol
-	if sym == "" {
-		sym = w.canonicalSymbol(rec.Symbol)
-	}
-	if sym == "" {
-		sym = rec.Symbol
-	}
-
-	// Parse depth levels directly without local order book management
-	updateTime := time.UnixMilli(rec.Time)
-	bids := make([]corews.DepthLevel, 0, len(rec.Bids))
-	asks := make([]corews.DepthLevel, 0, len(rec.Asks))
-
-	// Parse bids
-	for _, bid := range rec.Bids {
-		if len(bid) < 2 {
-			continue
-		}
-		if price, ok := parseDecimalToRat(bid[0]); ok {
-			if qty, ok := parseDecimalToRat(bid[1]); ok && qty.Sign() > 0 {
-				bids = append(bids, corews.DepthLevel{
-					Price: price,
-					Qty:   qty,
-				})
-			}
-		}
-	}
-
-	// Parse asks
-	for _, ask := range rec.Asks {
-		if len(ask) < 2 {
-			continue
-		}
-		if price, ok := parseDecimalToRat(ask[0]); ok {
-			if qty, ok := parseDecimalToRat(ask[1]); ok && qty.Sign() > 0 {
-				asks = append(asks, corews.DepthLevel{
-					Price: price,
-					Qty:   qty,
-				})
-			}
-		}
-	}
-
-	// Create book event with partial depth data
-	bookEvent := corews.BookEvent{
-		Symbol: sym,
-		Bids:   bids,
-		Asks:   asks,
-		Time:   updateTime,
-	}
-
-	msg.Topic = corews.BookTopic(sym)
-	if msg.Topic == "" {
-		msg.Topic = stream
-	}
-	msg.Event = "book"
-	msg.Parsed = &bookEvent
-	return nil
-}
-
-func (w *WS) parseByHeuristics(msg *core.Message, payload []byte, symbol, stream string) error {
-	var probe map[string]any
-	if err := json.Unmarshal(payload, &probe); err != nil {
-		return nil
-	}
-	if hasString(probe, "p") && hasString(probe, "q") {
-		return w.parseTradeEvent(msg, payload, symbol, stream)
-	}
-	if hasString(probe, "b") && hasString(probe, "a") {
-		// Distinguish between bookTicker strings and depth arrays
-		if _, ok := probe["b"].([]any); ok {
-			return w.parseDepthUpdate(msg, payload, symbol, stream)
-		}
-		return w.parseBookTicker(msg, payload, symbol, stream)
-	}
 	return nil
 }
 
@@ -270,16 +178,7 @@ func (w *WS) parsePartialDepthStream(msg *core.Message, payload []byte, symbol, 
 	if msg.Topic == "" {
 		msg.Topic = stream
 	}
-	msg.Event = "book"
+	msg.Event = corews.TopicBook
 	msg.Parsed = &bookEvent
 	return nil
-}
-
-func hasString(m map[string]any, key string) bool {
-	v, ok := m[key]
-	if !ok {
-		return false
-	}
-	_, isString := v.(string)
-	return isString
 }

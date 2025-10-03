@@ -12,6 +12,8 @@ const (
 	TopicTicker    = "ticker"
 	TopicBookDepth = "level2_batch"
 	TopicUser      = "user"
+	TopicLevel2    = "level2"
+	TopicMatches   = "matches"
 )
 
 var mapper = corews.NewChannelMapper(corews.ChannelMappingConfig{

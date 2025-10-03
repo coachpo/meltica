@@ -123,7 +123,7 @@ func (w *WS) SubscribePrivate(ctx context.Context, topics ...string) (core.Subsc
 	login := map[string]any{
 		"event": "subscribe",
 		"subscription": map[string]any{
-			"name":  "ownTrades",
+			"name":  TopicOwnTrades,
 			"token": token,
 		},
 	}
@@ -133,13 +133,13 @@ func (w *WS) SubscribePrivate(ctx context.Context, topics ...string) (core.Subsc
 	}
 	for _, topic := range topics {
 		ch, _ := parseTopic(topic)
-		if ch != "openOrders" {
+		if ch != TopicOpenOrders {
 			continue
 		}
 		payload := map[string]any{
 			"event": "subscribe",
 			"subscription": map[string]any{
-				"name":  "openOrders",
+				"name":  TopicOpenOrders,
 				"token": token,
 			},
 		}

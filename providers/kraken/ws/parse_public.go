@@ -2,7 +2,6 @@ package ws
 
 import (
 	"encoding/json"
-	"strings"
 	"time"
 
 	"github.com/coachpo/meltica/core"
@@ -64,23 +63,20 @@ func (w *WS) parseV2Channel(msg *core.Message, channel string, env map[string]an
 	canon := w.p.CanonicalSymbol(symbol, requested)
 	msg.Topic = topicFromChannel(normalized, canon)
 	switch normalized {
-	case "trade":
+	case TopicTrade:
 		return w.parseTrades(msg, data, canon)
-	case "ticker":
+	case TopicTicker:
 		var payload any
 		if len(data) > 0 {
 			payload = data[len(data)-1]
 		}
 		return w.parseTicker(msg, payload, canon)
-	case "book":
+	case TopicBook:
 		var payload any
 		if len(data) > 0 {
 			payload = data[len(data)-1]
 		}
 		return w.parseBook(msg, payload, canon)
-	case "level3":
-		msg.Topic = corews.BookTopic(canon)
-		return w.parseLevel3(msg, data, canon)
 	default:
 		return nil
 	}
@@ -112,7 +108,7 @@ func (w *WS) parseTrades(msg *core.Message, payload any, symbol string) error {
 		events = append(events, &corews.TradeEvent{Symbol: sym, Price: price, Quantity: qty, Time: when})
 	}
 	if len(events) > 0 {
-		msg.Event = "trade"
+		msg.Event = TopicTrade
 		msg.Parsed = events[len(events)-1]
 	}
 	return nil
@@ -125,7 +121,7 @@ func (w *WS) parseTicker(msg *core.Message, payload any, symbol string) error {
 	}
 	bid := parseDecimalStr(valueString(firstPresent(row, "bid", "best_bid")))
 	ask := parseDecimalStr(valueString(firstPresent(row, "ask", "best_ask")))
-	msg.Event = "ticker"
+	msg.Event = TopicTicker
 	msg.Parsed = &corews.TickerEvent{Symbol: symbol, Bid: bid, Ask: ask, Time: time.Now().UTC()}
 	return nil
 }
@@ -142,53 +138,7 @@ func (w *WS) parseBook(msg *core.Message, payload any, symbol string) error {
 	if rawAsks, ok := row["asks"]; ok {
 		appendDepthLevels(&de.Asks, rawAsks)
 	}
-	msg.Event = "book"
-	msg.Parsed = &de
-	return nil
-}
-
-func (w *WS) parseLevel3(msg *core.Message, payload any, symbol string) error {
-	rows, ok := payload.([]any)
-	if !ok || len(rows) == 0 {
-		return nil
-	}
-	last := rows[len(rows)-1]
-	rec, ok := last.(map[string]any)
-	if !ok {
-		return nil
-	}
-	de := corews.BookEvent{Symbol: symbol, Time: time.Now().UTC()}
-	if rawBids, ok := rec["bids"]; ok {
-		appendDepthLevels(&de.Bids, rawBids)
-	}
-	if rawAsks, ok := rec["asks"]; ok {
-		appendDepthLevels(&de.Asks, rawAsks)
-	}
-	if orders, ok := rec["orders"]; ok {
-		if arr, ok := orders.([]any); ok {
-			for _, ordRaw := range arr {
-				ord, ok := ordRaw.(map[string]any)
-				if !ok {
-					continue
-				}
-				lvl := corews.DepthLevel{
-					Price: parseDecimalStr(valueString(firstPresent(ord, "price", "px"))),
-					Qty:   parseDecimalStr(valueString(firstPresent(ord, "qty", "quantity", "volume", "size"))),
-				}
-				side := strings.ToLower(valueString(firstPresent(ord, "side", "type")))
-				switch side {
-				case "buy", "bid":
-					de.Bids = append(de.Bids, lvl)
-				case "sell", "ask":
-					de.Asks = append(de.Asks, lvl)
-				}
-			}
-		}
-	}
-	if len(de.Bids) == 0 && len(de.Asks) == 0 {
-		return nil
-	}
-	msg.Event = "book"
+	msg.Event = TopicBook
 	msg.Parsed = &de
 	return nil
 }

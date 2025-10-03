@@ -21,7 +21,7 @@ func (w *WS) parsePublicMessage(msg *core.Message, payload []byte) error {
 		msg.Topic = typeVal
 		msg.Event = typeVal
 		return nil
-	case "ticker":
+	case TopicTicker:
 		return w.parseTicker(msg, env)
 	case "l2update":
 		return w.parseL2(msg, env)
@@ -38,8 +38,8 @@ func (w *WS) parsePublicMessage(msg *core.Message, payload []byte) error {
 
 func (w *WS) parseTicker(msg *core.Message, env map[string]any) error {
 	symbol := w.canonicalSymbol(fmt.Sprint(env["product_id"]))
-	msg.Topic = topicFromChannel("ticker", symbol)
-	msg.Event = "ticker"
+	msg.Topic = topicFromChannel(corews.TopicTicker, symbol)
+	msg.Event = corews.TopicTicker
 	bid := parseDecimal(fmt.Sprint(env["best_bid"]))
 	ask := parseDecimal(fmt.Sprint(env["best_ask"]))
 	msg.Parsed = &corews.TickerEvent{Symbol: symbol, Bid: bid, Ask: ask, Time: time.Now().UTC()}
@@ -50,8 +50,8 @@ func (w *WS) parseMatch(msg *core.Message, env map[string]any) error {
 	symbol := w.canonicalSymbol(fmt.Sprint(env["product_id"]))
 	price := parseDecimal(fmt.Sprint(env["price"]))
 	qty := parseDecimal(fmt.Sprint(env["size"]))
-	msg.Topic = topicFromChannel("matches", symbol)
-	msg.Event = "trade"
+	msg.Topic = topicFromChannel(corews.TopicTrade, symbol)
+	msg.Event = corews.TopicTrade
 	msg.Parsed = &corews.TradeEvent{Symbol: symbol, Price: price, Quantity: qty, Time: parseTime(fmt.Sprint(env["time"]))}
 	return nil
 }
@@ -89,7 +89,7 @@ func (w *WS) parseL2(msg *core.Message, env map[string]any) error {
 	completeSnapshot := orderBook.GetSnapshot()
 
 	msg.Topic = topicFromChannel("level2_batch", symbol)
-	msg.Event = "book"
+	msg.Event = corews.TopicBook
 	msg.Parsed = &completeSnapshot
 	return nil
 }
@@ -117,7 +117,7 @@ func (w *WS) parseSnapshot(msg *core.Message, env map[string]any) error {
 	completeSnapshot := orderBook.GetSnapshot()
 
 	msg.Topic = topicFromChannel("level2_batch", symbol)
-	msg.Event = "book"
+	msg.Event = corews.TopicBook
 	msg.Parsed = &completeSnapshot
 	return nil
 }

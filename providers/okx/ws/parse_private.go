@@ -28,7 +28,7 @@ func (w *WS) parsePrivateMessage(msg *core.Message, raw []byte) error {
 		return nil
 	}
 	switch env.Arg.Channel {
-	case "orders":
+	case TopicOrders:
 		return w.parseOrderUpdate(msg, env.Data)
 	case "balance_and_position":
 		return w.parseBalanceUpdate(msg, env.Data)
@@ -56,7 +56,7 @@ func (w *WS) parseOrderUpdate(msg *core.Message, payload []json.RawMessage) erro
 	filled, _ := parseDecimalToRat(rec.AccFillSz)
 	avg, _ := parseDecimalToRat(rec.AvgPx)
 	msg.Topic = corews.UserOrderTopic(rec.InstID)
-	msg.Event = "order"
+	msg.Event = corews.TopicUserOrder
 	msg.Parsed = &corews.OrderEvent{
 		Symbol:    rec.InstID,
 		OrderID:   rec.OrdID,
@@ -89,7 +89,7 @@ func (w *WS) parseBalanceUpdate(msg *core.Message, payload []json.RawMessage) er
 		return nil
 	}
 	msg.Topic = corews.UserBalanceTopic()
-	msg.Event = "balance"
+	msg.Event = corews.TopicUserBalance
 	msg.Parsed = &corews.BalanceEvent{Balances: balances}
 	return nil
 }
