@@ -78,6 +78,13 @@ func (p *Provider) InverseFutures(ctx context.Context) core.FuturesAPI { return 
 func (p *Provider) WS() core.WS                                        { return ws.New(p) }
 func (p *Provider) Close() error                                       { return nil }
 
+// DepthSnapshot implements the ws.Provider interface for order book snapshots
+func (p *Provider) DepthSnapshot(ctx context.Context, symbol string, limit int) (corews.BookEvent, int64, error) {
+	// Cast to spotAPI to access the DepthSnapshot method
+	spot := p.Spot(ctx).(spotAPI)
+	return spot.DepthSnapshot(ctx, symbol, limit)
+}
+
 // WebSocket support methods
 func (p *Provider) CanonicalSymbol(binanceSymbol string) string {
 	s := strings.ToUpper(strings.TrimSpace(binanceSymbol))

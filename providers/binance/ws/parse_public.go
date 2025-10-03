@@ -220,6 +220,17 @@ func (w *WS) parseBookStream(msg *core.Message, payload []byte, symbol, stream s
 	// Buffer or apply the event based on initialization state
 	orderBook.BufferEvent(rec.FirstUpdateID, rec.LastUpdateID, bids, asks, eventTime)
 
+	// If the order book is initialized and we detect a gap, trigger automatic recovery
+	if orderBook.IsInitialized() {
+		// Try to apply the event directly to check for gaps
+		success := UpdateFromBinanceDelta(orderBook, bids, asks, rec.FirstUpdateID, rec.LastUpdateID, eventTime)
+		if !success {
+			// Gap detected - trigger automatic recovery
+			go w.initializeAndRecover(symbol, rec.FirstUpdateID, rec.LastUpdateID)
+			return fmt.Errorf("order book out of sync for %s, restarting initialization", symbol)
+		}
+	}
+
 	// Update the message topic and payload
 	msg.Topic = corews.BookTopic(symbol)
 	msg.Event = corews.TopicBook

@@ -41,3 +41,7 @@ binance-ws-validation:
 binance-orderbook-validation:
 	go build -o bin/ ./cmd/binance-orderbook-validation
 	./bin/binance-orderbook-validation
+
+binance-snapshot-test:
+	go build -o bin/ ./cmd/binance-snapshot-test
+	./bin/binance-snapshot-test

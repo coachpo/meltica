@@ -3,6 +3,7 @@ package ws
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/url"
 	"strings"
 	"time"
@@ -25,19 +26,26 @@ type Provider interface {
 	CreateListenKey(ctx context.Context) (string, error)
 	KeepAliveListenKey(ctx context.Context, key string) error
 	CloseListenKey(ctx context.Context, key string) error
+	// For order book snapshots
+	DepthSnapshot(ctx context.Context, symbol string, limit int) (corews.BookEvent, int64, error)
 }
 
 // WS implements the core.WS interface for Binance
 type WS struct {
-	p          Provider
-	orderBooks *OrderBookManager
+	p             Provider
+	orderBooks    *OrderBookManager
+	monitorCtx    context.Context
+	monitorCancel context.CancelFunc
 }
 
 // New creates a new WebSocket handler for Binance
 func New(p Provider) *WS {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &WS{
-		p:          p,
-		orderBooks: NewOrderBookManager(),
+		p:             p,
+		orderBooks:    NewOrderBookManager(),
+		monitorCtx:    ctx,
+		monitorCancel: cancel,
 	}
 }
 
@@ -82,6 +90,13 @@ func (w *WS) SubscribePublic(ctx context.Context, topics ...string) (core.Subscr
 		return nil, err
 	}
 	sub := newWSSub(conn)
+
+	// Start monitoring for order book symbols
+	bookSymbols := w.extractBookSymbols(topics)
+	if len(bookSymbols) > 0 {
+		w.startMonitoring(bookSymbols)
+	}
+
 	go w.readLoop(sub)
 	return sub, nil
 }
@@ -161,18 +176,121 @@ func (w *WS) InitializeOrderBook(ctx context.Context, symbol string) error {
 	return nil
 }
 
-// getDepthSnapshot is a placeholder method that would fetch the actual snapshot
-// In a real implementation, this would call the provider's REST API
+// getDepthSnapshot fetches the actual depth snapshot from the REST API
 func (w *WS) getDepthSnapshot(ctx context.Context, symbol string, limit int) (corews.BookEvent, int64, error) {
-	// This is a placeholder - in reality we would call:
-	// w.p.Spot().DepthSnapshot(ctx, symbol, limit)
-	// But we don't have access to the spot API from the WS struct
+	return w.p.DepthSnapshot(ctx, symbol, limit)
+}
 
-	// For now, return an empty book event with placeholder update ID
-	return corews.BookEvent{
-		Symbol: symbol,
-		Bids:   []corews.DepthLevel{},
-		Asks:   []corews.DepthLevel{},
-		Time:   time.Now(),
-	}, 0, nil
+// initializeAndRecover implements the complete Binance order book initialization flow
+// with automatic retry logic when gaps are detected
+func (w *WS) initializeAndRecover(symbol string, firstUpdateID, lastUpdateID int64) {
+	log.Printf("Starting automatic order book recovery for %s (gap detected: firstUpdateID=%d, lastUpdateID=%d)",
+		symbol, firstUpdateID, lastUpdateID)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Track first event U for validation (if available)
+	firstEventU := firstUpdateID
+	if firstEventU == 0 {
+		// If no specific gap detected, just initialize normally
+		firstEventU = -1
+	}
+
+	retryCount := 0
+	maxRetries := 5
+
+	for retryCount < maxRetries {
+		retryCount++
+
+		if err := w.InitializeOrderBook(ctx, symbol); err != nil {
+			log.Printf("Failed to initialize order book for %s (attempt %d/%d): %v",
+				symbol, retryCount, maxRetries, err)
+			if retryCount < maxRetries {
+				time.Sleep(time.Duration(retryCount) * time.Second)
+				continue
+			}
+			log.Printf("Giving up on order book recovery for %s after %d attempts", symbol, maxRetries)
+			return
+		}
+
+		// Validate snapshot against first event U if we have a specific gap
+		orderBook := w.orderBooks.GetOrCreateOrderBook(symbol)
+		if firstEventU > 0 && orderBook.GetLastUpdateID() < firstEventU {
+			// Snapshot too old, retry
+			log.Printf("Snapshot too old for %s (snapshot=%d < firstEvent=%d), retrying...",
+				symbol, orderBook.GetLastUpdateID(), firstEventU)
+			if retryCount < maxRetries {
+				time.Sleep(time.Duration(retryCount) * time.Second)
+				continue
+			}
+			log.Printf("Giving up on order book recovery for %s - cannot get recent enough snapshot", symbol)
+			return
+		}
+
+		// Successfully initialized
+		log.Printf("Successfully recovered order book for %s (snapshot update ID: %d)",
+			symbol, orderBook.GetLastUpdateID())
+		return
+	}
+}
+
+// validateOrderBookState periodically checks if the order book is healthy
+func (w *WS) validateOrderBookState(symbol string) {
+	orderBook := w.orderBooks.GetOrCreateOrderBook(symbol)
+	if !orderBook.IsInitialized() {
+		log.Printf("Order book for %s is not initialized, triggering recovery", symbol)
+		go w.initializeAndRecover(symbol, 0, 0)
+		return
+	}
+
+	// Check if order book hasn't been updated recently (stale)
+	if time.Since(orderBook.LastUpdate) > 2*time.Minute {
+		log.Printf("Order book for %s is stale (last update: %v), reinitializing",
+			symbol, orderBook.LastUpdate)
+		go w.initializeAndRecover(symbol, 0, 0)
+	}
+}
+
+// startMonitoring begins periodic health checks for order books
+func (w *WS) startMonitoring(symbols []string) {
+	if len(symbols) == 0 {
+		return
+	}
+
+	go func() {
+		ticker := time.NewTicker(1 * time.Minute) // Check every minute
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-w.monitorCtx.Done():
+				return
+			case <-ticker.C:
+				for _, symbol := range symbols {
+					w.validateOrderBookState(symbol)
+				}
+			}
+		}
+	}()
+}
+
+// Close implements the core.WS interface
+func (w *WS) Close() error {
+	if w.monitorCancel != nil {
+		w.monitorCancel()
+	}
+	return nil
+}
+
+// extractBookSymbols identifies symbols that have order book subscriptions
+func (w *WS) extractBookSymbols(topics []string) []string {
+	var symbols []string
+	for _, topic := range topics {
+		channel, symbol := corews.ParseTopic(topic)
+		if channel == corews.TopicBook && symbol != "" {
+			symbols = append(symbols, symbol)
+		}
+	}
+	return symbols
 }

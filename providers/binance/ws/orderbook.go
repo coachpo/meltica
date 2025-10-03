@@ -66,6 +66,14 @@ func (ob *OrderBook) InitializeFromSnapshot(snapshot corews.BookEvent, snapshotU
 	ob.mu.Lock()
 	defer ob.mu.Unlock()
 
+	// Validate snapshot
+	if snapshot.Symbol == "" {
+		return fmt.Errorf("snapshot missing symbol")
+	}
+	if snapshotUpdateID <= 0 {
+		return fmt.Errorf("invalid snapshot update ID: %d", snapshotUpdateID)
+	}
+
 	// Reset the order book
 	ob.Bids = make(map[string]*big.Rat)
 	ob.Asks = make(map[string]*big.Rat)
@@ -87,6 +95,7 @@ func (ob *OrderBook) InitializeFromSnapshot(snapshot corews.BookEvent, snapshotU
 	ob.LastUpdate = snapshot.Time
 
 	// Apply buffered events that are newer than the snapshot
+	var remainingEvents []*BufferedDepthEvent
 	for _, event := range ob.bufferedEvents {
 		if event.LastUpdateID <= snapshotUpdateID {
 			// Discard events that are older than our snapshot
@@ -96,7 +105,8 @@ func (ob *OrderBook) InitializeFromSnapshot(snapshot corews.BookEvent, snapshotU
 			// Gap detected - we need to restart
 			ob.isInitialized = false
 			ob.bufferedEvents = nil
-			return fmt.Errorf("order book initialization failed: gap detected between snapshot and buffered events")
+			return fmt.Errorf("order book initialization failed: gap detected between snapshot (%d) and buffered event (%d-%d)",
+				snapshotUpdateID, event.FirstUpdateID, event.LastUpdateID)
 		}
 
 		// Apply the event
@@ -126,10 +136,13 @@ func (ob *OrderBook) InitializeFromSnapshot(snapshot corews.BookEvent, snapshotU
 
 		ob.LastUpdateID = event.LastUpdateID
 		ob.LastUpdate = event.EventTime
+
+		// Keep events that might still be relevant
+		remainingEvents = append(remainingEvents, event)
 	}
 
 	ob.isInitialized = true
-	ob.bufferedEvents = nil // Clear buffered events after successful initialization
+	ob.bufferedEvents = remainingEvents // Keep only events that couldn't be applied
 	return nil
 }
 
@@ -142,6 +155,13 @@ func (ob *OrderBook) BufferEvent(firstUpdateID, lastUpdateID int64, bids, asks [
 		// Already initialized, apply directly
 		UpdateFromBinanceDelta(ob, bids, asks, firstUpdateID, lastUpdateID, eventTime)
 		return
+	}
+
+	// Limit buffered events to prevent memory exhaustion
+	const maxBufferedEvents = 1000
+	if len(ob.bufferedEvents) >= maxBufferedEvents {
+		// Remove oldest event to make room
+		ob.bufferedEvents = ob.bufferedEvents[1:]
 	}
 
 	// Buffer the event
