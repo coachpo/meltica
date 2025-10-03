@@ -111,7 +111,7 @@ func (w *WS) SubscribePrivate(ctx context.Context, topics ...string) (core.Subsc
 	return sub, nil
 }
 
-// Symbol conversion (static demo): only BTCUSDT <-> BTC-USDT
+// WSNativeSymbol Symbol conversion (static demo): only BTCUSDT <-> BTC-USDT
 func (w *WS) WSNativeSymbol(canonical string) string {
 	if strings.EqualFold(canonical, "BTC-USDT") {
 		return "BTC-USDT"

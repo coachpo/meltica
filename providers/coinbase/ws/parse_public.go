@@ -95,7 +95,10 @@ func (w *WS) parseL2(msg *core.Message, env map[string]any) error {
 }
 
 func (w *WS) parseSnapshot(msg *core.Message, env map[string]any) error {
-	symbol := w.canonicalSymbol(fmt.Sprint(env["product_id"]))
+	symbol := w.WSCanonicalSymbol(fmt.Sprint(env["product_id"]))
+	if symbol == "" {
+		return fmt.Errorf("coinbase ws snapshot: missing symbol")
+	}
 
 	// Get or create order book for this symbol
 	orderBook := w.orderBooks.GetOrCreateOrderBook(symbol)
