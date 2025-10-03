@@ -7,15 +7,6 @@ import (
 	corepkg "github.com/coachpo/meltica/core"
 )
 
-const (
-	EventNewTrade      corepkg.Event = "trade:new"
-	EventNewTicker     corepkg.Event = "ticker:new"
-	EventBookUpdate    corepkg.Event = "book:update"
-	EventBookSnapshot  corepkg.Event = "book:snapshot"
-	EventOrderUpdate   corepkg.Event = "order:update"
-	EventBalanceUpdate corepkg.Event = "balance:update"
-)
-
 // Re-export core domain primitives used by websocket events.
 type (
 	DepthLevel  = corepkg.BookDepthLevel
