@@ -1,29 +1,31 @@
 package ws
 
 import (
+	corepkg "github.com/coachpo/meltica/core"
 	corews "github.com/coachpo/meltica/core/ws"
 )
 
+// Binance-specific provider channel type and constants
+type BinanceChannel string
+
 // Binance-specific topic constants
 const (
-	BNXTradeChannel     = "trade"
-	BNXTickerChannel    = "bookTicker"
-	BNXBookDepthChannel = "depth20@100ms"
-	BNXOrderChannel     = "order"
-	BNXBalanceChannel   = "balance"
+	BNXTradeChannel     BinanceChannel = "trade"
+	BNXTickerChannel    BinanceChannel = "bookTicker"
+	BNXBookDepthChannel BinanceChannel = "depth20@100ms"
+	BNXOrderChannel     BinanceChannel = "order"
+	BNXBalanceChannel   BinanceChannel = "balance"
 )
 
-var mapper = corews.NewChannelMapper(corews.ChannelMappingConfig{
-	ProtocolToProvider: map[string]string{
-		corews.TopicTrade:       BNXTradeChannel,
-		corews.TopicTicker:      BNXTickerChannel,
-		corews.TopicBook:        BNXBookDepthChannel,
-		corews.TopicUserOrder:   BNXOrderChannel,
-		corews.TopicUserBalance: BNXBalanceChannel,
-	},
+var mapper = corews.NewChannelMapperFromAnyMap(map[corepkg.Topic]BinanceChannel{
+	corews.TopicTrade:       BNXTradeChannel,
+	corews.TopicTicker:      BNXTickerChannel,
+	corews.TopicBook:        BNXBookDepthChannel,
+	corews.TopicUserOrder:   BNXOrderChannel,
+	corews.TopicUserBalance: BNXBalanceChannel,
 })
 
-var providerToProtocol = map[string]string{
+var providerToProtocol = map[BinanceChannel]corepkg.Topic{
 	BNXTradeChannel:     corews.TopicTrade,
 	BNXTickerChannel:    corews.TopicTicker,
 	BNXBookDepthChannel: corews.TopicBook,
@@ -31,34 +33,34 @@ var providerToProtocol = map[string]string{
 	BNXBalanceChannel:   corews.TopicUserBalance,
 }
 
-func protocolTopicFor(channel string) string {
+func protocolTopicFor(channel BinanceChannel) corepkg.Topic {
 	if topic, ok := providerToProtocol[channel]; ok {
 		return topic
 	}
-	return channel
+	return corepkg.Topic(string(channel))
 }
 
-func topicFromChannel(channel, instrument string) string {
+func topicFromChannel(channel BinanceChannel, instrument string) corepkg.Topic {
 	protocolTopic := protocolTopicFor(channel)
 	if instrument == "" {
 		return protocolTopic
 	}
 
 	switch protocolTopic {
-	case corews.TopicTrade:
+	case corepkg.Topic(string(corews.TopicTrade)):
 		return corews.TradeTopic(instrument)
-	case corews.TopicTicker:
+	case corepkg.Topic(string(corews.TopicTicker)):
 		return corews.TickerTopic(instrument)
-	case corews.TopicBook:
+	case corepkg.Topic(string(corews.TopicBook)):
 		return corews.BookTopic(instrument)
-	case corews.TopicUserOrder:
+	case corepkg.Topic(string(corews.TopicUserOrder)):
 		return corews.UserOrderTopic(instrument)
-	case corews.TopicUserBalance:
+	case corepkg.Topic(string(corews.TopicUserBalance)):
 		return corews.UserBalanceTopic()
 	default:
-		if protocolTopic == channel || protocolTopic == "" {
-			return channel + ":" + instrument
+		if protocolTopic == corepkg.Topic(string(channel)) || protocolTopic == corepkg.TopicNone {
+			return corepkg.Topic(string(channel) + ":" + instrument)
 		}
-		return protocolTopic + ":" + instrument
+		return corepkg.Topic(string(protocolTopic) + ":" + instrument)
 	}
 }

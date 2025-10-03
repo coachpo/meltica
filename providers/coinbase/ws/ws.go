@@ -71,7 +71,7 @@ func newWSSub(conn *websocket.Conn) *wsSub {
 	}
 }
 
-func (w *WS) SubscribePublic(ctx context.Context, topics ...string) (core.Subscription, error) {
+func (w *WS) SubscribePublic(ctx context.Context, topics ...core.Topic) (core.Subscription, error) {
 	if len(topics) == 0 {
 		return nil, fmt.Errorf("coinbase: no topics provided")
 	}
@@ -91,7 +91,7 @@ func (w *WS) SubscribePublic(ctx context.Context, topics ...string) (core.Subscr
 	return sub, nil
 }
 
-func (w *WS) SubscribePrivate(ctx context.Context, topics ...string) (core.Subscription, error) {
+func (w *WS) SubscribePrivate(ctx context.Context, topics ...core.Topic) (core.Subscription, error) {
 	if w.p.APIKey() == "" || w.p.Secret() == "" || w.p.Passphrase() == "" {
 		return nil, core.ErrNotSupported
 	}
@@ -151,7 +151,7 @@ func (w *WS) readLoop(sub *wsSub, private bool) {
 			sub.err <- err
 			return
 		}
-		if msg.Topic != "" {
+		if msg.Topic != core.TopicNone {
 			sub.c <- msg
 		}
 	}
@@ -177,19 +177,19 @@ func (w *WS) canonicalSymbol(native string) string {
 	return native
 }
 
-func (w *WS) sendSubscriptions(conn *websocket.Conn, topics []string, private bool) error {
+func (w *WS) sendSubscriptions(conn *websocket.Conn, topics []core.Topic, private bool) error {
 	channels := map[string][]string{}
 	for _, topic := range topics {
-		channel, symbol := corews.ParseTopic(topic)
+		channel, symbol := corews.ParseTopic(string(topic))
 		if channel == "" || symbol == "" {
 			continue
 		}
 		native := w.nativeProduct(symbol)
 		providerChannel := mapper.ToProviderChannel(channel)
-		if providerChannel == CNBTopicUser && !private {
+		if providerChannel == string(CNBTopicUser) && !private {
 			continue
 		}
-		if channel == corews.TopicUserBalance && private {
+		if channel == string(corews.TopicUserBalance) && private {
 			channels[providerChannel] = append(channels[providerChannel], "*")
 			continue
 		}

@@ -23,8 +23,8 @@ func (w *WS) parsePrivateMessage(msg *core.Message, raw []byte) error {
 		return nil
 	}
 	if len(env.Data) == 0 {
-		msg.Topic = env.Event
-		msg.Event = env.Event
+		msg.Topic = core.Topic(env.Event)
+		msg.Event = core.Event(env.Event)
 		return nil
 	}
 	switch env.Arg.Channel {
@@ -33,7 +33,7 @@ func (w *WS) parsePrivateMessage(msg *core.Message, raw []byte) error {
 	case "balance_and_position":
 		return w.parseBalanceUpdate(msg, env.Data)
 	default:
-		msg.Topic = protocolTopicFor(env.Arg.Channel)
+		msg.Topic = core.Topic(protocolTopicFor(env.Arg.Channel))
 		return nil
 	}
 }
@@ -56,7 +56,7 @@ func (w *WS) parseOrderUpdate(msg *core.Message, payload []json.RawMessage) erro
 	filled, _ := parseDecimalToRat(rec.AccFillSz)
 	avg, _ := parseDecimalToRat(rec.AvgPx)
 	msg.Topic = corews.UserOrderTopic(rec.InstID)
-	msg.Event = corews.TopicUserOrder
+	msg.Event = corews.EventOrderUpdate
 	msg.Parsed = &corews.OrderEvent{
 		Symbol:    rec.InstID,
 		OrderID:   rec.OrdID,
@@ -89,7 +89,7 @@ func (w *WS) parseBalanceUpdate(msg *core.Message, payload []json.RawMessage) er
 		return nil
 	}
 	msg.Topic = corews.UserBalanceTopic()
-	msg.Event = corews.TopicUserBalance
+	msg.Event = corews.EventBalanceUpdate
 	msg.Parsed = &corews.BalanceEvent{Balances: balances}
 	return nil
 }

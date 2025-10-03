@@ -69,7 +69,7 @@ func newWSSub(conn *websocket.Conn) *wsSub {
 }
 
 // SubscribePublic connects to the OKX public websocket and subscribes to requested topics.
-func (w *WS) SubscribePublic(ctx context.Context, topics ...string) (core.Subscription, error) {
+func (w *WS) SubscribePublic(ctx context.Context, topics ...core.Topic) (core.Subscription, error) {
 	if len(topics) == 0 {
 		return nil, fmt.Errorf("no topics provided")
 	}
@@ -92,7 +92,7 @@ func (w *WS) SubscribePublic(ctx context.Context, topics ...string) (core.Subscr
 }
 
 // SubscribePrivate connects to the OKX private websocket and subscribes to private topics.
-func (w *WS) SubscribePrivate(ctx context.Context, topics ...string) (core.Subscription, error) {
+func (w *WS) SubscribePrivate(ctx context.Context, topics ...core.Topic) (core.Subscription, error) {
 	dialer := websocket.Dialer{HandshakeTimeout: wsHandshakeTimeout}
 	conn, _, err := dialer.DialContext(ctx, privateWSURL, nil)
 	if err != nil {
@@ -168,10 +168,10 @@ func (w *WS) readLoopPrivate(sub *wsSub) {
 	}
 }
 
-func (w *WS) buildSubscriptionArgs(topics []string) []map[string]string {
+func (w *WS) buildSubscriptionArgs(topics []core.Topic) []map[string]string {
 	args := make([]map[string]string, 0, len(topics))
 	for _, topic := range topics {
-		channel, instrument := corews.ParseTopic(topic)
+		channel, instrument := corews.ParseTopic(string(topic))
 		providerChannel := mapper.ToProviderChannel(channel)
 		if providerChannel == "" {
 			continue

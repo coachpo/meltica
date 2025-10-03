@@ -1,65 +1,68 @@
 package ws
 
 import (
+	"github.com/coachpo/meltica/core"
+
 	corews "github.com/coachpo/meltica/core/ws"
 )
 
+// Kraken-specific provider channel type and constants
+type KrakenChannel string
+
 // Kraken-specific topic constants
 const (
-	KRKTopicTrade      = "trade"
-	KRKTopicTicker     = "ticker"
-	KRKTopicBook       = "book"
-	KRKTopicBalance    = "balance"
-	KRKTopicOwnTrades  = "ownTrades"
-	KRKTopicOpenOrders = "openOrders"
+	KRKTopicTrade      KrakenChannel = "trade"
+	KRKTopicTicker     KrakenChannel = "ticker"
+	KRKTopicBook       KrakenChannel = "book"
+	KRKTopicBalance    KrakenChannel = "balance"
+	KRKTopicOwnTrades  KrakenChannel = "ownTrades"
+	KRKTopicOpenOrders KrakenChannel = "openOrders"
 )
 
-var mapper = corews.NewChannelMapper(corews.ChannelMappingConfig{
-	ProtocolToProvider: map[string]string{
-		corews.TopicTrade:       KRKTopicTrade,
-		corews.TopicTicker:      KRKTopicTicker,
-		corews.TopicBook:        KRKTopicBook,
-		corews.TopicUserBalance: KRKTopicBalance, // for private streams
-	},
+var mapper = corews.NewChannelMapperFromMap(map[core.Topic]string{
+	core.Topic(string(corews.TopicTrade)):       string(KRKTopicTrade),
+	core.Topic(string(corews.TopicTicker)):      string(KRKTopicTicker),
+	core.Topic(string(corews.TopicBook)):        string(KRKTopicBook),
+	core.Topic(string(corews.TopicUserBalance)): string(KRKTopicBalance), // for private streams
 })
 
-var providerToProtocol = map[string]string{
-	KRKTopicTrade:      corews.TopicTrade,
-	KRKTopicTicker:     corews.TopicTicker,
-	KRKTopicBook:       corews.TopicBook,
-	KRKTopicBalance:    corews.TopicUserBalance,
-	KRKTopicOwnTrades:  corews.TopicUserOrder,
-	KRKTopicOpenOrders: corews.TopicUserOrder,
+var providerToProtocol = map[KrakenChannel]core.Topic{
+	KRKTopicTrade:      core.Topic(string(corews.TopicTrade)),
+	KRKTopicTicker:     core.Topic(string(corews.TopicTicker)),
+	KRKTopicBook:       core.Topic(string(corews.TopicBook)),
+	KRKTopicBalance:    core.Topic(string(corews.TopicUserBalance)),
+	KRKTopicOwnTrades:  core.Topic(string(corews.TopicUserOrder)),
+	KRKTopicOpenOrders: core.Topic(string(corews.TopicUserOrder)),
 }
 
-func protocolTopicFor(channel string) string {
+func protocolTopicFor(channel KrakenChannel) core.Topic {
 	if topic, ok := providerToProtocol[channel]; ok {
 		return topic
 	}
-	return channel
+	return core.Topic(string(channel))
 }
 
-func topicFromChannel(channel, instrument string) string {
+func topicFromChannel(channel KrakenChannel, instrument string) core.Topic {
 	protocolTopic := protocolTopicFor(channel)
 	if instrument == "" {
 		return protocolTopic
 	}
 
 	switch protocolTopic {
-	case corews.TopicTrade:
+	case core.Topic(string(corews.TopicTrade)):
 		return corews.TradeTopic(instrument)
-	case corews.TopicTicker:
+	case core.Topic(string(corews.TopicTicker)):
 		return corews.TickerTopic(instrument)
-	case corews.TopicBook:
+	case core.Topic(string(corews.TopicBook)):
 		return corews.BookTopic(instrument)
-	case corews.TopicUserOrder:
+	case core.Topic(string(corews.TopicUserOrder)):
 		return corews.UserOrderTopic(instrument)
-	case corews.TopicUserBalance:
+	case core.Topic(string(corews.TopicUserBalance)):
 		return corews.UserBalanceTopic()
 	default:
-		if protocolTopic == channel || protocolTopic == "" {
-			return channel + ":" + instrument
+		if protocolTopic == core.Topic(string(channel)) || protocolTopic == core.TopicNone {
+			return core.Topic(string(channel) + ":" + instrument)
 		}
-		return protocolTopic + ":" + instrument
+		return core.Topic(string(protocolTopic) + ":" + instrument)
 	}
 }

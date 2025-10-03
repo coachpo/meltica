@@ -26,8 +26,8 @@ func (w *WS) parsePublicMessage(msg *core.Message, raw []byte) error {
 		return nil
 	}
 	if len(env.Data) == 0 {
-		msg.Topic = env.Event
-		msg.Event = env.Event
+		msg.Topic = core.Topic(env.Event)
+		msg.Event = core.Event(env.Event)
 		if env.Msg != "" {
 			msg.Parsed = env.Msg
 		}
@@ -68,7 +68,7 @@ func (w *WS) parseTradeSnapshot(msg *core.Message, payload []json.RawMessage, in
 	if when.IsZero() {
 		when = time.Now()
 	}
-	msg.Event = corews.TopicTrade
+	msg.Event = corews.EventNewTrade
 	msg.Parsed = &corews.TradeEvent{Symbol: instrument, Price: price, Quantity: qty, Time: when}
 	return nil
 }
@@ -91,7 +91,7 @@ func (w *WS) parseTickerSnapshot(msg *core.Message, payload []json.RawMessage, i
 	if when.IsZero() {
 		when = time.Now()
 	}
-	msg.Event = corews.TopicTicker
+	msg.Event = corews.EventNewTicker
 	msg.Parsed = &corews.TickerEvent{Symbol: instrument, Bid: bid, Ask: ask, Time: when}
 	return nil
 }
@@ -147,7 +147,11 @@ func (w *WS) parseBookData(msg *core.Message, payload []json.RawMessage, instrum
 	// Get the complete order book snapshot
 	completeSnapshot := orderBook.GetSnapshot()
 
-	msg.Event = corews.TopicBook
+	if action == "update" {
+		msg.Event = corews.EventBookUpdate
+	} else {
+		msg.Event = corews.EventBookSnapshot
+	}
 	msg.Parsed = &completeSnapshot
 	return nil
 }

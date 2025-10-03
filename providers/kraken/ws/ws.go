@@ -67,7 +67,7 @@ func newWSSub(conn *websocket.Conn) *wsSub {
 }
 
 // SubscribePublic connects to the Kraken public websocket and subscribes to the requested topics.
-func (w *WS) SubscribePublic(ctx context.Context, topics ...string) (core.Subscription, error) {
+func (w *WS) SubscribePublic(ctx context.Context, topics ...core.Topic) (core.Subscription, error) {
 	if len(topics) == 0 {
 		return nil, fmt.Errorf("no topics provided")
 	}
@@ -81,7 +81,7 @@ func (w *WS) SubscribePublic(ctx context.Context, topics ...string) (core.Subscr
 	}
 	// Build subscriptions.
 	for _, topic := range topics {
-		ch, canon := corews.ParseTopic(topic)
+		ch, canon := corews.ParseTopic(string(topic))
 		if ch == "" || canon == "" {
 			continue
 		}
@@ -104,7 +104,7 @@ func (w *WS) SubscribePublic(ctx context.Context, topics ...string) (core.Subscr
 }
 
 // SubscribePrivate connects to the authenticated websocket stream and subscribes to private topics.
-func (w *WS) SubscribePrivate(ctx context.Context, topics ...string) (core.Subscription, error) {
+func (w *WS) SubscribePrivate(ctx context.Context, topics ...core.Topic) (core.Subscription, error) {
 	if w.p.APIKey() == "" || w.p.Secret() == "" {
 		return nil, core.ErrNotSupported
 	}
@@ -129,8 +129,8 @@ func (w *WS) SubscribePrivate(ctx context.Context, topics ...string) (core.Subsc
 		return nil, err
 	}
 	for _, topic := range topics {
-		ch, _ := corews.ParseTopic(topic)
-		if ch != KRKTopicOpenOrders {
+		ch, _ := corews.ParseTopic(string(topic))
+		if ch != string(KRKTopicOpenOrders) {
 			continue
 		}
 		payload := map[string]any{
@@ -167,7 +167,7 @@ func (w *WS) WSCanonicalSymbol(native string) string {
 }
 
 // readLoop processes public websocket messages until the connection closes.
-func (w *WS) readLoop(sub *wsSub, requested []string) {
+func (w *WS) readLoop(sub *wsSub, requested []core.Topic) {
 	defer close(sub.c)
 	defer close(sub.err)
 	for {
