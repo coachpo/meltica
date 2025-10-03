@@ -169,7 +169,7 @@ func (w *WS) sendSubscriptions(conn *websocket.Conn, topics []string, private bo
 		}
 		native := w.nativeProduct(symbol)
 		providerChannel := mapper.ToProviderChannel(channel)
-		if providerChannel == TopicUser && !private {
+		if providerChannel == CNBTopicUser && !private {
 			continue
 		}
 		if channel == corews.TopicUserBalance && private {
@@ -199,7 +199,7 @@ func (w *WS) sendSubscriptions(conn *websocket.Conn, topics []string, private bo
 
 func buildChannels(target map[string][]string) []any {
 	if len(target) == 0 {
-		return []any{TopicTicker, TopicMatches, TopicLevel2}
+		return []any{CNBTopicTicker, CNBTopicMatches, CNBTopicLevel2}
 	}
 	out := make([]any, 0, len(target))
 	for channel, products := range target {

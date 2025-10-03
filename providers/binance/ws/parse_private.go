@@ -69,7 +69,7 @@ func (w *WS) SubscribePrivate(ctx context.Context, topics ...string) (core.Subsc
 				_ = json.Unmarshal(data, &ou)
 				filled, _ := parseDecimalToRat(ou.O.Z)
 				avg, _ := parseDecimalToRat(ou.O.Ap)
-				msg.Event = TopicOrder
+				msg.Event = BNXTopicOrder
 				msg.Parsed = &corews.OrderEvent{
 					Symbol:    ou.O.S,
 					OrderID:   fmt.Sprintf("%d", ou.O.I),

@@ -28,7 +28,7 @@ func (w *WS) parsePrivateMessage(msg *core.Message, raw []byte) error {
 		return nil
 	}
 	switch env.Arg.Channel {
-	case TopicOrders:
+	case OKXTopicOrders:
 		return w.parseOrderUpdate(msg, env.Data)
 	case "balance_and_position":
 		return w.parseBalanceUpdate(msg, env.Data)

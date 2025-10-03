@@ -8,39 +8,39 @@ import (
 
 // Coinbase-specific topic constants
 const (
-	TopicTrade     = "matches"
-	TopicTicker    = "ticker"
-	TopicBookDepth = "level2_batch"
-	TopicUser      = "user"
-	TopicLevel2    = "level2"
-	TopicMatches   = "matches"
+	CNBTopicTrade     = "matches"
+	CNBTopicTicker    = "ticker"
+	CNBTopicBookDepth = "level2_batch"
+	CNBTopicUser      = "user"
+	CNBTopicLevel2    = "level2"
+	CNBTopicMatches   = "matches"
 )
 
 var mapper = corews.NewChannelMapper(corews.ChannelMappingConfig{
 	ProtocolToProvider: map[string]string{
-		corews.TopicTrade:  TopicTrade,
-		corews.TopicTicker: TopicTicker,
+		corews.TopicTrade:  CNBTopicTrade,
+		corews.TopicTicker: CNBTopicTicker,
 		// corews.TopicBook:        "level2", need authentication
-		corews.TopicBook:        TopicBookDepth,
-		corews.TopicUserBalance: TopicUser,
-		corews.TopicUserOrder:   TopicUser,
+		corews.TopicBook:        CNBTopicBookDepth,
+		corews.TopicUserBalance: CNBTopicUser,
+		corews.TopicUserOrder:   CNBTopicUser,
 	},
 	AdditionalProviderMappings: map[string]string{
-		TopicTrade:  corews.TopicTrade,
-		TopicTicker: corews.TopicTicker,
+		CNBTopicTrade:  corews.TopicTrade,
+		CNBTopicTicker: corews.TopicTicker,
 		// corews.TopicBook:        "level2", need authentication
-		TopicBookDepth: corews.TopicBook,
-		TopicUser:      corews.TopicUserBalance,
-		"match":        corews.TopicTrade,
-		"l2update":     corews.TopicBook,
-		"snapshot":     corews.TopicBook,
-		"received":     corews.TopicUserOrder,
-		"open":         corews.TopicUserOrder,
-		"done":         corews.TopicUserOrder,
-		"change":       corews.TopicUserOrder,
-		"activate":     corews.TopicUserOrder,
-		"wallet":       corews.TopicUserBalance,
-		"profile":      corews.TopicUserBalance,
+		CNBTopicBookDepth: corews.TopicBook,
+		CNBTopicUser:      corews.TopicUserBalance,
+		"match":           corews.TopicTrade,
+		"l2update":        corews.TopicBook,
+		"snapshot":        corews.TopicBook,
+		"received":        corews.TopicUserOrder,
+		"open":            corews.TopicUserOrder,
+		"done":            corews.TopicUserOrder,
+		"change":          corews.TopicUserOrder,
+		"activate":        corews.TopicUserOrder,
+		"wallet":          corews.TopicUserBalance,
+		"profile":         corews.TopicUserBalance,
 	},
 })
 

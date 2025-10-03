@@ -21,7 +21,7 @@ func (w *WS) parsePublicMessage(msg *core.Message, payload []byte) error {
 		msg.Topic = typeVal
 		msg.Event = typeVal
 		return nil
-	case TopicTicker:
+	case CNBTopicTicker:
 		return w.parseTicker(msg, env)
 	case "l2update":
 		return w.parseL2(msg, env)

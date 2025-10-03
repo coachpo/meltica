@@ -8,27 +8,27 @@ import (
 
 // Binance-specific topic constants
 const (
-	TopicTrade     = "trade"
-	TopicTicker    = "bookTicker"
-	TopicBookDepth = "depth20@100ms"
-	TopicOrder     = "order"
-	TopicBalance   = "balance"
+	BNXTopicTrade     = "trade"
+	BNXTopicTicker    = "bookTicker"
+	BNXTopicBookDepth = "depth20@100ms"
+	BNXTopicOrder     = "order"
+	BNXTopicBalance   = "balance"
 )
 
 var mapper = corews.NewChannelMapper(corews.ChannelMappingConfig{
 	ProtocolToProvider: map[string]string{
-		corews.TopicTrade:       TopicTrade,
-		corews.TopicTicker:      TopicTicker,
-		corews.TopicBook:        TopicBookDepth,
-		corews.TopicUserOrder:   TopicOrder,
-		corews.TopicUserBalance: TopicBalance,
+		corews.TopicTrade:       BNXTopicTrade,
+		corews.TopicTicker:      BNXTopicTicker,
+		corews.TopicBook:        BNXTopicBookDepth,
+		corews.TopicUserOrder:   BNXTopicOrder,
+		corews.TopicUserBalance: BNXTopicBalance,
 	},
 	AdditionalProviderMappings: map[string]string{
-		TopicTrade:     corews.TopicTrade,
-		TopicTicker:    corews.TopicTicker,
-		TopicBookDepth: corews.TopicBook,
-		TopicOrder:     corews.TopicUserOrder,
-		TopicBalance:   corews.TopicUserBalance,
+		BNXTopicTrade:     corews.TopicTrade,
+		BNXTopicTicker:    corews.TopicTicker,
+		BNXTopicBookDepth: corews.TopicBook,
+		BNXTopicOrder:     corews.TopicUserOrder,
+		BNXTopicBalance:   corews.TopicUserBalance,
 	},
 })
 

@@ -8,28 +8,28 @@ import (
 
 // OKX-specific topic constants
 const (
-	TopicTrade   = "trades"
-	TopicTicker  = "tickers"
-	TopicBook    = "books" // 400 depth levels, 100ms updates - best balance of depth and performance
-	TopicAccount = "account"
-	TopicOrders  = "orders"
-	TopicBalance = "balance"
+	OKXTopicTrade   = "trades"
+	OKXTopicTicker  = "tickers"
+	OKXTopicBook    = "books" // 400 depth levels, 100ms updates - best balance of depth and performance
+	OKXTopicAccount = "account"
+	OKXTopicOrders  = "orders"
+	OKXTopicBalance = "balance"
 )
 
 var mapper = corews.NewChannelMapper(corews.ChannelMappingConfig{
 	ProtocolToProvider: map[string]string{
-		corews.TopicTrade:       TopicTrade,
-		corews.TopicTicker:      TopicTicker,
-		corews.TopicBook:        TopicBook,
-		corews.TopicUserBalance: TopicAccount,
-		corews.TopicUserOrder:   TopicOrders,
+		corews.TopicTrade:       OKXTopicTrade,
+		corews.TopicTicker:      OKXTopicTicker,
+		corews.TopicBook:        OKXTopicBook,
+		corews.TopicUserBalance: OKXTopicAccount,
+		corews.TopicUserOrder:   OKXTopicOrders,
 	},
 	AdditionalProviderMappings: map[string]string{
-		TopicTrade:   corews.TopicTrade,
-		TopicTicker:  corews.TopicTicker,
-		TopicBook:    corews.TopicBook,
-		TopicAccount: corews.TopicUserBalance,
-		TopicOrders:  corews.TopicUserOrder,
+		OKXTopicTrade:   corews.TopicTrade,
+		OKXTopicTicker:  corews.TopicTicker,
+		OKXTopicBook:    corews.TopicBook,
+		OKXTopicAccount: corews.TopicUserBalance,
+		OKXTopicOrders:  corews.TopicUserOrder,
 	},
 })
 

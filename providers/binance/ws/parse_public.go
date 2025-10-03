@@ -58,9 +58,9 @@ func (w *WS) parsePublicMessage(msg *core.Message, raw []byte) error {
 	}
 
 	switch meta.Event {
-	case TopicTrade:
+	case BNXTopicTrade:
 		return w.parseTradeEvent(msg, payload, symbol, stream)
-	case TopicTicker:
+	case BNXTopicTicker:
 		return w.parseBookTicker(msg, payload, symbol, stream)
 	default:
 		return nil
@@ -84,11 +84,11 @@ func (w *WS) parseTradeEvent(msg *core.Message, payload []byte, symbol, stream s
 	if sym == "" {
 		sym = rec.Symbol
 	}
-	msg.Topic = topicFromChannel(TopicTrade, sym)
+	msg.Topic = topicFromChannel(BNXTopicTrade, sym)
 	if msg.Topic == "" {
 		msg.Topic = stream
 	}
-	msg.Event = TopicTrade
+	msg.Event = BNXTopicTrade
 	price, _ := parseDecimalToRat(rec.Price)
 	qty, _ := parseDecimalToRat(rec.Qty)
 	msg.Parsed = &corews.TradeEvent{Symbol: sym, Price: price, Quantity: qty, Time: time.UnixMilli(rec.Time)}

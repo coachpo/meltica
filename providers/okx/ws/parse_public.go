@@ -38,11 +38,11 @@ func (w *WS) parsePublicMessage(msg *core.Message, raw []byte) error {
 	msg.Topic = topicFromChannel(channel, instrument)
 
 	switch {
-	case channel == TopicTrade:
+	case channel == OKXTopicTrade:
 		return w.parseTradeSnapshot(msg, env.Data, instrument)
-	case channel == TopicTicker:
+	case channel == OKXTopicTicker:
 		return w.parseTickerSnapshot(msg, env.Data, instrument)
-	case strings.HasPrefix(channel, TopicBook):
+	case strings.HasPrefix(channel, OKXTopicBook):
 		return w.parseBookData(msg, env.Data, instrument, env.Action)
 	default:
 		return nil

@@ -8,30 +8,30 @@ import (
 
 // Kraken-specific topic constants
 const (
-	TopicTrade      = "trade"
-	TopicTicker     = "ticker"
-	TopicBook       = "book"
-	TopicBalance    = "balance"
-	TopicSpread     = "spread"
-	TopicOwnTrades  = "ownTrades"
-	TopicOpenOrders = "openOrders"
+	KRKTopicTrade      = "trade"
+	KRKTopicTicker     = "ticker"
+	KRKTopicBook       = "book"
+	KRKTopicBalance    = "balance"
+	KRKTopicSpread     = "spread"
+	KRKTopicOwnTrades  = "ownTrades"
+	KRKTopicOpenOrders = "openOrders"
 )
 
 var mapper = corews.NewChannelMapper(corews.ChannelMappingConfig{
 	ProtocolToProvider: map[string]string{
-		corews.TopicTrade:       TopicTrade,
-		corews.TopicTicker:      TopicTicker,
-		corews.TopicBook:        TopicBook,
-		corews.TopicUserBalance: TopicBalance, // for private streams
+		corews.TopicTrade:       KRKTopicTrade,
+		corews.TopicTicker:      KRKTopicTicker,
+		corews.TopicBook:        KRKTopicBook,
+		corews.TopicUserBalance: KRKTopicBalance, // for private streams
 	},
 	AdditionalProviderMappings: map[string]string{
-		TopicTrade:      corews.TopicTrade,
-		TopicTicker:     corews.TopicTicker,
-		TopicBook:       corews.TopicBook,
-		TopicBalance:    corews.TopicUserBalance,
-		TopicSpread:     corews.TopicBook,
-		TopicOwnTrades:  corews.TopicUserOrder,
-		TopicOpenOrders: corews.TopicUserOrder,
+		KRKTopicTrade:      corews.TopicTrade,
+		KRKTopicTicker:     corews.TopicTicker,
+		KRKTopicBook:       corews.TopicBook,
+		KRKTopicBalance:    corews.TopicUserBalance,
+		KRKTopicSpread:     corews.TopicBook,
+		KRKTopicOwnTrades:  corews.TopicUserOrder,
+		KRKTopicOpenOrders: corews.TopicUserOrder,
 	},
 })
 

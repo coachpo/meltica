@@ -63,15 +63,15 @@ func (w *WS) parseV2Channel(msg *core.Message, channel string, env map[string]an
 	canon := w.p.CanonicalSymbol(symbol, requested)
 	msg.Topic = topicFromChannel(normalized, canon)
 	switch normalized {
-	case TopicTrade:
+	case KRKTopicTrade:
 		return w.parseTrades(msg, data, canon)
-	case TopicTicker:
+	case KRKTopicTicker:
 		var payload any
 		if len(data) > 0 {
 			payload = data[len(data)-1]
 		}
 		return w.parseTicker(msg, payload, canon)
-	case TopicBook:
+	case KRKTopicBook:
 		var payload any
 		if len(data) > 0 {
 			payload = data[len(data)-1]
@@ -108,7 +108,7 @@ func (w *WS) parseTrades(msg *core.Message, payload any, symbol string) error {
 		events = append(events, &corews.TradeEvent{Symbol: sym, Price: price, Quantity: qty, Time: when})
 	}
 	if len(events) > 0 {
-		msg.Event = TopicTrade
+		msg.Event = KRKTopicTrade
 		msg.Parsed = events[len(events)-1]
 	}
 	return nil
@@ -121,7 +121,7 @@ func (w *WS) parseTicker(msg *core.Message, payload any, symbol string) error {
 	}
 	bid := parseDecimalStr(valueString(firstPresent(row, "bid", "best_bid")))
 	ask := parseDecimalStr(valueString(firstPresent(row, "ask", "best_ask")))
-	msg.Event = TopicTicker
+	msg.Event = KRKTopicTicker
 	msg.Parsed = &corews.TickerEvent{Symbol: symbol, Bid: bid, Ask: ask, Time: time.Now().UTC()}
 	return nil
 }
@@ -138,7 +138,7 @@ func (w *WS) parseBook(msg *core.Message, payload any, symbol string) error {
 	if rawAsks, ok := row["asks"]; ok {
 		appendDepthLevels(&de.Asks, rawAsks)
 	}
-	msg.Event = TopicBook
+	msg.Event = KRKTopicBook
 	msg.Parsed = &de
 	return nil
 }
