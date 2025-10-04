@@ -2,13 +2,12 @@ package exchange
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"strings"
 	"time"
 
 	coreexchange "github.com/coachpo/meltica/core/exchange"
 	corews "github.com/coachpo/meltica/core/ws"
+	"github.com/coachpo/meltica/exchanges/binance/internal"
 	"github.com/coachpo/meltica/exchanges/binance/routing"
 )
 
@@ -20,7 +19,7 @@ func (x *Exchange) OrderBookSnapshots(ctx context.Context, symbol string) (<-cha
 
 	sub, err := x.wsRouter.SubscribePublic(ctx, corews.BookTopic(canonicalSymbol))
 	if err != nil {
-		return nil, nil, fmt.Errorf("binance: subscribe depth stream: %w", err)
+		return nil, nil, internal.WrapExchange(err, "subscribe depth stream")
 	}
 
 	if err := x.initializeWithRetries(ctx, x.wsRouter, canonicalSymbol); err != nil {
@@ -96,28 +95,18 @@ func (x *Exchange) OrderBookSnapshots(ctx context.Context, symbol string) (<-cha
 func (x *Exchange) canonicalizeSymbol(symbol string) (string, error) {
 	s := strings.TrimSpace(symbol)
 	if s == "" {
-		return "", errors.New("binance: empty symbol")
+		return "", internal.Invalid("empty symbol")
 	}
 	s = strings.ToUpper(s)
 	if strings.Contains(s, "-") {
 		return s, nil
 	}
-
-	var canonical string
-	var panicErr any
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				panicErr = r
-			}
-		}()
-		canonical = x.CanonicalSymbol(s)
-	}()
-	if panicErr != nil {
-		return "", fmt.Errorf("binance: unsupported symbol %s", symbol)
+	canonical, err := x.CanonicalSymbol(s)
+	if err != nil {
+		return "", err
 	}
 	if canonical == "" {
-		return "", fmt.Errorf("binance: unsupported symbol %s", symbol)
+		return "", internal.Invalid("unsupported symbol %s", symbol)
 	}
 	return canonical, nil
 }
@@ -128,7 +117,7 @@ func (x *Exchange) initializeWithRetries(ctx context.Context, handler *routing.W
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return internal.WrapNetwork(ctx.Err(), "order book initialization cancelled")
 		default:
 		}
 		initCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
@@ -141,12 +130,12 @@ func (x *Exchange) initializeWithRetries(ctx context.Context, handler *routing.W
 		backoff := time.Duration(attempt+1) * time.Second
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return internal.WrapNetwork(ctx.Err(), "order book initialization cancelled")
 		case <-time.After(backoff):
 		}
 	}
 	if lastErr == nil {
-		lastErr = errors.New("binance: failed to initialize order book")
+		lastErr = internal.Exchange("failed to initialize order book")
 	}
 	return lastErr
 }

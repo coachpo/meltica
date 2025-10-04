@@ -10,6 +10,7 @@ import (
 	"github.com/coachpo/meltica/core"
 	coreexchange "github.com/coachpo/meltica/core/exchange"
 	corews "github.com/coachpo/meltica/core/ws"
+	"github.com/coachpo/meltica/exchanges/binance/internal"
 )
 
 type binanceEnvelope struct {
@@ -30,12 +31,12 @@ func (w *WSRouter) parsePublicMessage(msg *RoutedMessage, raw []byte) error {
 	}
 
 	if meta.Symbol == "" {
-		panic(fmt.Sprintf("binance ws: missing symbol in message; stream=%s, event=%s", stream, meta.Event))
+		return internal.Exchange("ws: missing symbol in event=%s stream=%s", meta.Event, stream)
 	}
-	symbol := w.WSCanonicalSymbol(meta.Symbol)
-	if symbol == "" {
-		fmt.Fprintf(os.Stderr, "ERROR: binance ws: missing symbol in message; stream=%s, event=%s, meta.Symbol=%s\n", stream, meta.Event, meta.Symbol)
-		return fmt.Errorf("binance ws: missing symbol in message; stream=%s, event=%s", stream, meta.Event)
+	symbol, err := w.WSCanonicalSymbol(meta.Symbol)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ERROR: binance ws: symbol resolution failed; stream=%s, event=%s, meta.Symbol=%s, err=%v\n", stream, meta.Event, meta.Symbol, err)
+		return err
 	}
 
 	if stream != "" {
@@ -62,10 +63,10 @@ func (w *WSRouter) parseTradeEvent(msg *RoutedMessage, payload []byte, symbol, s
 		Time   int64  `json:"T"`
 	}
 	if err := json.Unmarshal(payload, &rec); err != nil {
-		return err
+		return internal.WrapExchange(err, "decode trade event payload")
 	}
 	if symbol == "" {
-		panic(fmt.Sprintf("binance ws trade: missing symbol; stream=%s", stream))
+		return internal.Exchange("ws trade: missing symbol stream=%s", stream)
 	}
 	topic := topicFromChannel(BNXTradeChannel, symbol)
 	msg.Topic = topic
@@ -84,10 +85,10 @@ func (w *WSRouter) parseBookTicker(msg *RoutedMessage, payload []byte, symbol, s
 		Time   int64  `json:"E"`
 	}
 	if err := json.Unmarshal(payload, &rec); err != nil {
-		return err
+		return internal.WrapExchange(err, "decode book ticker payload")
 	}
 	if symbol == "" {
-		panic(fmt.Sprintf("binance ws bookTicker: missing symbol; stream=%s", stream))
+		return internal.Exchange("ws bookTicker: missing symbol stream=%s", stream)
 	}
 	topic := topicFromChannel(BNXTickerChannel, symbol)
 	msg.Topic = topic
@@ -109,13 +110,13 @@ func (w *WSRouter) parseBookStream(msg *RoutedMessage, payload []byte, symbol, s
 		EventTime     int64           `json:"E"`
 	}
 	if err := json.Unmarshal(payload, &rec); err != nil {
-		return err
+		return internal.WrapExchange(err, "decode book depth payload")
 	}
 	if rec.Event != "depthUpdate" {
-		return fmt.Errorf("binance ws: unexpected event type in depth stream: %s", rec.Event)
+		return internal.Exchange("ws: unexpected event type in depth stream: %s", rec.Event)
 	}
 	if symbol == "" {
-		panic(fmt.Sprintf("binance ws partial depth: missing symbol; stream=%s", stream))
+		return internal.Exchange("ws depth: missing symbol stream=%s", stream)
 	}
 
 	bids := depthLevelsFromPairs(rec.Bids)
@@ -129,7 +130,7 @@ func (w *WSRouter) parseBookStream(msg *RoutedMessage, payload []byte, symbol, s
 		success := UpdateFromBinanceDelta(orderBook, bids, asks, rec.FirstUpdateID, rec.LastUpdateID, eventTime)
 		if !success {
 			go w.initializeAndRecover(symbol, rec.FirstUpdateID, rec.LastUpdateID)
-			return fmt.Errorf("order book out of sync for %s, restarting initialization", symbol)
+			return internal.Exchange("order book out of sync for %s, restarting initialization", symbol)
 		}
 	}
 

@@ -4,13 +4,12 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/coachpo/meltica/core"
 	coreexchange "github.com/coachpo/meltica/core/exchange"
-	"github.com/coachpo/meltica/exchanges/binance/common"
 	"github.com/coachpo/meltica/exchanges/binance/infra/rest"
+	"github.com/coachpo/meltica/exchanges/binance/internal"
 	"github.com/coachpo/meltica/exchanges/binance/routing"
 )
 
@@ -28,41 +27,10 @@ func (s spotAPI) ServerTime(ctx context.Context) (time.Time, error) {
 }
 
 func (s spotAPI) Instruments(ctx context.Context) ([]core.Instrument, error) {
-	var resp struct {
-		Symbols []struct {
-			Symbol  string `json:"symbol"`
-			Base    string `json:"baseAsset"`
-			Quote   string `json:"quoteAsset"`
-			Filters []struct {
-				FilterType string `json:"filterType"`
-				TickSize   string `json:"tickSize"`
-				StepSize   string `json:"stepSize"`
-			} `json:"filters"`
-		} `json:"symbols"`
-	}
-	msg := routing.RESTMessage{API: rest.SpotAPI, Method: http.MethodGet, Path: "/api/v3/exchangeInfo"}
-	if err := s.x.restRouter.Dispatch(ctx, msg, &resp); err != nil {
+	if err := s.x.ensureMarketSymbols(ctx, core.MarketSpot); err != nil {
 		return nil, err
 	}
-
-	out := make([]core.Instrument, 0, len(resp.Symbols))
-	for _, sdef := range resp.Symbols {
-		var priceScale, qtyScale int
-		for _, f := range sdef.Filters {
-			switch f.FilterType {
-			case "PRICE_FILTER":
-				priceScale = scaleFromStep(f.TickSize)
-			case "LOT_SIZE":
-				qtyScale = scaleFromStep(f.StepSize)
-			}
-		}
-		sym := core.CanonicalSymbol(sdef.Base, sdef.Quote)
-		inst := core.Instrument{Symbol: sym, Base: sdef.Base, Quote: sdef.Quote, Market: core.MarketSpot, PriceScale: priceScale, QtyScale: qtyScale}
-		out = append(out, inst)
-		s.x.instCache[sym] = inst
-		s.x.binToCanon[sdef.Symbol] = sym
-	}
-	return out, nil
+	return s.x.instrumentsForMarket(core.MarketSpot), nil
 }
 
 func (s spotAPI) Ticker(ctx context.Context, symbol string) (core.Ticker, error) {
@@ -70,7 +38,11 @@ func (s spotAPI) Ticker(ctx context.Context, symbol string) (core.Ticker, error)
 		Bid string `json:"bidPrice"`
 		Ask string `json:"askPrice"`
 	}
-	params := map[string]string{"symbol": core.CanonicalToBinance(symbol)}
+	native, err := s.SpotNativeSymbol(symbol)
+	if err != nil {
+		return core.Ticker{}, err
+	}
+	params := map[string]string{"symbol": native}
 	msg := routing.RESTMessage{API: rest.SpotAPI, Method: http.MethodGet, Path: "/api/v3/ticker/bookTicker", Query: params}
 	if err := s.x.restRouter.Dispatch(ctx, msg, &resp); err != nil {
 		return core.Ticker{}, err
@@ -99,7 +71,11 @@ func (s spotAPI) Balances(ctx context.Context) ([]core.Balance, error) {
 }
 
 func (s spotAPI) Trades(ctx context.Context, symbol string, since int64) ([]core.Trade, error) {
-	params := map[string]string{"symbol": core.CanonicalToBinance(symbol)}
+	native, err := s.SpotNativeSymbol(symbol)
+	if err != nil {
+		return nil, err
+	}
+	params := map[string]string{"symbol": native}
 	if since > 0 {
 		params["startTime"] = fmt.Sprintf("%d", since)
 	}
@@ -129,8 +105,12 @@ func (s spotAPI) Trades(ctx context.Context, symbol string, since int64) ([]core
 }
 
 func (s spotAPI) PlaceOrder(ctx context.Context, req core.OrderRequest) (core.Order, error) {
+	nativeSymbol, err := s.SpotNativeSymbol(req.Symbol)
+	if err != nil {
+		return core.Order{}, err
+	}
 	q := map[string]string{
-		"symbol": core.CanonicalToBinance(req.Symbol),
+		"symbol": nativeSymbol,
 		"side":   string(req.Side),
 		"type":   string(req.Type),
 	}
@@ -159,11 +139,15 @@ func (s spotAPI) PlaceOrder(ctx context.Context, req core.OrderRequest) (core.Or
 	if err := s.x.restRouter.Dispatch(ctx, msg, &resp); err != nil {
 		return core.Order{}, err
 	}
-	return core.Order{ID: fmt.Sprintf("%d", resp.OrderID), Symbol: req.Symbol, Status: common.MapOrderStatus(resp.Status)}, nil
+	return core.Order{ID: fmt.Sprintf("%d", resp.OrderID), Symbol: req.Symbol, Status: internal.MapOrderStatus(resp.Status)}, nil
 }
 
 func (s spotAPI) GetOrder(ctx context.Context, symbol, id, clientID string) (core.Order, error) {
-	q := map[string]string{"symbol": core.CanonicalToBinance(symbol)}
+	nativeSymbol, err := s.SpotNativeSymbol(symbol)
+	if err != nil {
+		return core.Order{}, err
+	}
+	q := map[string]string{"symbol": nativeSymbol}
 	if id != "" {
 		q["orderId"] = id
 	}
@@ -178,11 +162,15 @@ func (s spotAPI) GetOrder(ctx context.Context, symbol, id, clientID string) (cor
 	if err := s.x.restRouter.Dispatch(ctx, msg, &resp); err != nil {
 		return core.Order{}, err
 	}
-	return core.Order{ID: fmt.Sprintf("%d", resp.OrderID), Symbol: symbol, Status: common.MapOrderStatus(resp.Status)}, nil
+	return core.Order{ID: fmt.Sprintf("%d", resp.OrderID), Symbol: symbol, Status: internal.MapOrderStatus(resp.Status)}, nil
 }
 
 func (s spotAPI) CancelOrder(ctx context.Context, symbol, id, clientID string) error {
-	q := map[string]string{"symbol": core.CanonicalToBinance(symbol)}
+	nativeSymbol, err := s.SpotNativeSymbol(symbol)
+	if err != nil {
+		return err
+	}
+	q := map[string]string{"symbol": nativeSymbol}
 	if id != "" {
 		q["orderId"] = id
 	}
@@ -193,18 +181,28 @@ func (s spotAPI) CancelOrder(ctx context.Context, symbol, id, clientID string) e
 	return s.x.restRouter.Dispatch(ctx, msg, nil)
 }
 
-func (s spotAPI) SpotNativeSymbol(canonical string) string {
-	if strings.EqualFold(canonical, "BTC-USDT") {
-		return "BTCUSDT"
+func (s spotAPI) SpotNativeSymbol(canonical string) (string, error) {
+	if err := s.x.ensureMarketSymbols(context.Background(), core.MarketSpot); err != nil {
+		return "", err
 	}
-	panic(fmt.Errorf("binance spotAPI: unsupported canonical symbol %s", canonical))
+	if native, ok := s.x.symbols.native(core.MarketSpot, canonical); ok {
+		return native, nil
+	}
+	return "", internal.Invalid("spot: unsupported canonical symbol %s", canonical)
 }
 
-func (s spotAPI) SpotCanonicalSymbol(native string) string {
-	if strings.EqualFold(native, "BTCUSDT") {
-		return "BTC-USDT"
+func (s spotAPI) SpotCanonicalSymbol(native string) (string, error) {
+	if err := s.x.ensureMarketSymbols(context.Background(), core.MarketSpot); err != nil {
+		return "", err
 	}
-	panic(fmt.Errorf("binance spotAPI: unsupported native symbol %s", native))
+	canonical, ok := s.x.symbols.canonical(native)
+	if !ok {
+		return "", internal.Invalid("spot: unsupported native symbol %s", native)
+	}
+	if _, ok := s.x.symbols.native(core.MarketSpot, canonical); !ok {
+		return "", internal.Invalid("spot: unsupported native symbol %s", native)
+	}
+	return canonical, nil
 }
 
 func (s spotAPI) DepthSnapshot(ctx context.Context, symbol string, limit int) (coreexchange.BookEvent, int64, error) {
@@ -212,13 +210,9 @@ func (s spotAPI) DepthSnapshot(ctx context.Context, symbol string, limit int) (c
 }
 
 func (s spotAPI) lookupInstrument(ctx context.Context, symbol string) core.Instrument {
-	if inst, ok := s.x.instCache[symbol]; ok {
-		return inst
-	}
-	insts, err := s.Instruments(ctx)
-	if err != nil {
+	if err := s.x.ensureMarketSymbols(ctx, core.MarketSpot); err != nil {
 		return core.Instrument{}
 	}
-	_ = insts
-	return s.x.instCache[symbol]
+	inst, _ := s.x.instrument(core.MarketSpot, symbol)
+	return inst
 }

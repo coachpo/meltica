@@ -32,11 +32,11 @@ func (w *wsService) SubscribePrivate(ctx context.Context, topics ...string) (cor
 	return newWSServerSubscription(sub), nil
 }
 
-func (w *wsService) WSNativeSymbol(canonical string) string {
+func (w *wsService) WSNativeSymbol(canonical string) (string, error) {
 	return w.router.WSNativeSymbol(canonical)
 }
 
-func (w *wsService) WSCanonicalSymbol(native string) string {
+func (w *wsService) WSCanonicalSymbol(native string) (string, error) {
 	return w.router.WSCanonicalSymbol(native)
 }
 

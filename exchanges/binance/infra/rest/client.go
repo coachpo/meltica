@@ -2,11 +2,12 @@ package rest
 
 import (
 	"context"
-	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	coreexchange "github.com/coachpo/meltica/core/exchange"
+	"github.com/coachpo/meltica/exchanges/binance/internal"
 	"github.com/coachpo/meltica/transport"
 )
 
@@ -21,9 +22,13 @@ const (
 
 // Config configures the Binance REST infrastructure client.
 type Config struct {
-	APIKey     string
-	Secret     string
-	HTTPClient *http.Client
+	APIKey         string
+	Secret         string
+	HTTPClient     *http.Client
+	SpotBaseURL    string
+	LinearBaseURL  string
+	InverseBaseURL string
+	Timeout        time.Duration
 }
 
 // Client manages low-level REST connections to Binance endpoints (Level 1 infrastructure).
@@ -37,16 +42,35 @@ type Client struct {
 }
 
 const (
-	spotBase    = "https://api.binance.com"
-	linearBase  = "https://fapi.binance.com"
-	inverseBase = "https://dapi.binance.com"
+	defaultSpotBase    = "https://api.binance.com"
+	defaultLinearBase  = "https://fapi.binance.com"
+	defaultInverseBase = "https://dapi.binance.com"
 )
 
 // NewClient creates a REST infrastructure client with shared signing and error handling.
 func NewClient(cfg Config) *Client {
 	httpClient := cfg.HTTPClient
 	if httpClient == nil {
-		httpClient = &http.Client{Timeout: 10 * time.Second}
+		timeout := cfg.Timeout
+		if timeout <= 0 {
+			timeout = 10 * time.Second
+		}
+		httpClient = &http.Client{Timeout: timeout}
+	} else if httpClient.Timeout == 0 && cfg.Timeout > 0 {
+		httpClient.Timeout = cfg.Timeout
+	}
+
+	spotBase := cfg.SpotBaseURL
+	if strings.TrimSpace(spotBase) == "" {
+		spotBase = defaultSpotBase
+	}
+	linearBase := cfg.LinearBaseURL
+	if strings.TrimSpace(linearBase) == "" {
+		linearBase = defaultLinearBase
+	}
+	inverseBase := cfg.InverseBaseURL
+	if strings.TrimSpace(inverseBase) == "" {
+		inverseBase = defaultInverseBase
 	}
 
 	c := &Client{
@@ -91,7 +115,7 @@ func (c *Client) Do(ctx context.Context, req coreexchange.RESTRequest, out any) 
 	case InverseAPI:
 		return c.dapi.Do(ctx, req.Method, req.Path, req.Query, req.Body, req.Signed, out)
 	default:
-		return fmt.Errorf("binance/rest: unsupported api %q", req.API)
+		return internal.Invalid("rest: unsupported api %q", req.API)
 	}
 }
 

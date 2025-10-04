@@ -2,20 +2,20 @@ package routing
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"strings"
 	"time"
 
-	"github.com/coachpo/meltica/core"
 	coreexchange "github.com/coachpo/meltica/core/exchange"
 	corews "github.com/coachpo/meltica/core/ws"
 	"github.com/coachpo/meltica/exchanges/binance/infra/wsinfra"
+	"github.com/coachpo/meltica/exchanges/binance/internal"
 )
 
 // WSDependencies exposes the exchange hooks required by the websocket routing layer.
 type WSDependencies interface {
-	CanonicalSymbol(binanceSymbol string) string
+	CanonicalSymbol(binanceSymbol string) (string, error)
+	NativeSymbol(canonical string) (string, error)
 	CreateListenKey(ctx context.Context) (string, error)
 	KeepAliveListenKey(ctx context.Context, key string) error
 	CloseListenKey(ctx context.Context, key string) error
@@ -74,11 +74,14 @@ func (s *wsSub) Close() error {
 // SubscribePublic subscribes to Binance combined streams and routes messages to Level 3.
 func (w *WSRouter) SubscribePublic(ctx context.Context, topics ...string) (Subscription, error) {
 	if len(topics) == 0 {
-		return nil, fmt.Errorf("binance/wsrouter: no topics provided")
+		return nil, internal.Invalid("wsrouter: no topics provided")
 	}
-	streams := w.buildStreams(topics)
+	streams, err := w.buildStreams(topics)
+	if err != nil {
+		return nil, err
+	}
 	if len(streams) == 0 {
-		return nil, fmt.Errorf("binance/wsrouter: no streams derived from topics")
+		return nil, internal.Invalid("wsrouter: no streams derived from topics")
 	}
 	rawSub, err := w.infra.SubscribePublic(ctx, streams)
 	if err != nil {
@@ -209,19 +212,16 @@ func (w *WSRouter) Close() error {
 	return nil
 }
 
-// Symbol conversion (static demo): only BTCUSDT <-> BTC-USDT
-func (w *WSRouter) WSNativeSymbol(canonical string) string {
-	if strings.EqualFold(canonical, "BTC-USDT") {
-		return "BTCUSDT"
-	}
-	panic(fmt.Errorf("binance ws: unsupported canonical symbol %s", canonical))
+// Symbol conversion helpers consult the exchange-provided registry.
+func (w *WSRouter) WSNativeSymbol(canonical string) (string, error) {
+	return w.deps.NativeSymbol(canonical)
 }
 
-func (w *WSRouter) WSCanonicalSymbol(native string) string {
+func (w *WSRouter) WSCanonicalSymbol(native string) (string, error) {
 	return w.deps.CanonicalSymbol(native)
 }
 
-func (w *WSRouter) buildStreams(topics []string) []string {
+func (w *WSRouter) buildStreams(topics []string) ([]string, error) {
 	streams := make([]string, 0, len(topics))
 	for _, topic := range topics {
 		channel, instrument := corews.ParseTopic(topic)
@@ -233,10 +233,13 @@ func (w *WSRouter) buildStreams(topics []string) []string {
 		if exchangeChannel == "" {
 			exchangeChannel = strings.ToLower(channel)
 		}
-		binanceSymbol := strings.ToLower(core.CanonicalToBinance(instrument))
-		streams = append(streams, binanceSymbol+"@"+exchangeChannel)
+		native, err := w.deps.NativeSymbol(instrument)
+		if err != nil {
+			return nil, err
+		}
+		streams = append(streams, strings.ToLower(native)+"@"+exchangeChannel)
 	}
-	return streams
+	return streams, nil
 }
 
 // OrderBookSnapshot returns the current snapshot for a symbol if it has been initialized.
@@ -256,10 +259,10 @@ func (w *WSRouter) InitializeOrderBook(ctx context.Context, symbol string) error
 	}
 	snapshot, lastUpdateID, err := w.deps.DepthSnapshot(ctx, symbol, 5000)
 	if err != nil {
-		return fmt.Errorf("failed to get depth snapshot: %w", err)
+		return internal.WrapExchange(err, "failed to get depth snapshot")
 	}
 	if err := orderBook.InitializeFromSnapshot(snapshot, lastUpdateID); err != nil {
-		return fmt.Errorf("failed to initialize order book: %w", err)
+		return internal.WrapExchange(err, "failed to initialize order book")
 	}
 	return nil
 }

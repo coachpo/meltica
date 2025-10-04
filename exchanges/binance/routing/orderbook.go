@@ -1,13 +1,13 @@
 package routing
 
 import (
-	"fmt"
 	"math/big"
 	"sync"
 	"time"
 
 	"github.com/coachpo/meltica/core"
 	coreexchange "github.com/coachpo/meltica/core/exchange"
+	"github.com/coachpo/meltica/exchanges/binance/internal"
 )
 
 // OrderBookManager manages order book state for different symbols.
@@ -69,10 +69,10 @@ func (ob *OrderBook) InitializeFromSnapshot(snapshot coreexchange.BookEvent, sna
 
 	// Validate snapshot
 	if snapshot.Symbol == "" {
-		return fmt.Errorf("snapshot missing symbol")
+		return internal.Exchange("snapshot missing symbol")
 	}
 	if snapshotUpdateID <= 0 {
-		return fmt.Errorf("invalid snapshot update ID: %d", snapshotUpdateID)
+		return internal.Exchange("invalid snapshot update ID: %d", snapshotUpdateID)
 	}
 
 	// Reset the order book
@@ -106,7 +106,7 @@ func (ob *OrderBook) InitializeFromSnapshot(snapshot coreexchange.BookEvent, sna
 			// Gap detected - we need to restart
 			ob.isInitialized = false
 			ob.bufferedEvents = nil
-			return fmt.Errorf("order book initialization failed: gap detected between snapshot (%d) and buffered event (%d-%d)",
+			return internal.Exchange("order book initialization failed: gap detected between snapshot (%d) and buffered event (%d-%d)",
 				snapshotUpdateID, event.FirstUpdateID, event.LastUpdateID)
 		}
 

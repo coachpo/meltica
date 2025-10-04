@@ -7,14 +7,34 @@ import (
 	"strings"
 	"time"
 
+	"github.com/coachpo/meltica/exchanges/binance/internal"
 	"github.com/gorilla/websocket"
 )
 
 const (
-	publicStreamURL    = "wss://stream.binance.com:9443/stream"
-	privateStreamURL   = "wss://stream.binance.com:9443/ws"
-	wsHandshakeTimeout = 10 * time.Second
+	defaultPublicStreamURL  = "wss://stream.binance.com:9443/stream"
+	defaultPrivateStreamURL = "wss://stream.binance.com:9443/ws"
+	defaultHandshakeTimeout = 10 * time.Second
 )
+
+type Config struct {
+	PublicURL        string
+	PrivateURL       string
+	HandshakeTimeout time.Duration
+}
+
+func (c Config) withDefaults() Config {
+	if strings.TrimSpace(c.PublicURL) == "" {
+		c.PublicURL = defaultPublicStreamURL
+	}
+	if strings.TrimSpace(c.PrivateURL) == "" {
+		c.PrivateURL = defaultPrivateStreamURL
+	}
+	if c.HandshakeTimeout <= 0 {
+		c.HandshakeTimeout = defaultHandshakeTimeout
+	}
+	return c
+}
 
 // RawMessage represents a raw websocket payload with its receive timestamp.
 type RawMessage struct {
@@ -44,23 +64,31 @@ func (s *Subscription) Close() error {
 }
 
 // Client manages Binance websocket connections (Level 1 infrastructure).
-type Client struct{}
+type Client struct {
+	cfg Config
+}
 
 // NewClient constructs a websocket infrastructure client.
-func NewClient() *Client { return &Client{} }
+func NewClient(cfgs ...Config) *Client {
+	var cfg Config
+	if len(cfgs) > 0 {
+		cfg = cfgs[0]
+	}
+	return &Client{cfg: cfg.withDefaults()}
+}
 
 // SubscribePublic dials the Binance combined stream endpoint for the requested raw streams.
 func (c *Client) SubscribePublic(ctx context.Context, streams []string) (*Subscription, error) {
 	if len(streams) == 0 {
-		return nil, fmt.Errorf("binance/wsinfra: no streams provided")
+		return nil, internal.Invalid("wsinfra: no streams provided")
 	}
 	q := url.Values{}
 	q.Set("streams", strings.Join(streams, "/"))
-	endpoint := publicStreamURL + "?" + q.Encode()
-	dialer := websocket.Dialer{HandshakeTimeout: wsHandshakeTimeout}
+	endpoint := c.cfg.PublicURL + "?" + q.Encode()
+	dialer := websocket.Dialer{HandshakeTimeout: c.cfg.HandshakeTimeout}
 	conn, _, err := dialer.DialContext(ctx, endpoint, nil)
 	if err != nil {
-		return nil, err
+		return nil, internal.WrapNetwork(err, "subscribe public streams")
 	}
 	sub := &Subscription{
 		conn: conn,
@@ -74,13 +102,13 @@ func (c *Client) SubscribePublic(ctx context.Context, streams []string) (*Subscr
 // SubscribePrivate dials the Binance private listen key stream.
 func (c *Client) SubscribePrivate(ctx context.Context, listenKey string) (*Subscription, error) {
 	if strings.TrimSpace(listenKey) == "" {
-		return nil, fmt.Errorf("binance/wsinfra: empty listen key")
+		return nil, internal.Invalid("wsinfra: empty listen key")
 	}
-	endpoint := fmt.Sprintf("%s/%s", privateStreamURL, listenKey)
-	dialer := websocket.Dialer{HandshakeTimeout: wsHandshakeTimeout}
+	endpoint := fmt.Sprintf("%s/%s", c.cfg.PrivateURL, listenKey)
+	dialer := websocket.Dialer{HandshakeTimeout: c.cfg.HandshakeTimeout}
 	conn, _, err := dialer.DialContext(ctx, endpoint, nil)
 	if err != nil {
-		return nil, err
+		return nil, internal.WrapNetwork(err, "subscribe private stream")
 	}
 	sub := &Subscription{
 		conn: conn,
@@ -103,8 +131,9 @@ func (c *Client) readLoop(ctx context.Context, conn *websocket.Conn, sub *Subscr
 		}
 		_, data, err := conn.ReadMessage()
 		if err != nil {
+			wrapped := internal.WrapNetwork(err, "websocket read failure")
 			select {
-			case sub.err <- err:
+			case sub.err <- wrapped:
 			default:
 			}
 			return

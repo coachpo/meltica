@@ -4,15 +4,16 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/coachpo/meltica/config"
 	"github.com/coachpo/meltica/core"
 	coreexchange "github.com/coachpo/meltica/core/exchange"
-	"github.com/coachpo/meltica/exchanges/binance/common"
 	"github.com/coachpo/meltica/exchanges/binance/infra/rest"
 	"github.com/coachpo/meltica/exchanges/binance/infra/wsinfra"
+	"github.com/coachpo/meltica/exchanges/binance/internal"
 	"github.com/coachpo/meltica/exchanges/binance/routing"
 )
 
@@ -25,8 +26,11 @@ type Exchange struct {
 	wsInfra  *wsinfra.Client
 	wsRouter *routing.WSRouter
 
-	instCache  map[string]core.Instrument
-	binToCanon map[string]string
+	instCache map[core.Market]map[string]core.Instrument
+	symbols   *symbolRegistry
+	symbolsMu sync.RWMutex
+	cfg       config.Settings
+	cfgMu     sync.Mutex
 }
 
 var capabilities = core.Capabilities(
@@ -40,21 +44,90 @@ var capabilities = core.Capabilities(
 	core.CapabilityWebsocketPrivate,
 )
 
-func New(apiKey, secret string) (*Exchange, error) {
-	restClient := rest.NewClient(rest.Config{APIKey: apiKey, Secret: secret})
+func New(apiKey, secret string, opts ...config.Option) (*Exchange, error) {
+	settings := config.FromEnv()
+	settings = config.Apply(settings, opts...)
+	if v := strings.TrimSpace(apiKey); v != "" {
+		settings.Binance.APIKey = v
+	}
+	if v := strings.TrimSpace(secret); v != "" {
+		settings.Binance.APISecret = v
+	}
+	return NewWithSettings(settings)
+}
+
+func NewWithSettings(settings config.Settings) (*Exchange, error) {
+	restClient := rest.NewClient(rest.Config{
+		APIKey:         settings.Binance.APIKey,
+		Secret:         settings.Binance.APISecret,
+		SpotBaseURL:    settings.Binance.SpotBaseURL,
+		LinearBaseURL:  settings.Binance.LinearBaseURL,
+		InverseBaseURL: settings.Binance.InverseBaseURL,
+		Timeout:        settings.Binance.HTTPTimeout,
+	})
 	restRouter := routing.NewRESTRouter(restClient)
-	wsInfra := wsinfra.NewClient()
+	wsInfra := wsinfra.NewClient(wsinfra.Config{
+		PublicURL:        settings.Binance.PublicWSURL,
+		PrivateURL:       settings.Binance.PrivateWSURL,
+		HandshakeTimeout: settings.Binance.HandshakeTimeout,
+	})
 
 	x := &Exchange{
 		name:       "binance",
 		restClient: restClient,
 		restRouter: restRouter,
 		wsInfra:    wsInfra,
-		instCache:  map[string]core.Instrument{},
-		binToCanon: map[string]string{},
+		instCache:  make(map[core.Market]map[string]core.Instrument),
+		symbols:    newSymbolRegistry(),
+		cfg:        settings,
 	}
 	x.wsRouter = routing.NewWSRouter(wsInfra, x)
 	return x, nil
+}
+
+// Config returns a snapshot of the active configuration.
+func (x *Exchange) Config() config.Settings {
+	x.cfgMu.Lock()
+	defer x.cfgMu.Unlock()
+	return x.cfg
+}
+
+// UpdateConfig applies configuration overrides at runtime, rebuilding clients and clearing caches.
+func (x *Exchange) UpdateConfig(opts ...config.Option) error {
+	base := x.Config()
+	newCfg := config.Apply(base, opts...)
+	restClient := rest.NewClient(rest.Config{
+		APIKey:         newCfg.Binance.APIKey,
+		Secret:         newCfg.Binance.APISecret,
+		SpotBaseURL:    newCfg.Binance.SpotBaseURL,
+		LinearBaseURL:  newCfg.Binance.LinearBaseURL,
+		InverseBaseURL: newCfg.Binance.InverseBaseURL,
+		Timeout:        newCfg.Binance.HTTPTimeout,
+	})
+	restRouter := routing.NewRESTRouter(restClient)
+	wsInfra := wsinfra.NewClient(wsinfra.Config{
+		PublicURL:        newCfg.Binance.PublicWSURL,
+		PrivateURL:       newCfg.Binance.PrivateWSURL,
+		HandshakeTimeout: newCfg.Binance.HandshakeTimeout,
+	})
+
+	x.cfgMu.Lock()
+	if x.wsRouter != nil {
+		_ = x.wsRouter.Close()
+	}
+	x.restClient = restClient
+	x.restRouter = restRouter
+	x.wsInfra = wsInfra
+	x.wsRouter = routing.NewWSRouter(wsInfra, x)
+	x.cfg = newCfg
+	x.cfgMu.Unlock()
+
+	x.symbolsMu.Lock()
+	x.symbols = newSymbolRegistry()
+	x.instCache = make(map[core.Market]map[string]core.Instrument)
+	x.symbolsMu.Unlock()
+
+	return nil
 }
 
 func (x *Exchange) Name() string { return x.name }
@@ -79,34 +152,28 @@ func (x *Exchange) Close() error {
 }
 
 // CanonicalSymbol converts Binance native symbols to canonical form with caching support.
-func (x *Exchange) CanonicalSymbol(binanceSymbol string) string {
-	s := strings.ToUpper(strings.TrimSpace(binanceSymbol))
-	if s == "" {
-		fmt.Fprintf(os.Stderr, "ERROR: binance: empty symbol in WSCanonicalSymbol\n")
-		panic("binance: empty symbol in WSCanonicalSymbol")
+func (x *Exchange) CanonicalSymbol(binanceSymbol string) (string, error) {
+	trimmed := strings.ToUpper(strings.TrimSpace(binanceSymbol))
+	if trimmed == "" {
+		return "", internal.Invalid("unsupported symbol %s", binanceSymbol)
 	}
-
-	if canonical, ok := x.binToCanon[s]; ok {
-		return canonical
+	if err := x.ensureAllSymbols(context.Background()); err != nil {
+		return "", err
 	}
-
-	if s == "BTCUSDT" {
-		x.binToCanon[s] = "BTC-USDT"
-		return "BTC-USDT"
+	if canonical, ok := x.symbols.canonical(trimmed); ok {
+		return canonical, nil
 	}
+	return "", internal.Exchange("unsupported symbol %s", trimmed)
+}
 
-	for i := len(s) - 4; i >= 3; i-- {
-		if s[i:] == "USDT" || s[i:] == "BUSD" || s[i:] == "USDC" {
-			base := s[:i]
-			quote := s[i:]
-			canonical := fmt.Sprintf("%s-%s", base, quote)
-			x.binToCanon[s] = canonical
-			return canonical
-		}
+func (x *Exchange) NativeSymbol(canonical string) (string, error) {
+	if err := x.ensureAllSymbols(context.Background()); err != nil {
+		return "", err
 	}
-
-	fmt.Fprintf(os.Stderr, "ERROR: binance: unsupported symbol '%s'\n", s)
-	panic(fmt.Errorf("binance: unsupported symbol %s", s))
+	if native, ok := x.symbols.nativeAny(canonical); ok {
+		return native, nil
+	}
+	return "", internal.Invalid("unsupported symbol %s", canonical)
 }
 
 func (x *Exchange) CreateListenKey(ctx context.Context) (string, error) {
@@ -131,7 +198,18 @@ func (x *Exchange) CloseListenKey(ctx context.Context, key string) error {
 }
 
 func (x *Exchange) DepthSnapshot(ctx context.Context, symbol string, limit int) (coreexchange.BookEvent, int64, error) {
-	params := map[string]string{"symbol": core.CanonicalToBinance(symbol), "limit": fmt.Sprintf("%d", limit)}
+	if err := x.ensureMarketSymbols(ctx, core.MarketSpot); err != nil {
+		return coreexchange.BookEvent{}, 0, err
+	}
+	native, ok := x.symbols.native(core.MarketSpot, symbol)
+	if !ok {
+		if fallback, found := x.symbols.nativeAny(symbol); found {
+			native = fallback
+		} else {
+			return coreexchange.BookEvent{}, 0, internal.Invalid("depth snapshot: unsupported symbol %s", symbol)
+		}
+	}
+	params := map[string]string{"symbol": native, "limit": fmt.Sprintf("%d", limit)}
 	var resp struct {
 		LastUpdateID int64           `json:"lastUpdateId"`
 		Bids         [][]interface{} `json:"bids"`
@@ -148,5 +226,5 @@ func (x *Exchange) DepthSnapshot(ctx context.Context, symbol string, limit int) 
 }
 
 func (x *Exchange) timeInForceCode(t core.TimeInForce) string {
-	return common.MapTimeInForce(t)
+	return internal.MapTimeInForce(t)
 }

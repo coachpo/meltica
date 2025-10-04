@@ -8,7 +8,7 @@ import (
 	"github.com/coachpo/meltica/core"
 	coreexchange "github.com/coachpo/meltica/core/exchange"
 	corews "github.com/coachpo/meltica/core/ws"
-	"github.com/coachpo/meltica/exchanges/binance/common"
+	"github.com/coachpo/meltica/exchanges/binance/internal"
 )
 
 func (w *WSRouter) parsePrivateMessage(msg *RoutedMessage, payload []byte) error {
@@ -52,7 +52,7 @@ func (w *WSRouter) parseOrderUpdate(msg *RoutedMessage, payload []byte) error {
 	msg.Parsed = &coreexchange.OrderEvent{
 		Symbol:    ou.Order.Symbol,
 		OrderID:   fmt.Sprintf("%d", ou.Order.ID),
-		Status:    common.MapOrderStatus(ou.Order.Status),
+		Status:    internal.MapOrderStatus(ou.Order.Status),
 		FilledQty: filled,
 		AvgPrice:  avg,
 		Time:      time.UnixMilli(ou.Order.EventTime),
