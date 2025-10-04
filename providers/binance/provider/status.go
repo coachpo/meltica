@@ -1,4 +1,4 @@
-package status
+package provider
 
 import "github.com/coachpo/meltica/core"
 

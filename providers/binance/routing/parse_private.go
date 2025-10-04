@@ -8,7 +8,6 @@ import (
 	"github.com/coachpo/meltica/core"
 	coreprovider "github.com/coachpo/meltica/core/provider"
 	corews "github.com/coachpo/meltica/core/ws"
-	"github.com/coachpo/meltica/providers/binance/provider/status"
 )
 
 func (w *WSRouter) parsePrivateMessage(msg *RoutedMessage, payload []byte) error {
