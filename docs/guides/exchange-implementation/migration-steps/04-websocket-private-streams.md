@@ -24,19 +24,18 @@
 
 ---
 ## How to validate that it is complete
-1) **Static analysis:**
+1) **Build & unit tests:**
    ```bash
-   ./meltilint ./providers/<name>
+   go build ./... && go test ./exchanges/<name> -count=1
    ```
-2) **Offline conformance (private topics):**
+2) **WS private decoder tests:**
    ```bash
-   go test ./conformance -run TestOffline
+   go test ./exchanges/<name> -run TestPrivateWS -count=1
    ```
-3) **Optional live (gated):**
+3) **Optional live test (gated):**
    ```bash
-   export MELTICA_CONFORMANCE=1
    export <NAME>_KEY=...
    export <NAME>_SECRET=...
-   go test ./internal/test -run <Provider>Conformance -v
+   go test ./exchanges/<name> -run TestPrivateWS -v
    ```
    Without creds, tests must skip cleanly.

@@ -4,35 +4,37 @@ Use this page to quickly navigate the docs in this folder.
 
 ### Start here
 
-- **Getting started:** [START-HERE.md](./START-HERE.md)
-- **Project overview:** [PROJECT_OVERVIEW.md](./PROJECT_OVERVIEW.md)
-- **Repository context map:** [CONTEXT.md](./CONTEXT.md)
+- **Getting started:** [getting-started/START-HERE.md](./getting-started/START-HERE.md)
+- **Project overview:** [getting-started/PROJECT_OVERVIEW.md](./getting-started/PROJECT_OVERVIEW.md)
+- **Repository context map:** [getting-started/CONTEXT.md](./getting-started/CONTEXT.md)
 
-### How-to guides
+### Exchange Implementation Guides
 
-- Implementing a provider: [how-to/implementing-a-provider.md](./how-to/implementing-a-provider.md)
-- Migration overview: [how-to/migration-guidelines.md](./how-to/migration-guidelines.md)
-- Migration steps (A→F):
-  - Step 01: [how-to/migration-steps/01-new-exchange-scaffold-and-capabilities.md](./how-to/migration-steps/01-new-exchange-scaffold-and-capabilities.md)
-  - Step 02: [how-to/migration-steps/02-rest-surfaces-spot-and-futures.md](./how-to/migration-steps/02-rest-surfaces-spot-and-futures.md)
-  - Step 03: [how-to/migration-steps/03-websocket-public-streams.md](./how-to/migration-steps/03-websocket-public-streams.md)
-  - Step 04: [how-to/migration-steps/04-websocket-private-streams.md](./how-to/migration-steps/04-websocket-private-streams.md)
-  - Step 05: [how-to/migration-steps/05-error-status-mapping-and-normalization.md](./how-to/migration-steps/05-error-status-mapping-and-normalization.md)
-  - Step 06: [how-to/migration-steps/06-conformance-schemas-ci-release.md](./how-to/migration-steps/06-conformance-schemas-ci-release.md)
+- **Implementing an exchange:** [guides/exchange-implementation/implementing-a-provider.md](./guides/exchange-implementation/implementing-a-provider.md)
+- **Migration overview:** [guides/exchange-implementation/migration-guidelines.md](./guides/exchange-implementation/migration-guidelines.md)
+- **Migration steps (A→F):**
+  - Step 01: [guides/exchange-implementation/migration-steps/01-new-exchange-scaffold-and-capabilities.md](./guides/exchange-implementation/migration-steps/01-new-exchange-scaffold-and-capabilities.md)
+  - Step 02: [guides/exchange-implementation/migration-steps/02-rest-surfaces-spot-and-futures.md](./guides/exchange-implementation/migration-steps/02-rest-surfaces-spot-and-futures.md)
+  - Step 03: [guides/exchange-implementation/migration-steps/03-websocket-public-streams.md](./guides/exchange-implementation/migration-steps/03-websocket-public-streams.md)
+  - Step 04: [guides/exchange-implementation/migration-steps/04-websocket-private-streams.md](./guides/exchange-implementation/migration-steps/04-websocket-private-streams.md)
+  - Step 05: [guides/exchange-implementation/migration-steps/05-error-status-mapping-and-normalization.md](./guides/exchange-implementation/migration-steps/05-error-status-mapping-and-normalization.md)
+  - Step 06: [guides/exchange-implementation/migration-steps/06-conformance-schemas-ci-release.md](./guides/exchange-implementation/migration-steps/06-conformance-schemas-ci-release.md)
+- **Interface contracts:** [guides/exchange-implementation/interface-contracts.md](./guides/exchange-implementation/interface-contracts.md)
+- **Unified order book:** [guides/exchange-implementation/unified-order-book.md](./guides/exchange-implementation/unified-order-book.md)
 
-### Expectations & standards
+### Standards & Expectations
 
-- Abstractions guidance: [expectations/abstractions-guidelines.md](./expectations/abstractions-guidelines.md)
-- Provider adapter standards: [expectations/provider-adapter-standards.md](./expectations/provider-adapter-standards.md)
-- Delivery & CI standards: [expectations/baseline-expectations/delivery-and-ci-standards.md](./expectations/baseline-expectations/delivery-and-ci-standards.md)
-- Protocol & code standards: [expectations/baseline-expectations/protocol-and-code-standards.md](./expectations/baseline-expectations/protocol-and-code-standards.md)
+- **Abstractions guidance:** [standards/expectations/abstractions-guidelines.md](./standards/expectations/abstractions-guidelines.md)
+- **Provider adapter standards:** [standards/expectations/baseline-expectations/provider-adapter-standards.md](./standards/expectations/baseline-expectations/provider-adapter-standards.md)
+- **Delivery & CI standards:** [standards/expectations/baseline-expectations/delivery-and-ci-standards.md](./standards/expectations/baseline-expectations/delivery-and-ci-standards.md)
+- **Protocol & code standards:** [standards/expectations/baseline-expectations/protocol-and-code-standards.md](./standards/expectations/baseline-expectations/protocol-and-code-standards.md)
 
-### Validation & conformance
+### Validation
 
-- Protocol validation rules: [validation/protocol-validation-rules.md](./validation/protocol-validation-rules.md)
+- **Protocol validation rules:** [validation/protocol-validation-rules.md](./validation/protocol-validation-rules.md)
 
 ### Reports
 
-- Venue support report: [Venue_Support_Report.md](./Venue_Support_Report.md)
+- **Venue support report:** [reports/Venue_Support_Report.md](./reports/Venue_Support_Report.md)
 
 

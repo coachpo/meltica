@@ -36,19 +36,11 @@
 
 ---
 ## How to validate that it is complete
-1) **Static analysis (no floats, enums exhaustive, symbols canonical, marshaling uses FormatDecimal):**
+1) **Build & unit tests:**
    ```bash
-   ./meltilint ./providers/<name>
+   go build ./... && go test ./exchanges/<name> -count=1
    ```
-2) **Build & unit tests:**
-   ```bash
-   go build ./... && go test ./providers/<name> -count=1
-   ```
-3) **Offline conformance (REST parts):**
-   ```bash
-   go test ./conformance -run TestOffline
-   ```
-4) **Schema/vector sanity (if vectors cover these models):**
-   ```bash
-   go run ./cmd/validate-schemas
-   ```
+2) **Symbols canonical; decimals via *big.Rat:**
+   - Verify all symbols use `BASE-QUOTE` format
+   - Verify all numeric fields use `*big.Rat`
+   - Verify JSON marshaling uses `core.FormatDecimal`

@@ -70,31 +70,31 @@
   - Orders placed via REST appear on private stream with correct sequencing.
   - No missed updates in simulated disconnect scenarios.
 
-### Phase 8: Provider Abstraction for Multi-Backends
+### Phase 8: Exchange Abstraction for Multi-Backends
 - Steps:
-  - Introduce provider registry/factory with configuration profiles.
+  - Introduce exchange registry/factory with configuration profiles.
   - Document adapter contract and test harness for compliance.
-  - Build conformance tests reusable by all providers.
+  - Build integration tests reusable by all exchanges.
 - Predictable outcomes:
-  - Swappable providers via config without app code changes.
-  - Conformance suite green for the reference provider (Binance).
+  - Swappable exchanges via config without app code changes.
+  - Integration suite green for the reference exchange (Binance).
 
-### Phase 9: Additional Providers (OKX, Bybit)
+### Phase 9: Additional Exchanges (OKX, Bybit)
 - Steps:
-  - Implement REST/WS adapters per provider, mapping quirks and rate limits.
+  - Implement REST/WS adapters per exchange, mapping quirks and rate limits.
   - Reuse transport and error normalization; extend mappings as needed.
-  - Run conformance and integration tests against testnets.
+  - Run integration tests against testnets.
 - Predictable outcomes:
   - Same example app runs unchanged across Binance, OKX, Bybit.
   - Normalized outputs (orders, positions, tickers) within defined schema.
 
 ### Phase 10: Advanced Rate Limiting & Policies
 - Steps:
-  - Encode per-provider weights/buckets and endpoint-specific limits.
+  - Encode per-exchange weights/buckets and endpoint-specific limits.
   - Honor server hints (`Retry-After`, weight headers) and dynamic adjustments.
   - Provide global and per-account limiters.
 - Predictable outcomes:
-  - Zero 429s during conformance and soak tests at target throughput.
+  - Zero 429s during integration and soak tests at target throughput.
   - Metrics expose utilization and throttling decisions.
 
 ### Phase 11: Testing Strategy Expansion
@@ -122,7 +122,7 @@
   - Threat model for replay, clock skew, and nonce misuse.
 - Predictable outcomes:
   - SAST/dep scans clean; reproducible builds with pinned versions.
-  - Signing verified against provider examples; requests rejected on skew beyond window.
+  - Signing verified against exchange examples; requests rejected on skew beyond window.
 
 ### Phase 14: Developer Experience
 - Steps:
@@ -131,7 +131,7 @@
   - Migration/upgrade guide and versioning policy.
 - Predictable outcomes:
   - Quickstart completes in under 5 minutes.
-  - Developers can switch providers via config only.
+  - Developers can switch exchanges via config only.
 
 ### Phase 15: Release & Maintenance
 - Steps:
@@ -151,4 +151,4 @@
   - p95 REST latency within agreed SLO; no goroutine/FD leaks.
   - All clients safe for concurrent use; clean shutdown verified.
 
-- Delivered a phased, action-oriented plan with steps and explicit outcomes across core, transport, providers, WS, testing, observability, security, DX, and release.
+- Delivered a phased, action-oriented plan with steps and explicit outcomes across core, transport, exchanges, WS, testing, observability, security, DX, and release.

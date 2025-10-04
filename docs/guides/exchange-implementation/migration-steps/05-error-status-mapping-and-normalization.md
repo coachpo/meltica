@@ -25,21 +25,15 @@
 
 ---
 ## How to validate that it is complete
-1) **Static analysis:**
+1) **Build & unit tests:**
    ```bash
-   ./meltilint ./providers/<name>
+   go build ./... && go test ./exchanges/<name> -count=1
    ```
-   Confirms:
-   - No floats in exported fields or public APIs.
-   - Enum mapping exhaustive (no silent defaults).
-   - WS decoders return typed events.
-   - Errors are canonical `*errs.E`.
-
 2) **Golden tests for errors/status:**
    ```bash
-   go test ./providers/<name> -run TestErrorAndStatusGolden -count=1
+   go test ./exchanges/<name> -run TestErrorAndStatusGolden -count=1
    ```
-3) **Schema/vector validation (where applicable):**
-   ```bash
-   go run ./cmd/validate-schemas
-   ```
+3) **Symbols & decimals validation:**
+   - Verify all symbols use `BASE-QUOTE` format
+   - Verify all numeric fields use `*big.Rat`
+   - Verify JSON marshaling uses `core.FormatDecimal`

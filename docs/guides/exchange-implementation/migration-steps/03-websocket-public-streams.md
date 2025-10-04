@@ -27,16 +27,16 @@
 
 ---
 ## How to validate that it is complete
-1) **Static analysis (typed decoders, no floats, symbol normalization present):**
+1) **Build & unit tests:**
    ```bash
-   ./meltilint ./providers/<name>
+   go build ./... && go test ./exchanges/<name> -count=1
    ```
-2) **Offline WS decoder tests:**
+2) **WS decoder tests:**
    ```bash
-   go test ./conformance -run TestOffline
+   go test ./exchanges/<name> -run TestPublicWS -count=1
    ```
 3) **Soak test (optional local run):**
    ```bash
-   go test ./providers/<name> -run TestPublicWS -timeout 30m
+   go test ./exchanges/<name> -run TestPublicWS -timeout 30m
    ```
    Expect <0.1% message loss and stable memory/FDs under observation.
