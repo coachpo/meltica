@@ -57,10 +57,10 @@ func (w *WSRouter) parsePublicMessage(msg *RoutedMessage, raw []byte) error {
 
 func (w *WSRouter) parseTradeEvent(msg *RoutedMessage, payload []byte, symbol, stream string) error {
 	var rec struct {
-		Symbol string `json:"s"`
-		Price  string `json:"p"`
-		Qty    string `json:"q"`
-		Time   int64  `json:"T"`
+		Symbol string      `json:"s"`
+		Price  json.Number `json:"p"`
+		Qty    json.Number `json:"q"`
+		Time   int64       `json:"T"`
 	}
 	if err := json.Unmarshal(payload, &rec); err != nil {
 		return internal.WrapExchange(err, "decode trade event payload")
@@ -71,18 +71,23 @@ func (w *WSRouter) parseTradeEvent(msg *RoutedMessage, payload []byte, symbol, s
 	topic := topicFromChannel(BNXTradeChannel, symbol)
 	msg.Topic = topic
 	msg.Route = coreexchange.RouteTradeUpdate
-	price, _ := parseDecimalToRat(rec.Price)
-	qty, _ := parseDecimalToRat(rec.Qty)
+	price, _ := parseDecimalToRat(rec.Price.String())
+	qty, _ := parseDecimalToRat(rec.Qty.String())
 	msg.Parsed = &coreexchange.TradeEvent{Symbol: symbol, Price: price, Quantity: qty, Time: time.UnixMilli(rec.Time)}
 	return nil
 }
 
 func (w *WSRouter) parseBookTicker(msg *RoutedMessage, payload []byte, symbol, stream string) error {
 	var rec struct {
-		Symbol string `json:"s"`
-		Bid    string `json:"b"`
-		Ask    string `json:"a"`
-		Time   int64  `json:"E"`
+		EventType string      `json:"e"`
+		EventTime int64       `json:"E"`
+		Symbol    string      `json:"s"`
+		BidPrice  json.Number `json:"b"`
+		BidQty    json.Number `json:"B"`
+		AskPrice  json.Number `json:"a"`
+		AskQty    json.Number `json:"A"`
+		LastPrice json.Number `json:"c"`
+		LastQty   json.Number `json:"Q"`
 	}
 	if err := json.Unmarshal(payload, &rec); err != nil {
 		return internal.WrapExchange(err, "decode book ticker payload")
@@ -93,9 +98,10 @@ func (w *WSRouter) parseBookTicker(msg *RoutedMessage, payload []byte, symbol, s
 	topic := topicFromChannel(BNXTickerChannel, symbol)
 	msg.Topic = topic
 	msg.Route = coreexchange.RouteTickerUpdate
-	bid, _ := parseDecimalToRat(rec.Bid)
-	ask, _ := parseDecimalToRat(rec.Ask)
-	msg.Parsed = &coreexchange.TickerEvent{Symbol: symbol, Bid: bid, Ask: ask, Time: time.UnixMilli(rec.Time)}
+	bid, _ := parseDecimalToRat(rec.BidPrice.String())
+	ask, _ := parseDecimalToRat(rec.AskPrice.String())
+	eventTime := time.UnixMilli(rec.EventTime)
+	msg.Parsed = &coreexchange.TickerEvent{Symbol: symbol, Bid: bid, Ask: ask, Time: eventTime}
 	return nil
 }
 

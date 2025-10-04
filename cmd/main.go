@@ -39,6 +39,10 @@ func main() {
 	validateRESTLayer(ctx, exchange)
 	validateWSRouting(ctx, exchange)
 
+	if err := startPublicTopicPrinter(ctx, exchange); err != nil {
+		log.Fatalf("failed to subscribe to public topics: %v", err)
+	}
+
 	snapshots, errs, err := exchange.OrderBookSnapshots(ctx, canonicalSymbol)
 	if err != nil {
 		log.Fatalf("failed to start order book stream: %v", err)
@@ -133,36 +137,99 @@ func validateWSRouting(ctx context.Context, exchange *binance.Exchange) {
 	}()
 }
 
+func startPublicTopicPrinter(ctx context.Context, exchange *binance.Exchange) error {
+	ws := exchange.WS()
+	topics := []string{
+		corews.TradeTopic(canonicalSymbol),
+		corews.TickerTopic(canonicalSymbol),
+		corews.BookTopic(canonicalSymbol),
+	}
+
+	sub, err := ws.SubscribePublic(ctx, topics...)
+	if err != nil {
+		return err
+	}
+
+	log.Printf("Subscribed to Binance topics: %s, %s, %s", topics[0], topics[1], topics[2])
+
+	go func() {
+		defer sub.Close()
+		msgCh := sub.C()
+		errCh := sub.Err()
+		var lastBookLog time.Time
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case err, ok := <-errCh:
+				if !ok {
+					return
+				}
+				if err != nil {
+					log.Printf("WS topic printer error: %v", err)
+				}
+				return
+			case msg, ok := <-msgCh:
+				if !ok {
+					return
+				}
+				switch evt := msg.Parsed.(type) {
+				case *coreexchange.TradeEvent:
+					log.Printf("[WS] trade topic=%s price=%s qty=%s at=%s",
+						msg.Topic,
+						formatRat(evt.Price, 2),
+						formatRat(evt.Quantity, 6),
+						evt.Time.Format(time.RFC3339Nano),
+					)
+				case *coreexchange.TickerEvent:
+					log.Printf("[WS] ticker topic=%s bid=%s ask=%s at=%s",
+						msg.Topic,
+						formatRat(evt.Bid, 2),
+						formatRat(evt.Ask, 2),
+						evt.Time.Format(time.RFC3339Nano),
+					)
+				case *coreexchange.BookEvent:
+					if time.Since(lastBookLog) < 200*time.Millisecond {
+						continue
+					}
+					lastBookLog = time.Now()
+					topBid := bestLevel(evt.Bids, true)
+					topAsk := bestLevel(evt.Asks, false)
+					log.Printf("[WS] book topic=%s bids=%d asks=%d topBidQty=%s topBidPx=%s topAskPx=%s topAskQty=%s at=%s",
+						msg.Topic,
+						len(evt.Bids),
+						len(evt.Asks),
+						formatRat(topBid.qty, 4),
+						formatRat(topBid.price, 2),
+						formatRat(topAsk.price, 2),
+						formatRat(topAsk.qty, 4),
+						evt.Time.Format(time.RFC3339Nano),
+					)
+				default:
+					log.Printf("[WS] %s route=%s at=%s", msg.Topic, msg.Event, msg.At.Format(time.RFC3339Nano))
+				}
+			}
+		}
+	}()
+
+	return nil
+}
+
 func renderSnapshot(event coreexchange.BookEvent) {
-	bids := topLevels(event.Bids, displayLevels, true)
-	asks := topLevels(event.Asks, displayLevels, false)
+	topBid := bestLevel(event.Bids, true)
+	topAsk := bestLevel(event.Asks, false)
 
-	fmt.Print("\033[2J\033[H")
-	fmt.Printf("Binance %s Depth | Update at %s | Bids %d | Asks %d\n",
-		nativeSymbol, event.Time.Format(time.RFC3339Nano), len(event.Bids), len(event.Asks))
-	fmt.Printf("%-18s %-18s | %-18s %-18s\n", "BidQty", "BidPrice", "AskPrice", "AskQty")
-
-	rows := displayLevels
-	if len(bids) > rows {
-		rows = len(bids)
-	}
-	if len(asks) > rows {
-		rows = len(asks)
-	}
-
-	for i := 0; i < rows; i++ {
-		bidQty, bidPrice := "-", "-"
-		askPrice, askQty := "-", "-"
-		if i < len(bids) {
-			bidQty = formatRat(bids[i].qty, 6)
-			bidPrice = formatRat(bids[i].price, 2)
-		}
-		if i < len(asks) {
-			askPrice = formatRat(asks[i].price, 2)
-			askQty = formatRat(asks[i].qty, 6)
-		}
-		fmt.Printf("%-18s %-18s | %-18s %-18s\n", bidQty, bidPrice, askPrice, askQty)
-	}
+	fmt.Printf(
+		"Book update %s | bids=%d asks=%d | topBidQty=%s topBidPx=%s | topAskPx=%s topAskQty=%s\n",
+		event.Time.Format(time.RFC3339Nano),
+		len(event.Bids),
+		len(event.Asks),
+		formatRat(topBid.qty, 6),
+		formatRat(topBid.price, 2),
+		formatRat(topAsk.price, 2),
+		formatRat(topAsk.qty, 6),
+	)
 }
 
 type bookLevel struct {

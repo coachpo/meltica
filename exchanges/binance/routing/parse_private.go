@@ -33,20 +33,20 @@ func (w *WSRouter) parseOrderUpdate(msg *RoutedMessage, payload []byte) error {
 	var ou struct {
 		EventTime int64 `json:"E"`
 		Order     struct {
-			Symbol    string `json:"s"`
-			ID        int64  `json:"i"`
-			Status    string `json:"X"`
-			FilledQty string `json:"z"`
-			AvgPrice  string `json:"ap"`
-			EventTime int64  `json:"T"`
+			Symbol    string      `json:"s"`
+			ID        int64       `json:"i"`
+			Status    string      `json:"X"`
+			FilledQty json.Number `json:"z"`
+			AvgPrice  json.Number `json:"ap"`
+			EventTime int64       `json:"T"`
 		} `json:"o"`
 	}
 	if err := json.Unmarshal(payload, &ou); err != nil {
 		return err
 	}
 
-	filled, _ := parseDecimalToRat(ou.Order.FilledQty)
-	avg, _ := parseDecimalToRat(ou.Order.AvgPrice)
+	filled, _ := parseDecimalToRat(ou.Order.FilledQty.String())
+	avg, _ := parseDecimalToRat(ou.Order.AvgPrice.String())
 	msg.Route = coreexchange.RouteOrderUpdate
 	msg.Topic = topicFromChannel(BNXOrderChannel, ou.Order.Symbol)
 	msg.Parsed = &coreexchange.OrderEvent{
@@ -68,8 +68,8 @@ func (w *WSRouter) parseBalanceUpdate(msg *RoutedMessage, payload []byte, event 
 		var oap struct {
 			EventTime int64 `json:"E"`
 			Balances  []struct {
-				Asset string `json:"a"`
-				Free  string `json:"f"`
+				Asset string      `json:"a"`
+				Free  json.Number `json:"f"`
 			} `json:"B"`
 		}
 		if err := json.Unmarshal(payload, &oap); err != nil {
@@ -77,7 +77,7 @@ func (w *WSRouter) parseBalanceUpdate(msg *RoutedMessage, payload []byte, event 
 		}
 		var be coreexchange.BalanceEvent
 		for _, b := range oap.Balances {
-			amt, _ := parseDecimalToRat(b.Free)
+			amt, _ := parseDecimalToRat(b.Free.String())
 			be.Balances = append(be.Balances, core.Balance{Asset: b.Asset, Available: amt, Time: time.UnixMilli(oap.EventTime)})
 		}
 		msg.Topic = corews.UserBalanceTopic()
@@ -86,14 +86,14 @@ func (w *WSRouter) parseBalanceUpdate(msg *RoutedMessage, payload []byte, event 
 		return nil
 	case "balanceUpdate":
 		var bu struct {
-			EventTime int64  `json:"E"`
-			Asset     string `json:"a"`
-			Delta     string `json:"d"`
+			EventTime int64       `json:"E"`
+			Asset     string      `json:"a"`
+			Delta     json.Number `json:"d"`
 		}
 		if err := json.Unmarshal(payload, &bu); err != nil {
 			return err
 		}
-		amt, _ := parseDecimalToRat(bu.Delta)
+		amt, _ := parseDecimalToRat(bu.Delta.String())
 		msg.Topic = corews.UserBalanceTopic()
 		msg.Route = coreexchange.RouteBalanceSnapshot
 		msg.Parsed = &coreexchange.BalanceEvent{
