@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/coachpo/meltica/core"
+	"github.com/coachpo/meltica/providers/binance/common"
 	"github.com/coachpo/meltica/providers/binance/infra/rest"
 	"github.com/coachpo/meltica/providers/binance/routing"
 )
@@ -84,7 +85,7 @@ func (d inverseAPI) PlaceOrder(ctx context.Context, req core.OrderRequest) (core
 	if err := d.p.restRouter.Dispatch(ctx, msg, &resp); err != nil {
 		return core.Order{}, err
 	}
-	return core.Order{ID: fmt.Sprintf("%d", resp.OrderID), Symbol: req.Symbol, Status: MapOrderStatus(resp.Status)}, nil
+	return core.Order{ID: fmt.Sprintf("%d", resp.OrderID), Symbol: req.Symbol, Status: common.MapOrderStatus(resp.Status)}, nil
 }
 
 func (d inverseAPI) Positions(ctx context.Context, symbols ...string) ([]core.Position, error) {

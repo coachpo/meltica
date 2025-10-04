@@ -10,6 +10,7 @@ import (
 
 	"github.com/coachpo/meltica/core"
 	coreprovider "github.com/coachpo/meltica/core/provider"
+	"github.com/coachpo/meltica/providers/binance/common"
 	"github.com/coachpo/meltica/providers/binance/infra/rest"
 	"github.com/coachpo/meltica/providers/binance/infra/wsinfra"
 	"github.com/coachpo/meltica/providers/binance/routing"
@@ -147,5 +148,5 @@ func (p *Provider) DepthSnapshot(ctx context.Context, symbol string, limit int) 
 }
 
 func (p *Provider) timeInForceCode(t core.TimeInForce) string {
-	return MapTimeInForce(t)
+	return common.MapTimeInForce(t)
 }

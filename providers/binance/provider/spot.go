@@ -9,6 +9,7 @@ import (
 
 	"github.com/coachpo/meltica/core"
 	coreprovider "github.com/coachpo/meltica/core/provider"
+	"github.com/coachpo/meltica/providers/binance/common"
 	"github.com/coachpo/meltica/providers/binance/infra/rest"
 	"github.com/coachpo/meltica/providers/binance/routing"
 )
@@ -158,7 +159,7 @@ func (s spotAPI) PlaceOrder(ctx context.Context, req core.OrderRequest) (core.Or
 	if err := s.p.restRouter.Dispatch(ctx, msg, &resp); err != nil {
 		return core.Order{}, err
 	}
-	return core.Order{ID: fmt.Sprintf("%d", resp.OrderID), Symbol: req.Symbol, Status: MapOrderStatus(resp.Status)}, nil
+	return core.Order{ID: fmt.Sprintf("%d", resp.OrderID), Symbol: req.Symbol, Status: common.MapOrderStatus(resp.Status)}, nil
 }
 
 func (s spotAPI) GetOrder(ctx context.Context, symbol, id, clientID string) (core.Order, error) {
@@ -177,7 +178,7 @@ func (s spotAPI) GetOrder(ctx context.Context, symbol, id, clientID string) (cor
 	if err := s.p.restRouter.Dispatch(ctx, msg, &resp); err != nil {
 		return core.Order{}, err
 	}
-	return core.Order{ID: fmt.Sprintf("%d", resp.OrderID), Symbol: symbol, Status: MapOrderStatus(resp.Status)}, nil
+	return core.Order{ID: fmt.Sprintf("%d", resp.OrderID), Symbol: symbol, Status: common.MapOrderStatus(resp.Status)}, nil
 }
 
 func (s spotAPI) CancelOrder(ctx context.Context, symbol, id, clientID string) error {
