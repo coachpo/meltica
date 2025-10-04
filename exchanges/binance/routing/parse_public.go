@@ -11,6 +11,7 @@ import (
 	coreexchange "github.com/coachpo/meltica/core/exchange"
 	coretopics "github.com/coachpo/meltica/core/topics"
 	"github.com/coachpo/meltica/exchanges/binance/internal"
+	numeric "github.com/coachpo/meltica/exchanges/infra/numeric"
 )
 
 type binanceEnvelope struct {
@@ -71,8 +72,8 @@ func (w *WSRouter) parseTradeEvent(msg *RoutedMessage, payload []byte, symbol, s
 	topic := topicFromChannel(BNXTradeChannel, symbol)
 	msg.Topic = topic
 	msg.Route = coreexchange.RouteTradeUpdate
-	price, _ := parseDecimalToRat(rec.Price.String())
-	qty, _ := parseDecimalToRat(rec.Qty.String())
+	price, _ := numeric.Parse(rec.Price.String())
+	qty, _ := numeric.Parse(rec.Qty.String())
 	msg.Parsed = &coreexchange.TradeEvent{Symbol: symbol, Price: price, Quantity: qty, Time: time.UnixMilli(rec.Time)}
 	return nil
 }
@@ -98,8 +99,8 @@ func (w *WSRouter) parseBookTicker(msg *RoutedMessage, payload []byte, symbol, s
 	topic := topicFromChannel(BNXTickerChannel, symbol)
 	msg.Topic = topic
 	msg.Route = coreexchange.RouteTickerUpdate
-	bid, _ := parseDecimalToRat(rec.BidPrice.String())
-	ask, _ := parseDecimalToRat(rec.AskPrice.String())
+	bid, _ := numeric.Parse(rec.BidPrice.String())
+	ask, _ := numeric.Parse(rec.AskPrice.String())
 	eventTime := time.UnixMilli(rec.EventTime)
 	msg.Parsed = &coreexchange.TickerEvent{Symbol: symbol, Bid: bid, Ask: ask, Time: eventTime}
 	return nil
@@ -179,8 +180,8 @@ func depthLevelsFromPairs(pairs [][]interface{}) []core.BookDepthLevel {
 		default:
 			qStr = fmt.Sprint(v)
 		}
-		price, _ := parseDecimalToRat(pStr)
-		qty, _ := parseDecimalToRat(qStr)
+		price, _ := numeric.Parse(pStr)
+		qty, _ := numeric.Parse(qStr)
 		levels = append(levels, core.BookDepthLevel{Price: price, Qty: qty})
 	}
 	return levels

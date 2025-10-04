@@ -22,6 +22,7 @@ func NewMapper(config MappingConfig) *ChannelMapper {
 
 // ToExchange returns the exchange-specific channel for a canonical topic.
 // If no explicit mapping exists the lower-cased topic is returned.
+// TODO: rename the function to ToExchangeChannelIdentifier, if no explicit mapping exists, it panic.
 func (m *ChannelMapper) ToExchange(protocolTopic string) string {
 	if channel, ok := m.protocolToExchange[protocolTopic]; ok {
 		return channel

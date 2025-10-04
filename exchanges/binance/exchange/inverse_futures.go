@@ -11,7 +11,7 @@ import (
 	"github.com/coachpo/meltica/exchanges/binance/infra/rest"
 	"github.com/coachpo/meltica/exchanges/binance/internal"
 	"github.com/coachpo/meltica/exchanges/binance/routing"
-	"github.com/coachpo/meltica/exchanges/infra/numeric"
+	numeric "github.com/coachpo/meltica/exchanges/infra/numeric"
 )
 
 type inverseAPI struct{ x *Exchange }
@@ -92,13 +92,13 @@ func (d inverseAPI) Positions(ctx context.Context, symbols ...string) ([]core.Po
 		epStr, _ := drec["entryPrice"].(string)
 		upStr, _ := drec["unRealizedProfit"].(string)
 		var qty, ep, up *big.Rat
-		if v, ok := parseDecimalToRat(qStr); ok {
+		if v, ok := numeric.Parse(qStr); ok {
 			qty = v
 		}
-		if v, ok := parseDecimalToRat(epStr); ok {
+		if v, ok := numeric.Parse(epStr); ok {
 			ep = v
 		}
-		if v, ok := parseDecimalToRat(upStr); ok {
+		if v, ok := numeric.Parse(upStr); ok {
 			up = v
 		}
 		side := core.SideBuy

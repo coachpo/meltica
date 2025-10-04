@@ -11,6 +11,7 @@ import (
 	"github.com/coachpo/meltica/exchanges/binance/infra/rest"
 	"github.com/coachpo/meltica/exchanges/binance/internal"
 	"github.com/coachpo/meltica/exchanges/binance/routing"
+	numeric "github.com/coachpo/meltica/exchanges/infra/numeric"
 )
 
 type marketSpec struct {
@@ -109,9 +110,9 @@ func (x *Exchange) fetchMarketSymbols(ctx context.Context, spec marketSpec) ([]s
 		for _, ft := range sdef.Filters {
 			switch ft.FilterType {
 			case "PRICE_FILTER":
-				priceScale = scaleFromStep(ft.TickSize)
+				priceScale = numeric.ScaleFromStep(ft.TickSize)
 			case "LOT_SIZE":
-				qtyScale = scaleFromStep(ft.StepSize)
+				qtyScale = numeric.ScaleFromStep(ft.StepSize)
 			}
 		}
 		inst := core.Instrument{Symbol: core.CanonicalSymbol(base, quote), Base: base, Quote: quote, Market: spec.market, PriceScale: priceScale, QtyScale: qtyScale}

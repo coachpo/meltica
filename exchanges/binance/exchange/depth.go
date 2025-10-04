@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/coachpo/meltica/core"
+	numeric "github.com/coachpo/meltica/exchanges/infra/numeric"
 )
 
 func parseDepthLevels(pairs [][]interface{}) []core.BookDepthLevel {
@@ -25,8 +26,8 @@ func parseDepthLevels(pairs [][]interface{}) []core.BookDepthLevel {
 		default:
 			qStr = fmt.Sprint(v)
 		}
-		price, _ := parseDecimalToRat(pStr)
-		qty, _ := parseDecimalToRat(qStr)
+		price, _ := numeric.Parse(pStr)
+		qty, _ := numeric.Parse(qStr)
 		levels = append(levels, core.BookDepthLevel{Price: price, Qty: qty})
 	}
 	return levels

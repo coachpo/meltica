@@ -48,8 +48,8 @@ func (s spotAPI) Ticker(ctx context.Context, symbol string) (core.Ticker, error)
 	if err := s.x.restRouter.Dispatch(ctx, msg, &resp); err != nil {
 		return core.Ticker{}, err
 	}
-	bid, _ := parseDecimalToRat(resp.Bid)
-	ask, _ := parseDecimalToRat(resp.Ask)
+	bid, _ := numeric.Parse(resp.Bid)
+	ask, _ := numeric.Parse(resp.Ask)
 	return core.Ticker{Symbol: symbol, Bid: bid, Ask: ask, Time: time.Now()}, nil
 }
 
@@ -65,7 +65,7 @@ func (s spotAPI) Balances(ctx context.Context) ([]core.Balance, error) {
 	}
 	out := make([]core.Balance, 0, len(resp))
 	for _, b := range resp {
-		avail, _ := parseDecimalToRat(b.Free)
+		avail, _ := numeric.Parse(b.Free)
 		out = append(out, core.Balance{Asset: b.Asset, Available: avail, Time: time.Now()})
 	}
 	return out, nil
@@ -94,8 +94,8 @@ func (s spotAPI) Trades(ctx context.Context, symbol string, since int64) ([]core
 
 	out := make([]core.Trade, 0, len(resp))
 	for _, tr := range resp {
-		price, _ := parseDecimalToRat(tr.Price)
-		qty, _ := parseDecimalToRat(tr.Qty)
+		price, _ := numeric.Parse(tr.Price)
+		qty, _ := numeric.Parse(tr.Qty)
 		side := core.SideSell
 		if tr.IsBuyer {
 			side = core.SideBuy

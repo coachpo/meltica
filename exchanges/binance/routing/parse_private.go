@@ -9,6 +9,7 @@ import (
 	coreexchange "github.com/coachpo/meltica/core/exchange"
 	coretopics "github.com/coachpo/meltica/core/topics"
 	"github.com/coachpo/meltica/exchanges/binance/internal"
+	numeric "github.com/coachpo/meltica/exchanges/infra/numeric"
 )
 
 func (w *WSRouter) parsePrivateMessage(msg *RoutedMessage, payload []byte) error {
@@ -45,8 +46,8 @@ func (w *WSRouter) parseOrderUpdate(msg *RoutedMessage, payload []byte) error {
 		return err
 	}
 
-	filled, _ := parseDecimalToRat(ou.Order.FilledQty.String())
-	avg, _ := parseDecimalToRat(ou.Order.AvgPrice.String())
+	filled, _ := numeric.Parse(ou.Order.FilledQty.String())
+	avg, _ := numeric.Parse(ou.Order.AvgPrice.String())
 	msg.Route = coreexchange.RouteOrderUpdate
 	msg.Topic = topicFromChannel(BNXOrderChannel, ou.Order.Symbol)
 	msg.Parsed = &coreexchange.OrderEvent{
@@ -77,7 +78,7 @@ func (w *WSRouter) parseBalanceUpdate(msg *RoutedMessage, payload []byte, event 
 		}
 		var be coreexchange.BalanceEvent
 		for _, b := range oap.Balances {
-			amt, _ := parseDecimalToRat(b.Free.String())
+			amt, _ := numeric.Parse(b.Free.String())
 			be.Balances = append(be.Balances, core.Balance{Asset: b.Asset, Available: amt, Time: time.UnixMilli(oap.EventTime)})
 		}
 		msg.Topic = coretopics.UserBalance()
@@ -93,7 +94,7 @@ func (w *WSRouter) parseBalanceUpdate(msg *RoutedMessage, payload []byte, event 
 		if err := json.Unmarshal(payload, &bu); err != nil {
 			return err
 		}
-		amt, _ := parseDecimalToRat(bu.Delta.String())
+		amt, _ := numeric.Parse(bu.Delta.String())
 		msg.Topic = coretopics.UserBalance()
 		msg.Route = coreexchange.RouteBalanceSnapshot
 		msg.Parsed = &coreexchange.BalanceEvent{

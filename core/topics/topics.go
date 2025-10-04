@@ -20,6 +20,7 @@ func UserBalance() string            { return TopicUserBalance }
 
 // Parse splits a canonical topic into its channel and symbol components.
 // When no separator is present the channel is returned with an empty symbol.
+// TODO : When no separator is present the program should panic.
 func Parse(topic string) (channel, symbol string) {
 	if idx := strings.IndexByte(topic, ':'); idx > 0 {
 		return topic[:idx], topic[idx+1:]
