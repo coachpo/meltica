@@ -176,6 +176,15 @@ func (w *WS) InitializeOrderBook(ctx context.Context, symbol string) error {
 	return nil
 }
 
+// OrderBookSnapshot returns the current snapshot for a symbol if it has been initialized.
+func (w *WS) OrderBookSnapshot(symbol string) (corews.BookEvent, bool) {
+	orderBook := w.orderBooks.GetOrCreateOrderBook(symbol)
+	if !orderBook.IsInitialized() {
+		return corews.BookEvent{}, false
+	}
+	return orderBook.GetSnapshot(), true
+}
+
 // getDepthSnapshot fetches the actual depth snapshot from the REST API
 func (w *WS) getDepthSnapshot(ctx context.Context, symbol string, limit int) (corews.BookEvent, int64, error) {
 	return w.p.DepthSnapshot(ctx, symbol, limit)

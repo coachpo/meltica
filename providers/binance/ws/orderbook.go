@@ -149,10 +149,8 @@ func (ob *OrderBook) InitializeFromSnapshot(snapshot corews.BookEvent, snapshotU
 // BufferEvent buffers a depth event during initialization
 func (ob *OrderBook) BufferEvent(firstUpdateID, lastUpdateID int64, bids, asks []corews.DepthLevel, eventTime time.Time) {
 	ob.mu.Lock()
-	defer ob.mu.Unlock()
-
 	if ob.isInitialized {
-		// Already initialized, apply directly
+		ob.mu.Unlock()
 		UpdateFromBinanceDelta(ob, bids, asks, firstUpdateID, lastUpdateID, eventTime)
 		return
 	}
@@ -172,6 +170,41 @@ func (ob *OrderBook) BufferEvent(firstUpdateID, lastUpdateID int64, bids, asks [
 		Asks:          asks,
 		EventTime:     eventTime,
 	})
+	ob.mu.Unlock()
+}
+
+// Latest returns a snapshot of the current book state without clearing the buffer.
+func (ob *OrderBook) Latest() corews.BookEvent {
+	ob.mu.RLock()
+	defer ob.mu.RUnlock()
+
+	bids := make([]corews.DepthLevel, 0, len(ob.Bids))
+	asks := make([]corews.DepthLevel, 0, len(ob.Asks))
+
+	for priceStr, qty := range ob.Bids {
+		if price, ok := new(big.Rat).SetString(priceStr); ok {
+			bids = append(bids, corews.DepthLevel{
+				Price: price,
+				Qty:   new(big.Rat).Set(qty),
+			})
+		}
+	}
+
+	for priceStr, qty := range ob.Asks {
+		if price, ok := new(big.Rat).SetString(priceStr); ok {
+			asks = append(asks, corews.DepthLevel{
+				Price: price,
+				Qty:   new(big.Rat).Set(qty),
+			})
+		}
+	}
+
+	return corews.BookEvent{
+		Symbol: ob.Symbol,
+		Bids:   bids,
+		Asks:   asks,
+		Time:   ob.LastUpdate,
+	}
 }
 
 // IsInitialized returns whether the order book has been initialized with a snapshot
