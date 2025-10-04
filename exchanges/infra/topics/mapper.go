@@ -1,7 +1,5 @@
 package topics
 
-import "strings"
-
 // ChannelMapper provides conversion from canonical topics to exchange-specific channel names.
 type ChannelMapper struct {
 	protocolToExchange map[string]string
@@ -20,12 +18,10 @@ func NewMapper(config MappingConfig) *ChannelMapper {
 	return &ChannelMapper{protocolToExchange: config.ProtocolToExchange}
 }
 
-// ToExchange returns the exchange-specific channel for a canonical topic.
-// If no explicit mapping exists the lower-cased topic is returned.
-// TODO: rename the function to ToExchangeChannelIdentifier, if no explicit mapping exists, it panic.
-func (m *ChannelMapper) ToExchange(protocolTopic string) string {
+// ExchangeChannelID returns the exchange-specific channel for a canonical topic and panics if no mapping exists.
+func (m *ChannelMapper) ExchangeChannelID(protocolTopic string) string {
 	if channel, ok := m.protocolToExchange[protocolTopic]; ok {
 		return channel
 	}
-	return strings.ToLower(protocolTopic)
+	panic("missing exchange channel mapping for protocol topic")
 }

@@ -232,7 +232,7 @@ func (w *WSRouter) buildStreams(topics []string) ([]string, error) {
 	streams := make([]string, 0, len(topics))
 	for _, topic := range topics {
 		channel, instrument := coretopics.Parse(topic)
-		exchangeChannel := mapper.ToExchange(channel)
+		exchangeChannel := mapper.ExchangeChannelID(channel)
 		if instrument == "" {
 			streams = append(streams, topic)
 			continue
