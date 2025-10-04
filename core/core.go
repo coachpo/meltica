@@ -51,7 +51,7 @@ const (
 	ICO TimeInForce = "ioc"
 )
 
-// Instrument is the canonical contract definition returned by every provider.
+// Instrument is the canonical contract definition returned by every exchange.
 type Instrument struct {
 	Symbol     string
 	Base       string
@@ -147,7 +147,7 @@ type Candlestick struct {
 	End      time.Time
 }
 
-// Capability describes a discrete feature of a provider.
+// Capability describes a discrete feature of an exchange.
 type Capability uint64
 
 const (
@@ -169,27 +169,27 @@ const (
 	CapabilityWebsocketPrivate
 )
 
-// ProviderCapabilities is a bitset describing the features available from a provider implementation.
-type ProviderCapabilities uint64
+// ExchangeCapabilities is a bitset describing the features available from an exchange implementation.
+type ExchangeCapabilities uint64
 
-// Capabilities builds a ProviderCapabilities bitset from the provided features.
-func Capabilities(caps ...Capability) ProviderCapabilities {
+// Capabilities builds a ExchangeCapabilities bitset from the provided features.
+func Capabilities(caps ...Capability) ExchangeCapabilities {
 	var bits uint64
 	for _, c := range caps {
 		bits |= uint64(c)
 	}
-	return ProviderCapabilities(bits)
+	return ExchangeCapabilities(bits)
 }
 
 // Has reports whether the capability bit is present.
-func (pc ProviderCapabilities) Has(cap Capability) bool {
+func (pc ExchangeCapabilities) Has(cap Capability) bool {
 	return uint64(pc)&uint64(cap) != 0
 }
 
 // Exchange is the stable abstraction implemented by every concrete exchange adapter.
 type Exchange interface {
 	Name() string
-	Capabilities() ProviderCapabilities
+	Capabilities() ExchangeCapabilities
 	SupportedProtocolVersion() string
 }
 
@@ -247,5 +247,5 @@ type Message struct {
 	Parsed any
 }
 
-// ErrNotSupported indicates that a capability is not available for a provider.
+// ErrNotSupported indicates that a capability is not available for an exchange.
 var ErrNotSupported = errors.New("not supported")

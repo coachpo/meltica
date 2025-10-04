@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/coachpo/meltica/core"
-	coreprovider "github.com/coachpo/meltica/core/provider"
+	coreexchange "github.com/coachpo/meltica/core/exchange"
 )
 
 // OrderBookManager manages order book state for different symbols.
@@ -63,7 +63,7 @@ type BufferedDepthEvent struct {
 }
 
 // InitializeFromSnapshot initializes the order book from a snapshot and applies buffered events
-func (ob *OrderBook) InitializeFromSnapshot(snapshot coreprovider.BookEvent, snapshotUpdateID int64) error {
+func (ob *OrderBook) InitializeFromSnapshot(snapshot coreexchange.BookEvent, snapshotUpdateID int64) error {
 	ob.mu.Lock()
 	defer ob.mu.Unlock()
 
@@ -175,7 +175,7 @@ func (ob *OrderBook) BufferEvent(firstUpdateID, lastUpdateID int64, bids, asks [
 }
 
 // Latest returns a snapshot of the current book state without clearing the buffer.
-func (ob *OrderBook) Latest() coreprovider.BookEvent {
+func (ob *OrderBook) Latest() coreexchange.BookEvent {
 	ob.mu.RLock()
 	defer ob.mu.RUnlock()
 
@@ -200,7 +200,7 @@ func (ob *OrderBook) Latest() coreprovider.BookEvent {
 		}
 	}
 
-	return coreprovider.BookEvent{
+	return coreexchange.BookEvent{
 		Symbol: ob.Symbol,
 		Bids:   bids,
 		Asks:   asks,
@@ -247,7 +247,7 @@ func (ob *OrderBook) UpdateFromSnapshot(bids, asks []core.BookDepthLevel, lastUp
 }
 
 // GetSnapshot returns the current order book as a core BookEvent.
-func (ob *OrderBook) GetSnapshot() coreprovider.BookEvent {
+func (ob *OrderBook) GetSnapshot() coreexchange.BookEvent {
 	ob.mu.RLock()
 	defer ob.mu.RUnlock()
 
@@ -272,7 +272,7 @@ func (ob *OrderBook) GetSnapshot() coreprovider.BookEvent {
 		}
 	}
 
-	return coreprovider.BookEvent{
+	return coreexchange.BookEvent{
 		Symbol: ob.Symbol,
 		Bids:   bids,
 		Asks:   asks,

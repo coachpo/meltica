@@ -1,4 +1,4 @@
-package provider
+package exchange
 
 import (
 	"context"
@@ -7,28 +7,28 @@ import (
 	"strings"
 	"time"
 
-	coreprovider "github.com/coachpo/meltica/core/provider"
+	coreexchange "github.com/coachpo/meltica/core/exchange"
 	corews "github.com/coachpo/meltica/core/ws"
-	"github.com/coachpo/meltica/providers/binance/routing"
+	"github.com/coachpo/meltica/exchanges/binance/routing"
 )
 
-func (p *Provider) OrderBookSnapshots(ctx context.Context, symbol string) (<-chan coreprovider.BookEvent, <-chan error, error) {
-	canonicalSymbol, err := p.canonicalizeSymbol(symbol)
+func (x *Exchange) OrderBookSnapshots(ctx context.Context, symbol string) (<-chan coreexchange.BookEvent, <-chan error, error) {
+	canonicalSymbol, err := x.canonicalizeSymbol(symbol)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	sub, err := p.wsRouter.SubscribePublic(ctx, corews.BookTopic(canonicalSymbol))
+	sub, err := x.wsRouter.SubscribePublic(ctx, corews.BookTopic(canonicalSymbol))
 	if err != nil {
 		return nil, nil, fmt.Errorf("binance: subscribe depth stream: %w", err)
 	}
 
-	if err := p.initializeWithRetries(ctx, p.wsRouter, canonicalSymbol); err != nil {
+	if err := x.initializeWithRetries(ctx, x.wsRouter, canonicalSymbol); err != nil {
 		_ = sub.Close()
 		return nil, nil, err
 	}
 
-	events := make(chan coreprovider.BookEvent, 32)
+	events := make(chan coreexchange.BookEvent, 32)
 	errs := make(chan error, 1)
 
 	go func() {
@@ -37,7 +37,7 @@ func (p *Provider) OrderBookSnapshots(ctx context.Context, symbol string) (<-cha
 		defer sub.Close()
 
 		publishSnapshot := func() bool {
-			snapshot, ok := p.wsRouter.OrderBookSnapshot(canonicalSymbol)
+			snapshot, ok := x.wsRouter.OrderBookSnapshot(canonicalSymbol)
 			if !ok {
 				return true
 			}
@@ -93,7 +93,7 @@ func (p *Provider) OrderBookSnapshots(ctx context.Context, symbol string) (<-cha
 	return events, errs, nil
 }
 
-func (p *Provider) canonicalizeSymbol(symbol string) (string, error) {
+func (x *Exchange) canonicalizeSymbol(symbol string) (string, error) {
 	s := strings.TrimSpace(symbol)
 	if s == "" {
 		return "", errors.New("binance: empty symbol")
@@ -111,7 +111,7 @@ func (p *Provider) canonicalizeSymbol(symbol string) (string, error) {
 				panicErr = r
 			}
 		}()
-		canonical = p.CanonicalSymbol(s)
+		canonical = x.CanonicalSymbol(s)
 	}()
 	if panicErr != nil {
 		return "", fmt.Errorf("binance: unsupported symbol %s", symbol)
@@ -122,7 +122,7 @@ func (p *Provider) canonicalizeSymbol(symbol string) (string, error) {
 	return canonical, nil
 }
 
-func (p *Provider) initializeWithRetries(ctx context.Context, handler *routing.WSRouter, symbol string) error {
+func (x *Exchange) initializeWithRetries(ctx context.Context, handler *routing.WSRouter, symbol string) error {
 	const maxRetries = 5
 	var lastErr error
 	for attempt := 0; attempt < maxRetries; attempt++ {

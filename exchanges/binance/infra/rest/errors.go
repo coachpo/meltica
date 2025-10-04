@@ -10,7 +10,7 @@ import (
 // mapHTTPError converts Binance REST error payloads into the shared error type.
 func mapHTTPError(status int, body []byte) error {
 	if status == 418 || status == 429 {
-		return &errs.E{Provider: "binance", Code: errs.CodeRateLimited, HTTP: status, RawMsg: string(body)}
+		return &errs.E{Exchange: "binance", Code: errs.CodeRateLimited, HTTP: status, RawMsg: string(body)}
 	}
 	var env struct {
 		Code int    `json:"code"`
@@ -28,9 +28,9 @@ func mapHTTPError(status int, body []byte) error {
 		default:
 			code = errs.CodeExchange
 		}
-		return &errs.E{Provider: "binance", Code: code, HTTP: status, RawCode: jsonInt(env.Code), RawMsg: env.Msg}
+		return &errs.E{Exchange: "binance", Code: code, HTTP: status, RawCode: jsonInt(env.Code), RawMsg: env.Msg}
 	}
-	return &errs.E{Provider: "binance", Code: errs.CodeExchange, HTTP: status, RawMsg: string(body)}
+	return &errs.E{Exchange: "binance", Code: errs.CodeExchange, HTTP: status, RawMsg: string(body)}
 }
 
 func jsonInt(i int) string { return fmt.Sprintf("%d", i) }

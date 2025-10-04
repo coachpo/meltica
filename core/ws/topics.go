@@ -1,6 +1,6 @@
 package ws
 
-// Canonical websocket topic helpers (provider-agnostic).
+// Canonical websocket topic helpers (exchange-agnostic).
 // Topics are expressed as "channel:SYMBOL" where SYMBOL is canonical (e.g., BTC-USDT).
 const (
 	TopicTrade       = "trade"

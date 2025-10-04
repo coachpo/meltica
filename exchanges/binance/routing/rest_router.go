@@ -4,8 +4,8 @@ import (
 	"context"
 	"strings"
 
-	coreprovider "github.com/coachpo/meltica/core/provider"
-	"github.com/coachpo/meltica/providers/binance/infra/rest"
+	coreexchange "github.com/coachpo/meltica/core/exchange"
+	"github.com/coachpo/meltica/exchanges/binance/infra/rest"
 )
 
 // RESTMessage encapsulates information needed to route a REST request through Level 2.
@@ -34,7 +34,7 @@ func (r *RESTRouter) Dispatch(ctx context.Context, msg RESTMessage, out any) err
 	if api == "" {
 		api = inferAPI(msg.Path)
 	}
-	req := coreprovider.RESTRequest{
+	req := coreexchange.RESTRequest{
 		API:    string(api),
 		Method: msg.Method,
 		Path:   msg.Path,

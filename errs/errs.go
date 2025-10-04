@@ -13,7 +13,7 @@ const (
 )
 
 type E struct {
-	Provider string
+	Exchange string
 	Code     Code
 	HTTP     int
 	RawCode  string
@@ -21,7 +21,7 @@ type E struct {
 }
 
 func (e *E) Error() string {
-	return fmt.Sprintf("%s(%s) http=%d raw=%s %s", e.Provider, e.Code, e.HTTP, e.RawCode, e.RawMsg)
+	return fmt.Sprintf("%s(%s) http=%d raw=%s %s", e.Exchange, e.Code, e.HTTP, e.RawCode, e.RawMsg)
 }
 
 // NotSupported returns a standardized error for unsupported capabilities.

@@ -8,23 +8,23 @@ import (
 	"time"
 
 	"github.com/coachpo/meltica/core"
-	coreprovider "github.com/coachpo/meltica/core/provider"
+	coreexchange "github.com/coachpo/meltica/core/exchange"
 	corews "github.com/coachpo/meltica/core/ws"
-	"github.com/coachpo/meltica/providers/binance/infra/wsinfra"
+	"github.com/coachpo/meltica/exchanges/binance/infra/wsinfra"
 )
 
-// WSDependencies exposes the provider hooks required by the websocket routing layer.
+// WSDependencies exposes the exchange hooks required by the websocket routing layer.
 type WSDependencies interface {
 	CanonicalSymbol(binanceSymbol string) string
 	CreateListenKey(ctx context.Context) (string, error)
 	KeepAliveListenKey(ctx context.Context, key string) error
 	CloseListenKey(ctx context.Context, key string) error
-	DepthSnapshot(ctx context.Context, symbol string, limit int) (coreprovider.BookEvent, int64, error)
+	DepthSnapshot(ctx context.Context, symbol string, limit int) (coreexchange.BookEvent, int64, error)
 }
 
-type RoutedMessage = coreprovider.RoutedMessage
+type RoutedMessage = coreexchange.RoutedMessage
 
-type Subscription = coreprovider.Subscription
+type Subscription = coreexchange.Subscription
 
 // WSRouter manages websocket subscriptions, routing raw frames from Level 1 to Level 3.
 type WSRouter struct {
@@ -124,7 +124,7 @@ func (w *WSRouter) readLoop(sub *wsSub) {
 			if !ok {
 				return
 			}
-			msg := RoutedMessage{Raw: raw.Data, At: raw.At, Route: coreprovider.RouteUnknown}
+			msg := RoutedMessage{Raw: raw.Data, At: raw.At, Route: coreexchange.RouteUnknown}
 			if err := w.parsePublicMessage(&msg, raw.Data); err != nil {
 				select {
 				case sub.err <- err:
@@ -177,7 +177,7 @@ func (w *WSRouter) readPrivateLoop(ctx context.Context, sub *wsSub, listenKey st
 			if !ok {
 				return
 			}
-			msg := RoutedMessage{Raw: raw.Data, At: raw.At, Route: coreprovider.RouteUnknown}
+			msg := RoutedMessage{Raw: raw.Data, At: raw.At, Route: coreexchange.RouteUnknown}
 			if err := w.parsePrivateMessage(&msg, raw.Data); err != nil {
 				select {
 				case sub.err <- err:
@@ -225,25 +225,25 @@ func (w *WSRouter) buildStreams(topics []string) []string {
 	streams := make([]string, 0, len(topics))
 	for _, topic := range topics {
 		channel, instrument := corews.ParseTopic(topic)
-		providerChannel := mapper.ToProviderChannel(channel)
+		exchangeChannel := mapper.ToExchangeChannel(channel)
 		if instrument == "" {
 			streams = append(streams, topic)
 			continue
 		}
-		if providerChannel == "" {
-			providerChannel = strings.ToLower(channel)
+		if exchangeChannel == "" {
+			exchangeChannel = strings.ToLower(channel)
 		}
 		binanceSymbol := strings.ToLower(core.CanonicalToBinance(instrument))
-		streams = append(streams, binanceSymbol+"@"+providerChannel)
+		streams = append(streams, binanceSymbol+"@"+exchangeChannel)
 	}
 	return streams
 }
 
 // OrderBookSnapshot returns the current snapshot for a symbol if it has been initialized.
-func (w *WSRouter) OrderBookSnapshot(symbol string) (coreprovider.BookEvent, bool) {
+func (w *WSRouter) OrderBookSnapshot(symbol string) (coreexchange.BookEvent, bool) {
 	orderBook := w.orderBooks.GetOrCreateOrderBook(symbol)
 	if !orderBook.IsInitialized() {
-		return coreprovider.BookEvent{}, false
+		return coreexchange.BookEvent{}, false
 	}
 	return orderBook.GetSnapshot(), true
 }

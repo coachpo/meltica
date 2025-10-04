@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	coreprovider "github.com/coachpo/meltica/core/provider"
+	coreexchange "github.com/coachpo/meltica/core/exchange"
 	"github.com/coachpo/meltica/transport"
 )
 
@@ -82,7 +82,7 @@ func NewClient(cfg Config) *Client {
 // Request describes a low-level REST call routed through the Binance infrastructure client.
 // Do executes a REST request against the appropriate Binance surface and unmarshals the response into out.
 
-func (c *Client) Do(ctx context.Context, req coreprovider.RESTRequest, out any) error {
+func (c *Client) Do(ctx context.Context, req coreexchange.RESTRequest, out any) error {
 	switch API(req.API) {
 	case SpotAPI:
 		return c.sapi.Do(ctx, req.Method, req.Path, req.Query, req.Body, req.Signed, out)

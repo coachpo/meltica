@@ -1,4 +1,4 @@
-package provider
+package exchange
 
 import (
 	"context"
@@ -8,20 +8,20 @@ import (
 	"time"
 
 	"github.com/coachpo/meltica/core"
-	coreprovider "github.com/coachpo/meltica/core/provider"
-	"github.com/coachpo/meltica/providers/binance/common"
-	"github.com/coachpo/meltica/providers/binance/infra/rest"
-	"github.com/coachpo/meltica/providers/binance/routing"
+	coreexchange "github.com/coachpo/meltica/core/exchange"
+	"github.com/coachpo/meltica/exchanges/binance/common"
+	"github.com/coachpo/meltica/exchanges/binance/infra/rest"
+	"github.com/coachpo/meltica/exchanges/binance/routing"
 )
 
-type spotAPI struct{ p *Provider }
+type spotAPI struct{ x *Exchange }
 
 func (s spotAPI) ServerTime(ctx context.Context) (time.Time, error) {
 	var resp struct {
 		ServerTime int64 `json:"serverTime"`
 	}
 	msg := routing.RESTMessage{API: rest.SpotAPI, Method: http.MethodGet, Path: "/api/v3/time"}
-	if err := s.p.restRouter.Dispatch(ctx, msg, &resp); err != nil {
+	if err := s.x.restRouter.Dispatch(ctx, msg, &resp); err != nil {
 		return time.Time{}, err
 	}
 	return time.UnixMilli(resp.ServerTime), nil
@@ -41,7 +41,7 @@ func (s spotAPI) Instruments(ctx context.Context) ([]core.Instrument, error) {
 		} `json:"symbols"`
 	}
 	msg := routing.RESTMessage{API: rest.SpotAPI, Method: http.MethodGet, Path: "/api/v3/exchangeInfo"}
-	if err := s.p.restRouter.Dispatch(ctx, msg, &resp); err != nil {
+	if err := s.x.restRouter.Dispatch(ctx, msg, &resp); err != nil {
 		return nil, err
 	}
 
@@ -59,8 +59,8 @@ func (s spotAPI) Instruments(ctx context.Context) ([]core.Instrument, error) {
 		sym := core.CanonicalSymbol(sdef.Base, sdef.Quote)
 		inst := core.Instrument{Symbol: sym, Base: sdef.Base, Quote: sdef.Quote, Market: core.MarketSpot, PriceScale: priceScale, QtyScale: qtyScale}
 		out = append(out, inst)
-		s.p.instCache[sym] = inst
-		s.p.binToCanon[sdef.Symbol] = sym
+		s.x.instCache[sym] = inst
+		s.x.binToCanon[sdef.Symbol] = sym
 	}
 	return out, nil
 }
@@ -72,7 +72,7 @@ func (s spotAPI) Ticker(ctx context.Context, symbol string) (core.Ticker, error)
 	}
 	params := map[string]string{"symbol": core.CanonicalToBinance(symbol)}
 	msg := routing.RESTMessage{API: rest.SpotAPI, Method: http.MethodGet, Path: "/api/v3/ticker/bookTicker", Query: params}
-	if err := s.p.restRouter.Dispatch(ctx, msg, &resp); err != nil {
+	if err := s.x.restRouter.Dispatch(ctx, msg, &resp); err != nil {
 		return core.Ticker{}, err
 	}
 	bid, _ := parseDecimalToRat(resp.Bid)
@@ -87,7 +87,7 @@ func (s spotAPI) Balances(ctx context.Context) ([]core.Balance, error) {
 		Locked string `json:"locked"`
 	}
 	msg := routing.RESTMessage{API: rest.SpotAPI, Method: http.MethodGet, Path: "/api/v3/account", Signed: true}
-	if err := s.p.restRouter.Dispatch(ctx, msg, &resp); err != nil {
+	if err := s.x.restRouter.Dispatch(ctx, msg, &resp); err != nil {
 		return nil, err
 	}
 	out := make([]core.Balance, 0, len(resp))
@@ -111,7 +111,7 @@ func (s spotAPI) Trades(ctx context.Context, symbol string, since int64) ([]core
 		Time    int64  `json:"time"`
 	}
 	msg := routing.RESTMessage{API: rest.SpotAPI, Method: http.MethodGet, Path: "/api/v3/myTrades", Query: params, Signed: true}
-	if err := s.p.restRouter.Dispatch(ctx, msg, &resp); err != nil {
+	if err := s.x.restRouter.Dispatch(ctx, msg, &resp); err != nil {
 		return nil, err
 	}
 
@@ -137,7 +137,7 @@ func (s spotAPI) PlaceOrder(ctx context.Context, req core.OrderRequest) (core.Or
 	if req.ClientID != "" {
 		q["newClientOrderId"] = req.ClientID
 	}
-	if tif := s.p.timeInForceCode(req.TimeInForce); tif != "" {
+	if tif := s.x.timeInForceCode(req.TimeInForce); tif != "" {
 		q["timeInForce"] = tif
 	}
 	if req.Quantity != nil || req.Price != nil {
@@ -156,7 +156,7 @@ func (s spotAPI) PlaceOrder(ctx context.Context, req core.OrderRequest) (core.Or
 		Status  string `json:"status"`
 	}
 	msg := routing.RESTMessage{API: rest.SpotAPI, Method: http.MethodPost, Path: "/api/v3/order", Query: q, Signed: true}
-	if err := s.p.restRouter.Dispatch(ctx, msg, &resp); err != nil {
+	if err := s.x.restRouter.Dispatch(ctx, msg, &resp); err != nil {
 		return core.Order{}, err
 	}
 	return core.Order{ID: fmt.Sprintf("%d", resp.OrderID), Symbol: req.Symbol, Status: common.MapOrderStatus(resp.Status)}, nil
@@ -175,7 +175,7 @@ func (s spotAPI) GetOrder(ctx context.Context, symbol, id, clientID string) (cor
 		Status  string `json:"status"`
 	}
 	msg := routing.RESTMessage{API: rest.SpotAPI, Method: http.MethodGet, Path: "/api/v3/order", Query: q, Signed: true}
-	if err := s.p.restRouter.Dispatch(ctx, msg, &resp); err != nil {
+	if err := s.x.restRouter.Dispatch(ctx, msg, &resp); err != nil {
 		return core.Order{}, err
 	}
 	return core.Order{ID: fmt.Sprintf("%d", resp.OrderID), Symbol: symbol, Status: common.MapOrderStatus(resp.Status)}, nil
@@ -190,7 +190,7 @@ func (s spotAPI) CancelOrder(ctx context.Context, symbol, id, clientID string) e
 		q["origClientOrderId"] = clientID
 	}
 	msg := routing.RESTMessage{API: rest.SpotAPI, Method: http.MethodDelete, Path: "/api/v3/order", Query: q, Signed: true}
-	return s.p.restRouter.Dispatch(ctx, msg, nil)
+	return s.x.restRouter.Dispatch(ctx, msg, nil)
 }
 
 func (s spotAPI) SpotNativeSymbol(canonical string) string {
@@ -207,12 +207,12 @@ func (s spotAPI) SpotCanonicalSymbol(native string) string {
 	panic(fmt.Errorf("binance spotAPI: unsupported native symbol %s", native))
 }
 
-func (s spotAPI) DepthSnapshot(ctx context.Context, symbol string, limit int) (coreprovider.BookEvent, int64, error) {
-	return s.p.DepthSnapshot(ctx, symbol, limit)
+func (s spotAPI) DepthSnapshot(ctx context.Context, symbol string, limit int) (coreexchange.BookEvent, int64, error) {
+	return s.x.DepthSnapshot(ctx, symbol, limit)
 }
 
 func (s spotAPI) lookupInstrument(ctx context.Context, symbol string) core.Instrument {
-	if inst, ok := s.p.instCache[symbol]; ok {
+	if inst, ok := s.x.instCache[symbol]; ok {
 		return inst
 	}
 	insts, err := s.Instruments(ctx)
@@ -220,5 +220,5 @@ func (s spotAPI) lookupInstrument(ctx context.Context, symbol string) core.Instr
 		return core.Instrument{}
 	}
 	_ = insts
-	return s.p.instCache[symbol]
+	return s.x.instCache[symbol]
 }

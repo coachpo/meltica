@@ -1,4 +1,4 @@
-package provider
+package exchange
 
 import (
 	"context"
@@ -9,14 +9,14 @@ import (
 	"time"
 
 	"github.com/coachpo/meltica/core"
-	"github.com/coachpo/meltica/providers/binance/common"
-	"github.com/coachpo/meltica/providers/binance/infra/rest"
-	"github.com/coachpo/meltica/providers/binance/routing"
+	"github.com/coachpo/meltica/exchanges/binance/common"
+	"github.com/coachpo/meltica/exchanges/binance/infra/rest"
+	"github.com/coachpo/meltica/exchanges/binance/routing"
 )
 
-type inverseAPI struct{ p *Provider }
+type linearAPI struct{ x *Exchange }
 
-func (d inverseAPI) Instruments(ctx context.Context) ([]core.Instrument, error) {
+func (f linearAPI) Instruments(ctx context.Context) ([]core.Instrument, error) {
 	var resp struct {
 		Symbols []struct {
 			Symbol  string `json:"symbol"`
@@ -29,8 +29,8 @@ func (d inverseAPI) Instruments(ctx context.Context) ([]core.Instrument, error) 
 			} `json:"filters"`
 		} `json:"symbols"`
 	}
-	msg := routing.RESTMessage{API: rest.InverseAPI, Method: http.MethodGet, Path: "/dapi/v1/exchangeInfo"}
-	if err := d.p.restRouter.Dispatch(ctx, msg, &resp); err != nil {
+	msg := routing.RESTMessage{API: rest.LinearAPI, Method: http.MethodGet, Path: "/fapi/v1/exchangeInfo"}
+	if err := f.x.restRouter.Dispatch(ctx, msg, &resp); err != nil {
 		return nil, err
 	}
 	out := make([]core.Instrument, 0, len(resp.Symbols))
@@ -45,32 +45,32 @@ func (d inverseAPI) Instruments(ctx context.Context) ([]core.Instrument, error) 
 			}
 		}
 		sym := core.CanonicalSymbol(sdef.Base, sdef.Quote)
-		inst := core.Instrument{Symbol: sym, Base: sdef.Base, Quote: sdef.Quote, Market: core.MarketInverseFutures, PriceScale: priceScale, QtyScale: qtyScale}
+		inst := core.Instrument{Symbol: sym, Base: sdef.Base, Quote: sdef.Quote, Market: core.MarketLinearFutures, PriceScale: priceScale, QtyScale: qtyScale}
 		out = append(out, inst)
-		d.p.instCache[sym] = inst
+		f.x.instCache[sym] = inst
 	}
 	return out, nil
 }
 
-func (d inverseAPI) Ticker(ctx context.Context, symbol string) (core.Ticker, error) {
+func (f linearAPI) Ticker(ctx context.Context, symbol string) (core.Ticker, error) {
 	params := map[string]string{"symbol": core.CanonicalToBinance(symbol)}
-	msg := routing.RESTMessage{API: rest.InverseAPI, Method: http.MethodGet, Path: "/dapi/v1/ticker/bookTicker", Query: params}
-	if err := d.p.restRouter.Dispatch(ctx, msg, &struct{}{}); err != nil {
+	msg := routing.RESTMessage{API: rest.LinearAPI, Method: http.MethodGet, Path: "/fapi/v1/ticker/bookTicker", Query: params}
+	if err := f.x.restRouter.Dispatch(ctx, msg, &struct{}{}); err != nil {
 		return core.Ticker{}, err
 	}
 	return core.Ticker{Symbol: symbol, Time: time.Now()}, nil
 }
 
-func (d inverseAPI) PlaceOrder(ctx context.Context, req core.OrderRequest) (core.Order, error) {
+func (f linearAPI) PlaceOrder(ctx context.Context, req core.OrderRequest) (core.Order, error) {
 	q := map[string]string{
 		"symbol": core.CanonicalToBinance(req.Symbol),
 		"side":   string(req.Side),
 		"type":   string(req.Type),
 	}
-	if tif := d.p.timeInForceCode(req.TimeInForce); tif != "" {
+	if tif := f.x.timeInForceCode(req.TimeInForce); tif != "" {
 		q["timeInForce"] = tif
 	}
-	inst := d.lookupInstrument(ctx, req.Symbol)
+	inst := f.lookupInstrument(ctx, req.Symbol)
 	if req.Quantity != nil {
 		q["quantity"] = core.FormatDecimal(req.Quantity, inst.QtyScale)
 	}
@@ -81,30 +81,30 @@ func (d inverseAPI) PlaceOrder(ctx context.Context, req core.OrderRequest) (core
 		OrderID int64  `json:"orderId"`
 		Status  string `json:"status"`
 	}
-	msg := routing.RESTMessage{API: rest.InverseAPI, Method: http.MethodPost, Path: "/dapi/v1/order", Query: q, Signed: true}
-	if err := d.p.restRouter.Dispatch(ctx, msg, &resp); err != nil {
+	msg := routing.RESTMessage{API: rest.LinearAPI, Method: http.MethodPost, Path: "/fapi/v1/order", Query: q, Signed: true}
+	if err := f.x.restRouter.Dispatch(ctx, msg, &resp); err != nil {
 		return core.Order{}, err
 	}
 	return core.Order{ID: fmt.Sprintf("%d", resp.OrderID), Symbol: req.Symbol, Status: common.MapOrderStatus(resp.Status)}, nil
 }
 
-func (d inverseAPI) Positions(ctx context.Context, symbols ...string) ([]core.Position, error) {
+func (f linearAPI) Positions(ctx context.Context, symbols ...string) ([]core.Position, error) {
 	q := map[string]string{}
 	if len(symbols) == 1 {
 		q["symbol"] = core.CanonicalToBinance(symbols[0])
 	}
 	var raw []map[string]any
-	msg := routing.RESTMessage{API: rest.InverseAPI, Method: http.MethodGet, Path: "/dapi/v1/positionRisk", Query: q, Signed: true}
-	if err := d.p.restRouter.Dispatch(ctx, msg, &raw); err != nil {
+	msg := routing.RESTMessage{API: rest.LinearAPI, Method: http.MethodGet, Path: "/fapi/v2/positionRisk", Query: q, Signed: true}
+	if err := f.x.restRouter.Dispatch(ctx, msg, &raw); err != nil {
 		return nil, err
 	}
 	out := make([]core.Position, 0, len(raw))
-	for _, drec := range raw {
-		nativeSym, _ := drec["symbol"].(string)
-		sym := d.p.CanonicalSymbol(nativeSym)
-		qStr, _ := drec["positionAmt"].(string)
-		epStr, _ := drec["entryPrice"].(string)
-		upStr, _ := drec["unRealizedProfit"].(string)
+	for _, d := range raw {
+		nativeSym, _ := d["symbol"].(string)
+		sym := f.x.CanonicalSymbol(nativeSym)
+		qStr, _ := d["positionAmt"].(string)
+		epStr, _ := d["entryPrice"].(string)
+		upStr, _ := d["unRealizedProfit"].(string)
 		var qty, ep, up *big.Rat
 		if v, ok := parseDecimalToRat(qStr); ok {
 			qty = v
@@ -125,28 +125,28 @@ func (d inverseAPI) Positions(ctx context.Context, symbols ...string) ([]core.Po
 	return out, nil
 }
 
-func (d inverseAPI) FutureNativeSymbol(canonical string) string {
+func (f linearAPI) FutureNativeSymbol(canonical string) string {
 	if strings.EqualFold(canonical, "BTC-USDT") {
 		return "BTCUSDT"
 	}
-	panic(fmt.Errorf("binance inverse futuresAPI: unsupported canonical symbol %s", canonical))
+	panic(fmt.Errorf("binance futuresAPI: unsupported canonical symbol %s", canonical))
 }
 
-func (d inverseAPI) FutureCanonicalSymbol(native string) string {
+func (f linearAPI) FutureCanonicalSymbol(native string) string {
 	if strings.EqualFold(native, "BTCUSDT") {
 		return "BTC-USDT"
 	}
-	panic(fmt.Errorf("binance inverse futuresAPI: unsupported native symbol %s", native))
+	panic(fmt.Errorf("binance futuresAPI: unsupported native symbol %s", native))
 }
 
-func (d inverseAPI) lookupInstrument(ctx context.Context, symbol string) core.Instrument {
-	if inst, ok := d.p.instCache[symbol]; ok {
+func (f linearAPI) lookupInstrument(ctx context.Context, symbol string) core.Instrument {
+	if inst, ok := f.x.instCache[symbol]; ok {
 		return inst
 	}
-	insts, err := d.Instruments(ctx)
+	insts, err := f.Instruments(ctx)
 	if err != nil {
 		return core.Instrument{}
 	}
 	_ = insts
-	return d.p.instCache[symbol]
+	return f.x.instCache[symbol]
 }

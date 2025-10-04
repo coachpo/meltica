@@ -1,4 +1,4 @@
-package provider
+package exchange
 
 import (
 	"context"
@@ -9,14 +9,14 @@ import (
 	"time"
 
 	"github.com/coachpo/meltica/core"
-	coreprovider "github.com/coachpo/meltica/core/provider"
-	"github.com/coachpo/meltica/providers/binance/common"
-	"github.com/coachpo/meltica/providers/binance/infra/rest"
-	"github.com/coachpo/meltica/providers/binance/infra/wsinfra"
-	"github.com/coachpo/meltica/providers/binance/routing"
+	coreexchange "github.com/coachpo/meltica/core/exchange"
+	"github.com/coachpo/meltica/exchanges/binance/common"
+	"github.com/coachpo/meltica/exchanges/binance/infra/rest"
+	"github.com/coachpo/meltica/exchanges/binance/infra/wsinfra"
+	"github.com/coachpo/meltica/exchanges/binance/routing"
 )
 
-type Provider struct {
+type Exchange struct {
 	name string
 
 	restClient *rest.Client
@@ -40,12 +40,12 @@ var capabilities = core.Capabilities(
 	core.CapabilityWebsocketPrivate,
 )
 
-func New(apiKey, secret string) (*Provider, error) {
+func New(apiKey, secret string) (*Exchange, error) {
 	restClient := rest.NewClient(rest.Config{APIKey: apiKey, Secret: secret})
 	restRouter := routing.NewRESTRouter(restClient)
 	wsInfra := wsinfra.NewClient()
 
-	p := &Provider{
+	x := &Exchange{
 		name:       "binance",
 		restClient: restClient,
 		restRouter: restRouter,
@@ -53,45 +53,45 @@ func New(apiKey, secret string) (*Provider, error) {
 		instCache:  map[string]core.Instrument{},
 		binToCanon: map[string]string{},
 	}
-	p.wsRouter = routing.NewWSRouter(wsInfra, p)
-	return p, nil
+	x.wsRouter = routing.NewWSRouter(wsInfra, x)
+	return x, nil
 }
 
-func (p *Provider) Name() string { return p.name }
+func (x *Exchange) Name() string { return x.name }
 
-func (p *Provider) Capabilities() core.ProviderCapabilities { return capabilities }
+func (x *Exchange) Capabilities() core.ExchangeCapabilities { return capabilities }
 
-func (p *Provider) SupportedProtocolVersion() string { return core.ProtocolVersion }
+func (x *Exchange) SupportedProtocolVersion() string { return core.ProtocolVersion }
 
-func (p *Provider) Spot(ctx context.Context) core.SpotAPI             { return spotAPI{p} }
-func (p *Provider) LinearFutures(ctx context.Context) core.FuturesAPI { return linearAPI{p} }
-func (p *Provider) InverseFutures(ctx context.Context) core.FuturesAPI {
-	return inverseAPI{p}
+func (x *Exchange) Spot(ctx context.Context) core.SpotAPI             { return spotAPI{x} }
+func (x *Exchange) LinearFutures(ctx context.Context) core.FuturesAPI { return linearAPI{x} }
+func (x *Exchange) InverseFutures(ctx context.Context) core.FuturesAPI {
+	return inverseAPI{x}
 }
 
-func (p *Provider) WS() core.WS { return newWSService(p.wsRouter) }
+func (x *Exchange) WS() core.WS { return newWSService(x.wsRouter) }
 
-func (p *Provider) Close() error {
-	if p.wsRouter != nil {
-		_ = p.wsRouter.Close()
+func (x *Exchange) Close() error {
+	if x.wsRouter != nil {
+		_ = x.wsRouter.Close()
 	}
 	return nil
 }
 
 // CanonicalSymbol converts Binance native symbols to canonical form with caching support.
-func (p *Provider) CanonicalSymbol(binanceSymbol string) string {
+func (x *Exchange) CanonicalSymbol(binanceSymbol string) string {
 	s := strings.ToUpper(strings.TrimSpace(binanceSymbol))
 	if s == "" {
 		fmt.Fprintf(os.Stderr, "ERROR: binance: empty symbol in WSCanonicalSymbol\n")
 		panic("binance: empty symbol in WSCanonicalSymbol")
 	}
 
-	if canonical, ok := p.binToCanon[s]; ok {
+	if canonical, ok := x.binToCanon[s]; ok {
 		return canonical
 	}
 
 	if s == "BTCUSDT" {
-		p.binToCanon[s] = "BTC-USDT"
+		x.binToCanon[s] = "BTC-USDT"
 		return "BTC-USDT"
 	}
 
@@ -100,7 +100,7 @@ func (p *Provider) CanonicalSymbol(binanceSymbol string) string {
 			base := s[:i]
 			quote := s[i:]
 			canonical := fmt.Sprintf("%s-%s", base, quote)
-			p.binToCanon[s] = canonical
+			x.binToCanon[s] = canonical
 			return canonical
 		}
 	}
@@ -109,28 +109,28 @@ func (p *Provider) CanonicalSymbol(binanceSymbol string) string {
 	panic(fmt.Errorf("binance: unsupported symbol %s", s))
 }
 
-func (p *Provider) CreateListenKey(ctx context.Context) (string, error) {
+func (x *Exchange) CreateListenKey(ctx context.Context) (string, error) {
 	var resp struct {
 		ListenKey string `json:"listenKey"`
 	}
 	msg := routing.RESTMessage{API: rest.SpotAPI, Method: http.MethodPost, Path: "/api/v3/userDataStream"}
-	if err := p.restRouter.Dispatch(ctx, msg, &resp); err != nil {
+	if err := x.restRouter.Dispatch(ctx, msg, &resp); err != nil {
 		return "", err
 	}
 	return resp.ListenKey, nil
 }
 
-func (p *Provider) KeepAliveListenKey(ctx context.Context, key string) error {
+func (x *Exchange) KeepAliveListenKey(ctx context.Context, key string) error {
 	msg := routing.RESTMessage{API: rest.SpotAPI, Method: http.MethodPut, Path: "/api/v3/userDataStream", Query: map[string]string{"listenKey": key}}
-	return p.restRouter.Dispatch(ctx, msg, nil)
+	return x.restRouter.Dispatch(ctx, msg, nil)
 }
 
-func (p *Provider) CloseListenKey(ctx context.Context, key string) error {
+func (x *Exchange) CloseListenKey(ctx context.Context, key string) error {
 	msg := routing.RESTMessage{API: rest.SpotAPI, Method: http.MethodDelete, Path: "/api/v3/userDataStream", Query: map[string]string{"listenKey": key}}
-	return p.restRouter.Dispatch(ctx, msg, nil)
+	return x.restRouter.Dispatch(ctx, msg, nil)
 }
 
-func (p *Provider) DepthSnapshot(ctx context.Context, symbol string, limit int) (coreprovider.BookEvent, int64, error) {
+func (x *Exchange) DepthSnapshot(ctx context.Context, symbol string, limit int) (coreexchange.BookEvent, int64, error) {
 	params := map[string]string{"symbol": core.CanonicalToBinance(symbol), "limit": fmt.Sprintf("%d", limit)}
 	var resp struct {
 		LastUpdateID int64           `json:"lastUpdateId"`
@@ -138,15 +138,15 @@ func (p *Provider) DepthSnapshot(ctx context.Context, symbol string, limit int) 
 		Asks         [][]interface{} `json:"asks"`
 	}
 	msg := routing.RESTMessage{API: rest.SpotAPI, Method: http.MethodGet, Path: "/api/v3/depth", Query: params}
-	if err := p.restRouter.Dispatch(ctx, msg, &resp); err != nil {
-		return coreprovider.BookEvent{}, 0, err
+	if err := x.restRouter.Dispatch(ctx, msg, &resp); err != nil {
+		return coreexchange.BookEvent{}, 0, err
 	}
 	bids := parseDepthLevels(resp.Bids)
 	asks := parseDepthLevels(resp.Asks)
-	event := coreprovider.BookEvent{Symbol: symbol, Bids: bids, Asks: asks, Time: time.Now()}
+	event := coreexchange.BookEvent{Symbol: symbol, Bids: bids, Asks: asks, Time: time.Now()}
 	return event, resp.LastUpdateID, nil
 }
 
-func (p *Provider) timeInForceCode(t core.TimeInForce) string {
+func (x *Exchange) timeInForceCode(t core.TimeInForce) string {
 	return common.MapTimeInForce(t)
 }

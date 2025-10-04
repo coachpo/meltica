@@ -1,10 +1,10 @@
-package provider
+package exchange
 
 import (
 	"context"
 
 	"github.com/coachpo/meltica/core"
-	"github.com/coachpo/meltica/providers/binance/routing"
+	"github.com/coachpo/meltica/exchanges/binance/routing"
 )
 
 type wsService struct {

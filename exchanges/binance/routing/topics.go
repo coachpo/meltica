@@ -13,7 +13,7 @@ const (
 )
 
 var mapper = corews.NewChannelMapper(corews.ChannelMappingConfig{
-	ProtocolToProvider: map[string]string{
+	ProtocolToExchange: map[string]string{
 		corews.TopicTrade:       BNXTradeChannel,
 		corews.TopicTicker:      BNXTickerChannel,
 		corews.TopicBook:        BNXBookDepthChannel,
@@ -22,7 +22,7 @@ var mapper = corews.NewChannelMapper(corews.ChannelMappingConfig{
 	},
 })
 
-var providerToProtocol = map[string]string{
+var exchangeToProtocol = map[string]string{
 	BNXTradeChannel:     corews.TopicTrade,
 	BNXTickerChannel:    corews.TopicTicker,
 	BNXBookDepthChannel: corews.TopicBook,
@@ -31,7 +31,7 @@ var providerToProtocol = map[string]string{
 }
 
 func protocolTopicFor(channel string) string {
-	if topic, ok := providerToProtocol[channel]; ok {
+	if topic, ok := exchangeToProtocol[channel]; ok {
 		return topic
 	}
 	return channel

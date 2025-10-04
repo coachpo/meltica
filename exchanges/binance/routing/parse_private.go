@@ -6,9 +6,9 @@ import (
 	"time"
 
 	"github.com/coachpo/meltica/core"
-	coreprovider "github.com/coachpo/meltica/core/provider"
+	coreexchange "github.com/coachpo/meltica/core/exchange"
 	corews "github.com/coachpo/meltica/core/ws"
-	"github.com/coachpo/meltica/providers/binance/common"
+	"github.com/coachpo/meltica/exchanges/binance/common"
 )
 
 func (w *WSRouter) parsePrivateMessage(msg *RoutedMessage, payload []byte) error {
@@ -47,9 +47,9 @@ func (w *WSRouter) parseOrderUpdate(msg *RoutedMessage, payload []byte) error {
 
 	filled, _ := parseDecimalToRat(ou.Order.FilledQty)
 	avg, _ := parseDecimalToRat(ou.Order.AvgPrice)
-	msg.Route = coreprovider.RouteOrderUpdate
+	msg.Route = coreexchange.RouteOrderUpdate
 	msg.Topic = topicFromChannel(BNXOrderChannel, ou.Order.Symbol)
-	msg.Parsed = &coreprovider.OrderEvent{
+	msg.Parsed = &coreexchange.OrderEvent{
 		Symbol:    ou.Order.Symbol,
 		OrderID:   fmt.Sprintf("%d", ou.Order.ID),
 		Status:    common.MapOrderStatus(ou.Order.Status),
@@ -61,7 +61,7 @@ func (w *WSRouter) parseOrderUpdate(msg *RoutedMessage, payload []byte) error {
 }
 
 func (w *WSRouter) parseBalanceUpdate(msg *RoutedMessage, payload []byte, event string) error {
-	msg.Route = coreprovider.RouteBalanceSnapshot
+	msg.Route = coreexchange.RouteBalanceSnapshot
 
 	switch event {
 	case "outboundAccountPosition":
@@ -75,13 +75,13 @@ func (w *WSRouter) parseBalanceUpdate(msg *RoutedMessage, payload []byte, event 
 		if err := json.Unmarshal(payload, &oap); err != nil {
 			return err
 		}
-		var be coreprovider.BalanceEvent
+		var be coreexchange.BalanceEvent
 		for _, b := range oap.Balances {
 			amt, _ := parseDecimalToRat(b.Free)
 			be.Balances = append(be.Balances, core.Balance{Asset: b.Asset, Available: amt, Time: time.UnixMilli(oap.EventTime)})
 		}
 		msg.Topic = corews.UserBalanceTopic()
-		msg.Route = coreprovider.RouteBalanceSnapshot
+		msg.Route = coreexchange.RouteBalanceSnapshot
 		msg.Parsed = &be
 		return nil
 	case "balanceUpdate":
@@ -95,8 +95,8 @@ func (w *WSRouter) parseBalanceUpdate(msg *RoutedMessage, payload []byte, event 
 		}
 		amt, _ := parseDecimalToRat(bu.Delta)
 		msg.Topic = corews.UserBalanceTopic()
-		msg.Route = coreprovider.RouteBalanceSnapshot
-		msg.Parsed = &coreprovider.BalanceEvent{
+		msg.Route = coreexchange.RouteBalanceSnapshot
+		msg.Parsed = &coreexchange.BalanceEvent{
 			Balances: []core.Balance{
 				{Asset: bu.Asset, Available: amt, Time: time.UnixMilli(bu.EventTime)},
 			},

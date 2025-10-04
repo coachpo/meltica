@@ -11,15 +11,15 @@ import (
 	"time"
 
 	"github.com/coachpo/meltica/core"
-	coreprovider "github.com/coachpo/meltica/core/provider"
+	coreexchange "github.com/coachpo/meltica/core/exchange"
 	corews "github.com/coachpo/meltica/core/ws"
-	"github.com/coachpo/meltica/providers/binance"
+	"github.com/coachpo/meltica/exchanges/binance"
 )
 
 const (
 	nativeSymbol    = "BTCUSDT"
 	canonicalSymbol = "BTC-USDT"
-	displayLevels   = 10
+	displayLevels   = 50
 	refreshInterval = 10 * time.Millisecond
 )
 
@@ -28,18 +28,18 @@ func main() {
 	defer cancel()
 
 	fmt.Println("Starting Binance Order Book Management Validation...")
-	fmt.Printf("Monitoring %s depth via provider pipelines...\n", nativeSymbol)
+	fmt.Printf("Monitoring %s depth via exchange pipelines...\n", nativeSymbol)
 
-	provider, err := binance.New("", "")
+	exchange, err := binance.New("", "")
 	if err != nil {
-		log.Fatalf("failed to create Binance provider: %v", err)
+		log.Fatalf("failed to create Binance exchange: %v", err)
 	}
-	defer provider.Close()
+	defer exchange.Close()
 
-	validateRESTLayer(ctx, provider)
-	validateWSRouting(ctx, provider)
+	validateRESTLayer(ctx, exchange)
+	validateWSRouting(ctx, exchange)
 
-	snapshots, errs, err := provider.OrderBookSnapshots(ctx, canonicalSymbol)
+	snapshots, errs, err := exchange.OrderBookSnapshots(ctx, canonicalSymbol)
 	if err != nil {
 		log.Fatalf("failed to start order book stream: %v", err)
 	}
@@ -47,7 +47,7 @@ func main() {
 	ticker := time.NewTicker(refreshInterval)
 	defer ticker.Stop()
 
-	var latest coreprovider.BookEvent
+	var latest coreexchange.BookEvent
 	var hasSnapshot bool
 	var lastRender time.Time
 
@@ -79,9 +79,9 @@ func main() {
 	}
 }
 
-func validateRESTLayer(ctx context.Context, provider *binance.Provider) {
+func validateRESTLayer(ctx context.Context, exchange *binance.Exchange) {
 	const snapshotDepth = 100
-	snapshot, updateID, err := provider.DepthSnapshot(ctx, canonicalSymbol, snapshotDepth)
+	snapshot, updateID, err := exchange.DepthSnapshot(ctx, canonicalSymbol, snapshotDepth)
 	if err != nil {
 		log.Printf("REST validation failed: %v", err)
 		return
@@ -94,8 +94,8 @@ func validateRESTLayer(ctx context.Context, provider *binance.Provider) {
 		formatRat(topAsk.price, 2), formatRat(topAsk.qty, 6))
 }
 
-func validateWSRouting(ctx context.Context, provider *binance.Provider) {
-	ws := provider.WS()
+func validateWSRouting(ctx context.Context, exchange *binance.Exchange) {
+	ws := exchange.WS()
 	sub, err := ws.SubscribePublic(ctx, corews.BookTopic(canonicalSymbol))
 	if err != nil {
 		log.Printf("WS routing validation failed: %v", err)
@@ -117,11 +117,11 @@ func validateWSRouting(ctx context.Context, provider *binance.Provider) {
 				if !ok {
 					return
 				}
-				if book, ok := msg.Parsed.(*coreprovider.BookEvent); ok {
+				if book, ok := msg.Parsed.(*coreexchange.BookEvent); ok {
 					fmt.Printf("WS routing OK: received depth delta with %d/%d levels\n", len(book.Bids), len(book.Asks))
 					eventsValidated++
 				}
-				if tickerEvt, ok := msg.Parsed.(*coreprovider.TickerEvent); ok {
+				if tickerEvt, ok := msg.Parsed.(*coreexchange.TickerEvent); ok {
 					fmt.Printf("WS routing OK: ticker update bid %s ask %s\n", formatRat(tickerEvt.Bid, 2), formatRat(tickerEvt.Ask, 2))
 					eventsValidated++
 				}
@@ -133,7 +133,7 @@ func validateWSRouting(ctx context.Context, provider *binance.Provider) {
 	}()
 }
 
-func renderSnapshot(event coreprovider.BookEvent) {
+func renderSnapshot(event coreexchange.BookEvent) {
 	bids := topLevels(event.Bids, displayLevels, true)
 	asks := topLevels(event.Asks, displayLevels, false)
 

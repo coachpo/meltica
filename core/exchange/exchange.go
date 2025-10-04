@@ -1,4 +1,4 @@
-package provider
+package exchange
 
 import (
 	"context"
@@ -22,7 +22,7 @@ type RESTRequest struct {
 	Query  map[string]string
 	Body   []byte
 	Signed bool
-	API    string // provider-specific surface identifier
+	API    string // exchange-specific surface identifier
 }
 
 // WebsocketDialer represents a handle to create websocket subscriptions.
@@ -79,7 +79,7 @@ type Subscription interface {
 	Close() error
 }
 
-// ---- Level 3: Provider-facing event payloads ----
+// ---- Level 3: Exchange-facing event payloads ----
 
 // TradeEvent represents a normalized public trade update.
 type TradeEvent struct {
