@@ -8,42 +8,6 @@ import (
 	"github.com/coachpo/meltica/core"
 )
 
-// ---- Level 1: Infrastructure abstractions ----
-
-// RESTTransport defines the minimal client needed by Level 2 routing to make REST calls.
-type RESTTransport interface {
-	Do(ctx context.Context, req RESTRequest, out any) error
-}
-
-// RESTRequest is a normalized REST invocation payload produced by Level 2.
-type RESTRequest struct {
-	Method string
-	Path   string
-	Query  map[string]string
-	Body   []byte
-	Signed bool
-	API    string // exchange-specific surface identifier
-}
-
-// WebsocketDialer represents a handle to create websocket subscriptions.
-type WebsocketDialer interface {
-	SubscribePublic(ctx context.Context, streams []string) (RawSubscription, error)
-	SubscribePrivate(ctx context.Context, listenKey string) (RawSubscription, error)
-}
-
-// RawSubscription is the Level 1 websocket stream contract.
-type RawSubscription interface {
-	Raw() <-chan RawMessage
-	Err() <-chan error
-	Close() error
-}
-
-// RawMessage carries unparsed websocket frames.
-type RawMessage struct {
-	Data []byte
-	At   time.Time
-}
-
 // ---- Level 2: Routing abstractions ----
 
 // Route identifiers emitted by websocket routing layers.

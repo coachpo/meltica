@@ -19,7 +19,7 @@ import (
 const (
 	nativeSymbol    = "BTCUSDT"
 	canonicalSymbol = "BTC-USDT"
-	displayLevels   = 50
+	displayLevels   = 20
 	refreshInterval = 10 * time.Millisecond
 )
 

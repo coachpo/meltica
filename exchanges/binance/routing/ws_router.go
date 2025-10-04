@@ -8,7 +8,6 @@ import (
 
 	coreexchange "github.com/coachpo/meltica/core/exchange"
 	corews "github.com/coachpo/meltica/core/ws"
-	"github.com/coachpo/meltica/exchanges/binance/infra/wsinfra"
 	"github.com/coachpo/meltica/exchanges/binance/internal"
 )
 
@@ -28,7 +27,7 @@ type Subscription = coreexchange.Subscription
 
 // WSRouter manages websocket subscriptions, routing raw frames from Level 1 to Level 3.
 type WSRouter struct {
-	infra         *wsinfra.Client
+	infra         coreexchange.StreamClient
 	deps          WSDependencies
 	orderBooks    *OrderBookManager
 	monitorCtx    context.Context
@@ -36,7 +35,7 @@ type WSRouter struct {
 }
 
 // NewWSRouter creates a websocket routing layer bound to the infrastructure client.
-func NewWSRouter(infra *wsinfra.Client, deps WSDependencies) *WSRouter {
+func NewWSRouter(infra coreexchange.StreamClient, deps WSDependencies) *WSRouter {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &WSRouter{
 		infra:         infra,
@@ -48,12 +47,12 @@ func NewWSRouter(infra *wsinfra.Client, deps WSDependencies) *WSRouter {
 }
 
 type wsSub struct {
-	raw *wsinfra.Subscription
+	raw coreexchange.StreamSubscription
 	c   chan RoutedMessage
 	err chan error
 }
 
-func newWSSub(raw *wsinfra.Subscription) *wsSub {
+func newWSSub(raw coreexchange.StreamSubscription) *wsSub {
 	return &wsSub{
 		raw: raw,
 		c:   make(chan RoutedMessage, 1024),
@@ -83,7 +82,11 @@ func (w *WSRouter) SubscribePublic(ctx context.Context, topics ...string) (Subsc
 	if len(streams) == 0 {
 		return nil, internal.Invalid("wsrouter: no streams derived from topics")
 	}
-	rawSub, err := w.infra.SubscribePublic(ctx, streams)
+	topicsForInfra := make([]coreexchange.StreamTopic, len(streams))
+	for i, stream := range streams {
+		topicsForInfra[i] = coreexchange.StreamTopic{Scope: coreexchange.StreamScopePublic, Name: stream}
+	}
+	rawSub, err := w.infra.Subscribe(ctx, topicsForInfra...)
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +107,8 @@ func (w *WSRouter) SubscribePrivate(ctx context.Context) (Subscription, error) {
 	if err != nil {
 		return nil, err
 	}
-	rawSub, err := w.infra.SubscribePrivate(ctx, listenKey)
+	topic := coreexchange.StreamTopic{Scope: coreexchange.StreamScopePrivate, Name: listenKey}
+	rawSub, err := w.infra.Subscribe(ctx, topic)
 	if err != nil {
 		return nil, err
 	}
@@ -118,8 +122,8 @@ func (w *WSRouter) readLoop(sub *wsSub) {
 	defer close(sub.c)
 	defer close(sub.err)
 
-	rawCh := sub.raw.Raw()
-	errCh := sub.raw.Err()
+	rawCh := sub.raw.Messages()
+	errCh := sub.raw.Errors()
 
 	for {
 		select {
@@ -164,8 +168,8 @@ func (w *WSRouter) readPrivateLoop(ctx context.Context, sub *wsSub, listenKey st
 	defer close(sub.c)
 	defer close(sub.err)
 
-	rawCh := sub.raw.Raw()
-	errCh := sub.raw.Err()
+	rawCh := sub.raw.Messages()
+	errCh := sub.raw.Errors()
 
 	keepAliveTicker := time.NewTicker(30 * time.Minute)
 	defer keepAliveTicker.Stop()
@@ -208,6 +212,9 @@ func (w *WSRouter) readPrivateLoop(ctx context.Context, sub *wsSub, listenKey st
 func (w *WSRouter) Close() error {
 	if w.monitorCancel != nil {
 		w.monitorCancel()
+	}
+	if w.infra != nil {
+		return w.infra.Close()
 	}
 	return nil
 }

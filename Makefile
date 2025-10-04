@@ -29,6 +29,7 @@ tidy:
 
 clean:
 	rm -rf out/
+	rm -rf bin/
 
 binance-ws-test:
 	go build -o bin/ ./cmd/binance-ws-test

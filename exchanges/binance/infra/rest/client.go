@@ -2,11 +2,14 @@ package rest
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
 
 	coreexchange "github.com/coachpo/meltica/core/exchange"
+	"github.com/coachpo/meltica/errs"
 	"github.com/coachpo/meltica/exchanges/binance/internal"
 	"github.com/coachpo/meltica/transport"
 )
@@ -103,19 +106,91 @@ func NewClient(cfg Config) *Client {
 	return c
 }
 
-// Request describes a low-level REST call routed through the Binance infrastructure client.
-// Do executes a REST request against the appropriate Binance surface and unmarshals the response into out.
-
-func (c *Client) Do(ctx context.Context, req coreexchange.RESTRequest, out any) error {
-	switch API(req.API) {
-	case SpotAPI:
-		return c.sapi.Do(ctx, req.Method, req.Path, req.Query, req.Body, req.Signed, out)
-	case LinearAPI:
-		return c.fapi.Do(ctx, req.Method, req.Path, req.Query, req.Body, req.Signed, out)
-	case InverseAPI:
-		return c.dapi.Do(ctx, req.Method, req.Path, req.Query, req.Body, req.Signed, out)
+// Connect satisfies the exchange.Connection interface; REST connections are established lazily per request.
+func (c *Client) Connect(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
 	default:
-		return internal.Invalid("rest: unsupported api %q", req.API)
+	}
+	return nil
+}
+
+// Close satisfies the exchange.Connection interface. REST clients keep no persistent resources.
+func (c *Client) Close() error { return nil }
+
+// DoRequest issues a REST call and returns the raw response payload for upper layers.
+func (c *Client) DoRequest(ctx context.Context, req coreexchange.RESTRequest) (*coreexchange.RESTResponse, error) {
+	client, err := c.clientForAPI(API(req.API))
+	if err != nil {
+		return nil, err
+	}
+	var raw json.RawMessage
+	hdr, status, err := client.DoWithHeaders(ctx, req.Method, req.Path, req.Query, req.Body, req.Signed, req.Header, &raw)
+	if err != nil {
+		return nil, err
+	}
+	var headerCopy http.Header
+	if hdr != nil {
+		headerCopy = hdr.Clone()
+	}
+	body := append([]byte(nil), raw...)
+	return &coreexchange.RESTResponse{
+		Status:     status,
+		Header:     headerCopy,
+		Body:       body,
+		ReceivedAt: time.Now(),
+	}, nil
+}
+
+// HandleResponse decodes the raw RESTResponse into the provided output structure when required.
+func (c *Client) HandleResponse(ctx context.Context, req coreexchange.RESTRequest, resp *coreexchange.RESTResponse, out any) error {
+	if out == nil || resp == nil {
+		return nil
+	}
+	if len(resp.Body) == 0 {
+		return nil
+	}
+	if err := json.Unmarshal(resp.Body, out); err != nil {
+		return internal.WrapExchange(err, "rest: decode %s %s", req.Method, req.Path)
+	}
+	return nil
+}
+
+// HandleError normalises transport failures into canonical error types.
+func (c *Client) HandleError(ctx context.Context, req coreexchange.RESTRequest, err error) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+	var e *errs.E
+	if errors.As(err, &e) {
+		return err
+	}
+	return internal.WrapNetwork(err, "rest: %s %s", req.Method, req.Path)
+}
+
+// Do executes a REST request against the appropriate Binance surface and unmarshals the response into out.
+func (c *Client) Do(ctx context.Context, req coreexchange.RESTRequest, out any) error {
+	resp, err := c.DoRequest(ctx, req)
+	if err != nil {
+		return c.HandleError(ctx, req, err)
+	}
+	return c.HandleResponse(ctx, req, resp, out)
+}
+
+func (c *Client) clientForAPI(api API) (*transport.Client, error) {
+	switch api {
+	case SpotAPI, "":
+		return c.sapi, nil
+	case LinearAPI:
+		return c.fapi, nil
+	case InverseAPI:
+		return c.dapi, nil
+	default:
+		return nil, internal.Invalid("rest: unsupported api %q", api)
 	}
 }
 

@@ -2,6 +2,7 @@ package routing
 
 import (
 	"context"
+	"net/http"
 	"strings"
 
 	coreexchange "github.com/coachpo/meltica/core/exchange"
@@ -16,15 +17,16 @@ type RESTMessage struct {
 	Query  map[string]string
 	Body   []byte
 	Signed bool
+	Header http.Header
 }
 
 // RESTRouter inspects REST messages and forwards them to the correct Level 1 client.
 type RESTRouter struct {
-	client *rest.Client
+	client coreexchange.RESTClient
 }
 
 // NewRESTRouter constructs a router backed by the Level 1 REST infrastructure client.
-func NewRESTRouter(client *rest.Client) *RESTRouter {
+func NewRESTRouter(client coreexchange.RESTClient) *RESTRouter {
 	return &RESTRouter{client: client}
 }
 
@@ -41,8 +43,13 @@ func (r *RESTRouter) Dispatch(ctx context.Context, msg RESTMessage, out any) err
 		Query:  msg.Query,
 		Body:   msg.Body,
 		Signed: msg.Signed,
+		Header: msg.Header,
 	}
-	return r.client.Do(ctx, req, out)
+	resp, err := r.client.DoRequest(ctx, req)
+	if err != nil {
+		return r.client.HandleError(ctx, req, err)
+	}
+	return r.client.HandleResponse(ctx, req, resp, out)
 }
 
 func inferAPI(path string) rest.API {

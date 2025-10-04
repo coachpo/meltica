@@ -40,20 +40,20 @@ type Client struct {
 }
 
 func (c *Client) Do(ctx context.Context, method, path string, query map[string]string, body []byte, signed bool, out any) error {
-	_, err := c.DoWithHeaders(ctx, method, path, query, body, signed, out)
+	_, _, err := c.DoWithHeaders(ctx, method, path, query, body, signed, nil, out)
 	return err
 }
 
-func (c *Client) DoWithHeaders(ctx context.Context, method, path string, query map[string]string, body []byte, signed bool, out any) (http.Header, error) {
+func (c *Client) DoWithHeaders(ctx context.Context, method, path string, query map[string]string, body []byte, signed bool, header http.Header, out any) (http.Header, int, error) {
 	if c.HTTP == nil {
-		return nil, errors.New("http client not configured")
+		return nil, 0, errors.New("http client not configured")
 	}
 	if !strings.HasPrefix(path, "/") {
 		path = "/" + path
 	}
 	base, err := url.Parse(c.BaseURL)
 	if err != nil {
-		return nil, fmt.Errorf("invalid base url: %w", err)
+		return nil, 0, fmt.Errorf("invalid base url: %w", err)
 	}
 	u := base.ResolveReference(&url.URL{Path: base.Path + path})
 	var signedHeaders http.Header
@@ -61,7 +61,7 @@ func (c *Client) DoWithHeaders(ctx context.Context, method, path string, query m
 		ts := time.Now().UnixMilli()
 		hdrs, err := c.Signer(method, path, query, body, ts)
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		signedHeaders = hdrs
 	}
@@ -78,13 +78,23 @@ func (c *Client) DoWithHeaders(ctx context.Context, method, path string, query m
 	}
 	req, err := http.NewRequestWithContext(ctx, method, u.String(), reqBody)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	for k, v := range c.DefaultHeaders {
 		if v == "" {
 			continue
 		}
 		req.Header.Set(k, v)
+	}
+	if header != nil {
+		for k, vs := range header {
+			for _, v := range vs {
+				if v == "" {
+					continue
+				}
+				req.Header.Add(k, v)
+			}
+		}
 	}
 	if reqBody != nil && req.Header.Get("Content-Type") == "" {
 		req.Header.Set("Content-Type", "application/json")
@@ -96,7 +106,7 @@ func (c *Client) DoWithHeaders(ctx context.Context, method, path string, query m
 	}
 	if c.RateLimiter != nil {
 		if err := c.RateLimiter.Wait(ctx); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		if c.OnRLWait != nil {
 			c.OnRLWait(0)
@@ -120,7 +130,7 @@ func (c *Client) DoWithHeaders(ctx context.Context, method, path string, query m
 					if c.OnResult != nil {
 						c.OnResult(method, u.String(), retries, 0, ctx.Err(), time.Since(start))
 					}
-					return nil, ctx.Err()
+					return nil, 0, ctx.Err()
 				case <-time.After(delay):
 				}
 				retries++
@@ -129,10 +139,11 @@ func (c *Client) DoWithHeaders(ctx context.Context, method, path string, query m
 			if c.OnResult != nil {
 				c.OnResult(method, u.String(), retries, 0, err, time.Since(start))
 			}
-			return nil, err
+			return nil, 0, err
 		}
+		status := resp.StatusCode
 		hdr := resp.Header.Clone()
-		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
+		if status == http.StatusTooManyRequests || status >= 500 {
 			if retries < c.Retry.MaxRetries {
 				if ra := resp.Header.Get("Retry-After"); ra != "" {
 					if secs, e := strconv.Atoi(ra); e == nil {
@@ -163,42 +174,42 @@ func (c *Client) DoWithHeaders(ctx context.Context, method, path string, query m
 			resp.Body.Close()
 			var httpErr error
 			if c.OnHTTPError != nil {
-				httpErr = c.OnHTTPError(resp.StatusCode, data)
+				httpErr = c.OnHTTPError(status, data)
 			} else {
-				httpErr = fmt.Errorf("http %d: %s", resp.StatusCode, string(data))
+				httpErr = fmt.Errorf("http %d: %s", status, string(data))
 			}
 			if c.OnResult != nil {
-				c.OnResult(method, u.String(), retries, resp.StatusCode, httpErr, time.Since(start))
+				c.OnResult(method, u.String(), retries, status, httpErr, time.Since(start))
 			}
-			return nil, httpErr
+			return nil, status, httpErr
 		}
-		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		if status < 200 || status >= 300 {
 			data, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
 			var httpErr error
 			if c.OnHTTPError != nil {
-				httpErr = c.OnHTTPError(resp.StatusCode, data)
+				httpErr = c.OnHTTPError(status, data)
 			} else {
-				httpErr = fmt.Errorf("http %d: %s", resp.StatusCode, string(data))
+				httpErr = fmt.Errorf("http %d: %s", status, string(data))
 			}
 			if c.OnResult != nil {
-				c.OnResult(method, u.String(), retries, resp.StatusCode, httpErr, time.Since(start))
+				c.OnResult(method, u.String(), retries, status, httpErr, time.Since(start))
 			}
-			return nil, httpErr
+			return nil, status, httpErr
 		}
 		if out == nil {
 			resp.Body.Close()
 			if c.OnResult != nil {
-				c.OnResult(method, u.String(), retries, resp.StatusCode, nil, time.Since(start))
+				c.OnResult(method, u.String(), retries, status, nil, time.Since(start))
 			}
-			return hdr, nil
+			return hdr, status, nil
 		}
 		dec := json.NewDecoder(resp.Body)
 		decodeErr := dec.Decode(out)
 		resp.Body.Close()
 		if c.OnResult != nil {
-			c.OnResult(method, u.String(), retries, resp.StatusCode, decodeErr, time.Since(start))
+			c.OnResult(method, u.String(), retries, status, decodeErr, time.Since(start))
 		}
-		return hdr, decodeErr
+		return hdr, status, decodeErr
 	}
 }
