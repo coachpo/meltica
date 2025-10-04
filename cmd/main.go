@@ -19,9 +19,35 @@ import (
 const (
 	nativeSymbol    = "BTCUSDT"
 	canonicalSymbol = "BTC-USDT"
-	displayLevels   = 20
-	refreshInterval = 10 * time.Millisecond
 )
+
+type marketEventKind string
+
+const (
+	marketEventTrade  marketEventKind = "trade"
+	marketEventTicker marketEventKind = "ticker"
+	marketEventBook   marketEventKind = "book"
+	marketEventError  marketEventKind = "error"
+	marketEventSystem marketEventKind = "system"
+)
+
+type marketEvent struct {
+	Kind    marketEventKind
+	Topic   string
+	Payload interface{}
+	Err     error
+	Time    time.Time
+	Message string
+}
+
+type marketCommand interface{}
+
+type marketSubscribeCommand struct {
+	Topics     []string
+	BookSymbol string
+}
+
+type marketUnsubscribeCommand struct{}
 
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -36,200 +62,96 @@ func main() {
 	}
 	defer exchange.Close()
 
-	validateRESTLayer(ctx, exchange)
-	validateWSRouting(ctx, exchange)
+	eventLoop := newMarketEventLoop(exchange)
+	go eventLoop.Run(ctx)
 
-	if err := startPublicTopicPrinter(ctx, exchange); err != nil {
-		log.Fatalf("failed to subscribe to public topics: %v", err)
+	command := marketSubscribeCommand{
+		Topics: []string{
+			corews.TradeTopic(canonicalSymbol),
+			corews.TickerTopic(canonicalSymbol),
+		},
+		BookSymbol: canonicalSymbol,
 	}
+	eventLoop.Publish(command)
 
-	snapshots, errs, err := exchange.OrderBookSnapshots(ctx, canonicalSymbol)
-	if err != nil {
-		log.Fatalf("failed to start order book stream: %v", err)
-	}
-
-	ticker := time.NewTicker(refreshInterval)
-	defer ticker.Stop()
-
-	var latest coreexchange.BookEvent
-	var hasSnapshot bool
-	var lastRender time.Time
+	var lastBookLog time.Time
 
 	for {
 		select {
 		case <-ctx.Done():
 			fmt.Println("Stopping order book monitor...")
 			return
-		case err := <-errs:
-			if err != nil {
-				log.Fatalf("order book stream error: %v", err)
-			}
-			return
-		case snap, ok := <-snapshots:
+		case evt, ok := <-eventLoop.Events():
 			if !ok {
-				fmt.Println("Order book stream ended")
+				fmt.Println("Event loop terminated")
 				return
 			}
-			latest = snap
-			hasSnapshot = true
-			renderSnapshot(latest)
-			lastRender = time.Now()
-		case <-ticker.C:
-			if hasSnapshot && time.Since(lastRender) >= refreshInterval {
-				renderSnapshot(latest)
-				lastRender = time.Now()
-			}
+			handleEvent(evt, &lastBookLog)
 		}
 	}
 }
 
-func validateRESTLayer(ctx context.Context, exchange *binance.Exchange) {
-	const snapshotDepth = 100
-	snapshot, updateID, err := exchange.DepthSnapshot(ctx, canonicalSymbol, snapshotDepth)
-	if err != nil {
-		log.Printf("REST validation failed: %v", err)
-		return
-	}
-	fmt.Printf("REST layer OK: snapshot %d levels fetched (LastUpdateID=%d)\n", len(snapshot.Bids)+len(snapshot.Asks), updateID)
-	topBid := bestLevel(snapshot.Bids, true)
-	topAsk := bestLevel(snapshot.Asks, false)
-	fmt.Printf("  Top of book via REST -> Bid %s / %s, Ask %s / %s\n",
-		formatRat(topBid.qty, 6), formatRat(topBid.price, 2),
-		formatRat(topAsk.price, 2), formatRat(topAsk.qty, 6))
-}
-
-func validateWSRouting(ctx context.Context, exchange *binance.Exchange) {
-	ws := exchange.WS()
-	sub, err := ws.SubscribePublic(ctx, corews.BookTopic(canonicalSymbol))
-	if err != nil {
-		log.Printf("WS routing validation failed: %v", err)
-		return
-	}
-	go func() {
-		defer sub.Close()
-		eventsValidated := 0
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case err := <-sub.Err():
-				if err != nil {
-					log.Printf("WS routing error: %v", err)
-				}
-				return
-			case msg, ok := <-sub.C():
-				if !ok {
-					return
-				}
-				if book, ok := msg.Parsed.(*coreexchange.BookEvent); ok {
-					fmt.Printf("WS routing OK: received depth delta with %d/%d levels\n", len(book.Bids), len(book.Asks))
-					eventsValidated++
-				}
-				if tickerEvt, ok := msg.Parsed.(*coreexchange.TickerEvent); ok {
-					fmt.Printf("WS routing OK: ticker update bid %s ask %s\n", formatRat(tickerEvt.Bid, 2), formatRat(tickerEvt.Ask, 2))
-					eventsValidated++
-				}
-				if eventsValidated >= 2 {
-					return
-				}
-			}
+func handleEvent(evt marketEvent, lastBookLog *time.Time) {
+	switch evt.Kind {
+	case marketEventTrade:
+		trade, ok := evt.Payload.(*coreexchange.TradeEvent)
+		if !ok || trade == nil {
+			log.Printf("trade event payload mismatch: %#v", evt.Payload)
+			return
 		}
-	}()
-}
-
-func startPublicTopicPrinter(ctx context.Context, exchange *binance.Exchange) error {
-	ws := exchange.WS()
-	topics := []string{
-		corews.TradeTopic(canonicalSymbol),
-		corews.TickerTopic(canonicalSymbol),
-		corews.BookTopic(canonicalSymbol),
-	}
-
-	sub, err := ws.SubscribePublic(ctx, topics...)
-	if err != nil {
-		return err
-	}
-
-	log.Printf("Subscribed to Binance topics: %s, %s, %s", topics[0], topics[1], topics[2])
-
-	go func() {
-		defer sub.Close()
-		msgCh := sub.C()
-		errCh := sub.Err()
-		var lastBookLog time.Time
-
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case err, ok := <-errCh:
-				if !ok {
-					return
-				}
-				if err != nil {
-					log.Printf("WS topic printer error: %v", err)
-				}
-				return
-			case msg, ok := <-msgCh:
-				if !ok {
-					return
-				}
-				switch evt := msg.Parsed.(type) {
-				case *coreexchange.TradeEvent:
-					log.Printf("[WS] trade topic=%s price=%s qty=%s at=%s",
-						msg.Topic,
-						formatRat(evt.Price, 2),
-						formatRat(evt.Quantity, 6),
-						evt.Time.Format(time.RFC3339Nano),
-					)
-				case *coreexchange.TickerEvent:
-					log.Printf("[WS] ticker topic=%s bid=%s ask=%s at=%s",
-						msg.Topic,
-						formatRat(evt.Bid, 2),
-						formatRat(evt.Ask, 2),
-						evt.Time.Format(time.RFC3339Nano),
-					)
-				case *coreexchange.BookEvent:
-					if time.Since(lastBookLog) < 200*time.Millisecond {
-						continue
-					}
-					lastBookLog = time.Now()
-					topBid := bestLevel(evt.Bids, true)
-					topAsk := bestLevel(evt.Asks, false)
-					log.Printf("[WS] book topic=%s bids=%d asks=%d topBidQty=%s topBidPx=%s topAskPx=%s topAskQty=%s at=%s",
-						msg.Topic,
-						len(evt.Bids),
-						len(evt.Asks),
-						formatRat(topBid.qty, 4),
-						formatRat(topBid.price, 2),
-						formatRat(topAsk.price, 2),
-						formatRat(topAsk.qty, 4),
-						evt.Time.Format(time.RFC3339Nano),
-					)
-				default:
-					log.Printf("[WS] %s route=%s at=%s", msg.Topic, msg.Event, msg.At.Format(time.RFC3339Nano))
-				}
-			}
+		log.Printf("[WS] trade topic=%s price=%s qty=%s at=%s",
+			evt.Topic,
+			formatRat(trade.Price, 2),
+			formatRat(trade.Quantity, 6),
+			trade.Time.Format(time.RFC3339Nano),
+		)
+	case marketEventTicker:
+		ticker, ok := evt.Payload.(*coreexchange.TickerEvent)
+		if !ok || ticker == nil {
+			log.Printf("ticker event payload mismatch: %#v", evt.Payload)
+			return
 		}
-	}()
-
-	return nil
-}
-
-func renderSnapshot(event coreexchange.BookEvent) {
-	topBid := bestLevel(event.Bids, true)
-	topAsk := bestLevel(event.Asks, false)
-
-	fmt.Printf(
-		"Book update %s | bids=%d asks=%d | topBidQty=%s topBidPx=%s | topAskPx=%s topAskQty=%s\n",
-		event.Time.Format(time.RFC3339Nano),
-		len(event.Bids),
-		len(event.Asks),
-		formatRat(topBid.qty, 6),
-		formatRat(topBid.price, 2),
-		formatRat(topAsk.price, 2),
-		formatRat(topAsk.qty, 6),
-	)
+		log.Printf("[WS] ticker topic=%s bid=%s ask=%s at=%s",
+			evt.Topic,
+			formatRat(ticker.Bid, 2),
+			formatRat(ticker.Ask, 2),
+			ticker.Time.Format(time.RFC3339Nano),
+		)
+	case marketEventBook:
+		book, ok := evt.Payload.(*coreexchange.BookEvent)
+		if !ok || book == nil {
+			log.Printf("book event payload mismatch: %#v", evt.Payload)
+			return
+		}
+		if time.Since(*lastBookLog) < 200*time.Millisecond {
+			return
+		}
+		*lastBookLog = time.Now()
+		topBid := bestLevel(book.Bids, true)
+		topAsk := bestLevel(book.Asks, false)
+		log.Printf("[WS] book topic=%s bids=%d asks=%d topBidQty=%s topBidPx=%s topAskPx=%s topAskQty=%s at=%s",
+			evt.Topic,
+			len(book.Bids),
+			len(book.Asks),
+			formatRat(topBid.qty, 4),
+			formatRat(topBid.price, 2),
+			formatRat(topAsk.price, 2),
+			formatRat(topAsk.qty, 4),
+			book.Time.Format(time.RFC3339Nano),
+		)
+	case marketEventError:
+		if evt.Err != nil {
+			log.Printf("event loop error: %v", evt.Err)
+		} else {
+			log.Printf("event loop error: %s", evt.Message)
+		}
+	case marketEventSystem:
+		if evt.Message != "" {
+			log.Printf("event loop: %s", evt.Message)
+		}
+	default:
+		log.Printf("unhandled event kind=%s topic=%s", evt.Kind, evt.Topic)
+	}
 }
 
 type bookLevel struct {
@@ -274,4 +196,173 @@ func bestLevel(levels []core.BookDepthLevel, desc bool) bookLevel {
 		return bookLevel{}
 	}
 	return filtered[0]
+}
+
+type loopState struct {
+	sub        core.Subscription
+	wsMsgCh    <-chan core.Message
+	wsErrCh    <-chan error
+	bookCh     <-chan coreexchange.BookEvent
+	bookErrCh  <-chan error
+	bookCancel context.CancelFunc
+}
+
+func (s *loopState) shutdown() {
+	if s.sub != nil {
+		_ = s.sub.Close()
+		s.sub = nil
+	}
+	if s.bookCancel != nil {
+		s.bookCancel()
+		s.bookCancel = nil
+	}
+	s.wsMsgCh = nil
+	s.wsErrCh = nil
+	s.bookCh = nil
+	s.bookErrCh = nil
+}
+
+type marketEventLoop struct {
+	exchange *binance.Exchange
+	commands chan marketCommand
+	events   chan marketEvent
+}
+
+func newMarketEventLoop(exchange *binance.Exchange) *marketEventLoop {
+	return &marketEventLoop{
+		exchange: exchange,
+		commands: make(chan marketCommand, 16),
+		events:   make(chan marketEvent, 256),
+	}
+}
+
+func (l *marketEventLoop) Publish(cmd marketCommand) {
+	select {
+	case l.commands <- cmd:
+	default:
+		go func() { l.commands <- cmd }()
+	}
+}
+
+func (l *marketEventLoop) Events() <-chan marketEvent {
+	return l.events
+}
+
+func (l *marketEventLoop) Run(ctx context.Context) {
+	defer close(l.events)
+
+	state := loopState{}
+
+	for {
+		select {
+		case <-ctx.Done():
+			state.shutdown()
+			return
+		case cmd := <-l.commands:
+			state = l.handleCommand(ctx, cmd, state)
+		case msg, ok := <-state.wsMsgCh:
+			if !ok {
+				state.wsMsgCh = nil
+				continue
+			}
+			l.handleWSMessage(ctx, msg)
+		case err, ok := <-state.wsErrCh:
+			if !ok {
+				state.wsErrCh = nil
+				continue
+			}
+			if err != nil {
+				l.emit(ctx, marketEvent{Kind: marketEventError, Message: "websocket subscription error", Err: err})
+			}
+			if state.sub != nil {
+				_ = state.sub.Close()
+				state.sub = nil
+			}
+			state.wsMsgCh = nil
+			state.wsErrCh = nil
+		case book, ok := <-state.bookCh:
+			if !ok {
+				state.bookCh = nil
+				continue
+			}
+			bookCopy := book
+			l.emit(ctx, marketEvent{
+				Kind:    marketEventBook,
+				Topic:   corews.BookTopic(book.Symbol),
+				Payload: &bookCopy,
+				Time:    book.Time,
+			})
+		case err, ok := <-state.bookErrCh:
+			if !ok {
+				state.bookErrCh = nil
+				continue
+			}
+			if err != nil {
+				l.emit(ctx, marketEvent{Kind: marketEventError, Message: "order book snapshot error", Err: err})
+			}
+		}
+	}
+}
+
+func (l *marketEventLoop) handleCommand(ctx context.Context, cmd marketCommand, state loopState) loopState {
+	switch c := cmd.(type) {
+	case marketSubscribeCommand:
+		state.shutdown()
+		state = loopState{}
+		if len(c.Topics) > 0 {
+			sub, err := l.exchange.WS().SubscribePublic(ctx, c.Topics...)
+			if err != nil {
+				l.emit(ctx, marketEvent{Kind: marketEventError, Message: "subscribe public", Err: err})
+				return state
+			}
+			state.sub = sub
+			state.wsMsgCh = sub.C()
+			state.wsErrCh = sub.Err()
+		}
+		if c.BookSymbol != "" {
+			bookCtx, cancel := context.WithCancel(ctx)
+			snapshots, errs, err := l.exchange.OrderBookSnapshots(bookCtx, c.BookSymbol)
+			if err != nil {
+				cancel()
+				l.emit(ctx, marketEvent{Kind: marketEventError, Message: "order book initialization", Err: err})
+			} else {
+				state.bookCancel = cancel
+				state.bookCh = snapshots
+				state.bookErrCh = errs
+			}
+		}
+		l.emit(ctx, marketEvent{
+			Kind:    marketEventSystem,
+			Message: fmt.Sprintf("subscribed topics=%v book=%s", c.Topics, c.BookSymbol),
+		})
+		return state
+	case marketUnsubscribeCommand:
+		state.shutdown()
+		l.emit(ctx, marketEvent{Kind: marketEventSystem, Message: "unsubscribed"})
+		return loopState{}
+	default:
+		l.emit(ctx, marketEvent{Kind: marketEventSystem, Message: fmt.Sprintf("unknown command %T", cmd)})
+		return state
+	}
+}
+
+func (l *marketEventLoop) handleWSMessage(ctx context.Context, msg core.Message) {
+	switch evt := msg.Parsed.(type) {
+	case *coreexchange.TradeEvent:
+		l.emit(ctx, marketEvent{Kind: marketEventTrade, Topic: msg.Topic, Payload: evt, Time: evt.Time})
+	case *coreexchange.TickerEvent:
+		l.emit(ctx, marketEvent{Kind: marketEventTicker, Topic: msg.Topic, Payload: evt, Time: evt.Time})
+	case *coreexchange.BookEvent:
+		l.emit(ctx, marketEvent{Kind: marketEventBook, Topic: msg.Topic, Payload: evt, Time: evt.Time})
+	default:
+		l.emit(ctx, marketEvent{Kind: marketEventSystem, Topic: msg.Topic, Message: fmt.Sprintf("unhandled message route=%s", msg.Event), Time: msg.At})
+	}
+}
+
+func (l *marketEventLoop) emit(ctx context.Context, evt marketEvent) {
+	select {
+	case <-ctx.Done():
+		return
+	case l.events <- evt:
+	}
 }
