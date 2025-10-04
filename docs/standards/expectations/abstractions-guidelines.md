@@ -13,7 +13,7 @@
 ### Phase 2: Symbols, Decimals, Enums (Normalization Rules)
 - Steps
   - Codify canonical symbol `BTC-USDT`; keep adapters’ conversion helpers in `core/symbols.go`.
-  - Enforce decimal policy: numbers use `*big.Rat`; serialization with `core.FormatDecimal`.
+  - Enforce decimal policy: numbers use `*big.Rat`; serialization with `numeric.Format`.
   - Finalize enums: `OrderSide`, `OrderType`, `TimeInForce`, `OrderStatus`, `Market`.
 - Outcomes
   - One canonical symbol format across providers.

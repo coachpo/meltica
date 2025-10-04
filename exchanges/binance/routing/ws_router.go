@@ -7,7 +7,7 @@ import (
 	"time"
 
 	coreexchange "github.com/coachpo/meltica/core/exchange"
-	corews "github.com/coachpo/meltica/core/ws"
+	coretopics "github.com/coachpo/meltica/core/topics"
 	"github.com/coachpo/meltica/exchanges/binance/internal"
 )
 
@@ -231,8 +231,8 @@ func (w *WSRouter) WSCanonicalSymbol(native string) (string, error) {
 func (w *WSRouter) buildStreams(topics []string) ([]string, error) {
 	streams := make([]string, 0, len(topics))
 	for _, topic := range topics {
-		channel, instrument := corews.ParseTopic(topic)
-		exchangeChannel := mapper.ToExchangeChannel(channel)
+		channel, instrument := coretopics.Parse(topic)
+		exchangeChannel := mapper.ToExchange(channel)
 		if instrument == "" {
 			streams = append(streams, topic)
 			continue
@@ -356,8 +356,8 @@ func (w *WSRouter) startMonitoring(symbols []string) {
 func (w *WSRouter) extractBookSymbols(topics []string) []string {
 	var symbols []string
 	for _, topic := range topics {
-		channel, symbol := corews.ParseTopic(topic)
-		if channel == corews.TopicBook && symbol != "" {
+		channel, symbol := coretopics.Parse(topic)
+		if channel == coretopics.TopicBook && symbol != "" {
 			symbols = append(symbols, symbol)
 		}
 	}

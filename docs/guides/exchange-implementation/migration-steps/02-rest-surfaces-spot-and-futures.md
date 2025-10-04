@@ -20,7 +20,7 @@
 
 3) **Numerics with `*big.Rat`**
    - All price, size, quantity, balance fields **must** be `*big.Rat`.
-   - In JSON marshaling, call `core.FormatDecimal` instead of `fmt.Sprintf` or custom formatters.
+   - In JSON marshaling, call `numeric.Format` instead of `fmt.Sprintf` or custom formatters.
 
 4) **Enum/status mapping**
    - Implement functions like `mapOrderSide`, `mapOrderType`, `mapTimeInForce`, `mapOrderStatus`.
@@ -43,4 +43,4 @@
 2) **Symbols canonical; decimals via *big.Rat:**
    - Verify all symbols use `BASE-QUOTE` format
    - Verify all numeric fields use `*big.Rat`
-   - Verify JSON marshaling uses `core.FormatDecimal`
+   - Verify JSON marshaling uses `numeric.Format`

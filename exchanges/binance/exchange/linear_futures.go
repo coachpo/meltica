@@ -11,6 +11,7 @@ import (
 	"github.com/coachpo/meltica/exchanges/binance/infra/rest"
 	"github.com/coachpo/meltica/exchanges/binance/internal"
 	"github.com/coachpo/meltica/exchanges/binance/routing"
+	"github.com/coachpo/meltica/exchanges/infra/numeric"
 )
 
 type linearAPI struct{ x *Exchange }
@@ -50,10 +51,10 @@ func (f linearAPI) PlaceOrder(ctx context.Context, req core.OrderRequest) (core.
 	}
 	inst := f.lookupInstrument(ctx, req.Symbol)
 	if req.Quantity != nil {
-		q["quantity"] = core.FormatDecimal(req.Quantity, inst.QtyScale)
+		q["quantity"] = numeric.Format(req.Quantity, inst.QtyScale)
 	}
 	if req.Price != nil {
-		q["price"] = core.FormatDecimal(req.Price, inst.PriceScale)
+		q["price"] = numeric.Format(req.Price, inst.PriceScale)
 	}
 	var resp struct {
 		OrderID int64  `json:"orderId"`

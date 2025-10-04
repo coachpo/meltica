@@ -12,7 +12,7 @@ import (
 
 	"github.com/coachpo/meltica/core"
 	coreexchange "github.com/coachpo/meltica/core/exchange"
-	corews "github.com/coachpo/meltica/core/ws"
+	coretopics "github.com/coachpo/meltica/core/topics"
 	"github.com/coachpo/meltica/exchanges/binance"
 )
 
@@ -67,8 +67,8 @@ func main() {
 
 	command := marketSubscribeCommand{
 		Topics: []string{
-			corews.TradeTopic(canonicalSymbol),
-			corews.TickerTopic(canonicalSymbol),
+			coretopics.Trade(canonicalSymbol),
+			coretopics.Ticker(canonicalSymbol),
 		},
 		BookSymbol: canonicalSymbol,
 	}
@@ -288,7 +288,7 @@ func (l *marketEventLoop) Run(ctx context.Context) {
 			bookCopy := book
 			l.emit(ctx, marketEvent{
 				Kind:    marketEventBook,
-				Topic:   corews.BookTopic(book.Symbol),
+				Topic:   coretopics.Book(book.Symbol),
 				Payload: &bookCopy,
 				Time:    book.Time,
 			})

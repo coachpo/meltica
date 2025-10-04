@@ -47,10 +47,8 @@ This guide walks through the minimal files, API checkpoints, and validation step
 ## Promotion Checklist
 
 1. `go test ./...` (unit + integration tests)
-2. Symbols canonical; decimals via `*big.Rat` + `core.FormatDecimal`
+2. Symbols canonical; decimals via `*big.Rat` + `numeric.Format`
 3. Update `README.md` exchange table with capability status
 4. Submit PR with updated fixtures and protocol version bump when required
 
 Following this checklist ensures every new adapter enters the repository with predictable behavior and zero drift from the protocol contract.
-
-

@@ -18,34 +18,6 @@ func Book(symbol string) string      { return TopicBook + ":" + symbol }
 func UserOrder(symbol string) string { return TopicUserOrder + ":" + symbol }
 func UserBalance() string            { return TopicUserBalance }
 
-// ChannelMapper provides conversion from canonical topics to exchange-specific channel names.
-type ChannelMapper struct {
-	protocolToExchange map[string]string
-}
-
-// MappingConfig defines the configuration for constructing a ChannelMapper.
-type MappingConfig struct {
-	ProtocolToExchange map[string]string
-}
-
-// NewMapper creates a channel mapper with the provided configuration.
-func NewMapper(config MappingConfig) *ChannelMapper {
-	if config.ProtocolToExchange == nil {
-		config.ProtocolToExchange = make(map[string]string)
-	}
-
-	return &ChannelMapper{protocolToExchange: config.ProtocolToExchange}
-}
-
-// ToExchange returns the exchange-specific channel for a canonical topic.
-// If no explicit mapping exists the lower-cased topic is returned.
-func (m *ChannelMapper) ToExchange(protocolTopic string) string {
-	if channel, ok := m.protocolToExchange[protocolTopic]; ok {
-		return channel
-	}
-	return strings.ToLower(protocolTopic)
-}
-
 // Parse splits a canonical topic into its channel and symbol components.
 // When no separator is present the channel is returned with an empty symbol.
 func Parse(topic string) (channel, symbol string) {

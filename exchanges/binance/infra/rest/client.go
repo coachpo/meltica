@@ -11,7 +11,7 @@ import (
 	coreexchange "github.com/coachpo/meltica/core/exchange"
 	"github.com/coachpo/meltica/errs"
 	"github.com/coachpo/meltica/exchanges/binance/internal"
-	"github.com/coachpo/meltica/transport"
+	"github.com/coachpo/meltica/exchanges/infra/transport"
 )
 
 // API indicates which Binance REST surface should process the request.

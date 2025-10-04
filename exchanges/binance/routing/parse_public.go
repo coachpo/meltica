@@ -9,7 +9,7 @@ import (
 
 	"github.com/coachpo/meltica/core"
 	coreexchange "github.com/coachpo/meltica/core/exchange"
-	corews "github.com/coachpo/meltica/core/ws"
+	coretopics "github.com/coachpo/meltica/core/topics"
 	"github.com/coachpo/meltica/exchanges/binance/internal"
 )
 
@@ -140,7 +140,7 @@ func (w *WSRouter) parseBookStream(msg *RoutedMessage, payload []byte, symbol, s
 		}
 	}
 
-	msg.Topic = corews.BookTopic(symbol)
+	msg.Topic = coretopics.Book(symbol)
 	msg.Route = coreexchange.RouteBookSnapshot
 	msg.Parsed = &coreexchange.BookEvent{
 		Symbol: symbol,

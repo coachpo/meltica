@@ -6,7 +6,7 @@
 ## What needs to be done
 1) Implement error normalization returning `*errs.E` with canonical codes and raw exchange details.
 2) Implement exhaustive mappings for `OrderStatus`, `OrderSide`, `OrderType`, `TimeInForce`.
-3) Enforce canonical symbols and `*big.Rat` numerics everywhere; marshal with `core.FormatDecimal`.
+3) Enforce canonical symbols and `*big.Rat` numerics everywhere; marshal with `numeric.Format`.
 
 ---
 ## How to do it (follow exactly)
@@ -21,7 +21,7 @@
 
 3) **Symbols & numerics**
    - Before constructing models/events, call `core.ToCanonicalSymbol` (or equivalent).
-   - Replace any floats with `*big.Rat`; ensure (Un)MarshalJSON calls `core.FormatDecimal`.
+   - Replace any floats with `*big.Rat`; ensure (Un)MarshalJSON calls `numeric.Format`.
 
 ---
 ## How to validate that it is complete
@@ -36,4 +36,4 @@
 3) **Symbols & decimals validation:**
    - Verify all symbols use `BASE-QUOTE` format
    - Verify all numeric fields use `*big.Rat`
-   - Verify JSON marshaling uses `core.FormatDecimal`
+   - Verify JSON marshaling uses `numeric.Format`

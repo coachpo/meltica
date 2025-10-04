@@ -6,7 +6,7 @@ import (
 	"time"
 
 	coreexchange "github.com/coachpo/meltica/core/exchange"
-	corews "github.com/coachpo/meltica/core/ws"
+	coretopics "github.com/coachpo/meltica/core/topics"
 	"github.com/coachpo/meltica/exchanges/binance/internal"
 	"github.com/coachpo/meltica/exchanges/binance/routing"
 )
@@ -17,7 +17,7 @@ func (x *Exchange) OrderBookSnapshots(ctx context.Context, symbol string) (<-cha
 		return nil, nil, err
 	}
 
-	sub, err := x.wsRouter.SubscribePublic(ctx, corews.BookTopic(canonicalSymbol))
+	sub, err := x.wsRouter.SubscribePublic(ctx, coretopics.Book(canonicalSymbol))
 	if err != nil {
 		return nil, nil, internal.WrapExchange(err, "subscribe depth stream")
 	}

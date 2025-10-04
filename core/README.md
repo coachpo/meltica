@@ -121,12 +121,12 @@ type DepthLevel struct {
 }
 ```
 
-### WebSocket Events (`core/ws`)
+### WebSocket Events (`core/exchange`)
 
-The `core/ws` subpackage defines normalized WebSocket events for real-time data:
+The `core/exchange` package defines normalized WebSocket events for real-time data:
 
 ```go
-// core/ws/events.go
+// core/exchange/exchange.go
 type TradeEvent struct {
     Symbol   string
     Price    *big.Rat
@@ -160,6 +160,24 @@ type OrderEvent struct {
 type BalanceEvent struct {
     Balances []Balance
 }
+```
+
+### WebSocket Topics (`core/topics`)
+
+`core/topics` provides canonical topic helpers used across the platform.
+
+```go
+topic := topics.Trade("BTC-USDT")
+channel, symbol := topics.Parse("trade:BTC-USDT")
+```
+
+### Topic Mappers (`exchanges/infra/topics`)
+
+`exchanges/infra/topics` exposes channel mapping helpers for exchange adapters.
+
+```go
+mapper := infratopics.NewMapper(infratopics.MappingConfig{ProtocolToExchange: map[string]string{topics.TopicTrade: "trade"}})
+channel := mapper.ToExchange(topics.TopicTrade)
 ```
 
 ## Provider Interface
@@ -282,8 +300,8 @@ All monetary values use `*big.Rat` to maintain precision:
 price := big.NewRat(50000, 1)      // 50000.00
 qty := big.NewRat(1, 100)          // 0.01
 
-// Use core.FormatDecimal for JSON serialization
-jsonData := core.FormatDecimal(price)  // Returns "50000/1"
+// Use numeric.Format for JSON serialization
+jsonData := numeric.Format(price, 2)  // Returns "50000.00"
 ```
 
 ## Usage Example
@@ -336,7 +354,7 @@ This package follows the Meltica protocol standards:
 
 - **STD-09**: No floats anywhere - all decimals use `*big.Rat`
 - **STD-10**: Decimal policy enforced with `*big.Rat`
-- **STD-11**: Use `core.FormatDecimal` for JSON marshaling
+- **STD-11**: Use `numeric.Format` for JSON marshaling
 - **STD-12**: Canonical symbol format `BASE-QUOTE`
 - **STD-13**: Enums are frozen and exhaustive
 - **STD-15**: WebSocket decoders return typed events

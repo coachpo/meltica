@@ -1,7 +1,8 @@
 package routing
 
 import (
-	corews "github.com/coachpo/meltica/core/ws"
+	coretopics "github.com/coachpo/meltica/core/topics"
+	infratopics "github.com/coachpo/meltica/exchanges/infra/topics"
 )
 
 const (
@@ -12,22 +13,22 @@ const (
 	BNXBalanceChannel   = "balance"
 )
 
-var mapper = corews.NewChannelMapper(corews.ChannelMappingConfig{
+var mapper = infratopics.NewMapper(infratopics.MappingConfig{
 	ProtocolToExchange: map[string]string{
-		corews.TopicTrade:       BNXTradeChannel,
-		corews.TopicTicker:      BNXTickerChannel,
-		corews.TopicBook:        BNXBookDepthChannel,
-		corews.TopicUserOrder:   BNXOrderChannel,
-		corews.TopicUserBalance: BNXBalanceChannel,
+		coretopics.TopicTrade:       BNXTradeChannel,
+		coretopics.TopicTicker:      BNXTickerChannel,
+		coretopics.TopicBook:        BNXBookDepthChannel,
+		coretopics.TopicUserOrder:   BNXOrderChannel,
+		coretopics.TopicUserBalance: BNXBalanceChannel,
 	},
 })
 
 var exchangeToProtocol = map[string]string{
-	BNXTradeChannel:     corews.TopicTrade,
-	BNXTickerChannel:    corews.TopicTicker,
-	BNXBookDepthChannel: corews.TopicBook,
-	BNXOrderChannel:     corews.TopicUserOrder,
-	BNXBalanceChannel:   corews.TopicUserBalance,
+	BNXTradeChannel:     coretopics.TopicTrade,
+	BNXTickerChannel:    coretopics.TopicTicker,
+	BNXBookDepthChannel: coretopics.TopicBook,
+	BNXOrderChannel:     coretopics.TopicUserOrder,
+	BNXBalanceChannel:   coretopics.TopicUserBalance,
 }
 
 func protocolTopicFor(channel string) string {
@@ -44,16 +45,16 @@ func topicFromChannel(channel, instrument string) string {
 	}
 
 	switch protocolTopic {
-	case corews.TopicTrade:
-		return corews.TradeTopic(instrument)
-	case corews.TopicTicker:
-		return corews.TickerTopic(instrument)
-	case corews.TopicBook:
-		return corews.BookTopic(instrument)
-	case corews.TopicUserOrder:
-		return corews.UserOrderTopic(instrument)
-	case corews.TopicUserBalance:
-		return corews.UserBalanceTopic()
+	case coretopics.TopicTrade:
+		return coretopics.Trade(instrument)
+	case coretopics.TopicTicker:
+		return coretopics.Ticker(instrument)
+	case coretopics.TopicBook:
+		return coretopics.Book(instrument)
+	case coretopics.TopicUserOrder:
+		return coretopics.UserOrder(instrument)
+	case coretopics.TopicUserBalance:
+		return coretopics.UserBalance()
 	default:
 		if protocolTopic == channel || protocolTopic == "" {
 			return channel + ":" + instrument

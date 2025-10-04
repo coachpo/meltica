@@ -55,8 +55,8 @@ This document defines non-negotiable standards for the protocol and core code.
 - Must not have: int, float, string for decimals.
 - Validate: `./meltilint`
 
-## STD-11: Use core.FormatDecimal when marshaling
-- Must have: Every JSON marshal of `*big.Rat` calls `core.FormatDecimal`.
+## STD-11: Use numeric.Format when marshaling
+- Must have: Every JSON marshal of `*big.Rat` calls `numeric.Format`.
 - Must not have: Custom `fmt.Sprintf`.
 - Validate: `./meltilint`
 
@@ -109,4 +109,3 @@ This document defines non-negotiable standards for the protocol and core code.
 - Must have: Tests skip based on `Capabilities()`.
 - Must not have: Hard-coded assumptions.
 - Validate: Inspect + `./meltilint`
-

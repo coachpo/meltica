@@ -66,7 +66,8 @@ go run ./cmd/main
 
 ### Core Modules
 
-* **`core/`** – Canonical domain models & interfaces (`Exchange`, markets, symbols, topics, WS events); capability bitsets; decimal utilities.
+* **`core/`** – Canonical domain models & interfaces (`Exchange`, markets, symbols, topics, WS events); capability bitsets.
+* **`exchanges/infra/`** – Shared adapters infrastructure (numeric helpers, transport clients, rate limiters, topic mappers).
 * **`exchanges/`** – Venue adapters (REST + WS + signing + error/status mapping) per exchange.
 * **`transport/`** – HTTP client with retries, signing hooks; token‑bucket rate limiting; WS helpers.
 * **`errs/`** – Unified error envelope and standardized capability errors.
@@ -156,7 +157,7 @@ interface Exchange {
 
 ## Performance & Reliability Notes
 
-* Token‑bucket rate limiting in `transport/` to protect against venue throttling.
+* Token‑bucket rate limiting in `exchanges/infra/transport` to protect against venue throttling.
 * Decimal math helpers respect instrument scales; avoid binary float for price/size.
 * Event decoding aims for zero‑allocation hot paths where possible.
 
@@ -170,12 +171,12 @@ Project rules that keep Meltica stable and shippable. These are non‑negotiable
 
 * **SDK‑first:** `core` defines the truth; adapters conform to them.
 * **Frozen surfaces:** Public interfaces, event types, and error envelopes change only with a protocol bump.
-* **Normalization:** Canonical symbols (`BASE-QUOTE`), enums (exhaustive), and decimals (`*big.Rat` + `core.FormatDecimal`) across all APIs and events.
+* **Normalization:** Canonical symbols (`BASE-QUOTE`), enums (exhaustive), and decimals (`*big.Rat` + `numeric.Format`) across all APIs and events.
 
 ### Quality gates (Definition of Done)
 
 1. `go build ./...` and `go test ./...` green (prefer `-race`).
-2. Symbols canonical; decimals via `*big.Rat` + `core.FormatDecimal`.
+2. Symbols canonical; decimals via `*big.Rat` + `numeric.Format`.
 3. Exchange minimal file set present; adapter README lists env vars for optional live tests.
 
 ### Versioning & release
@@ -228,7 +229,7 @@ How to contribute and the exact path for adding a new exchange adapter.
 
   * Wire HTTP clients with timeouts, retry/backoff, and rate‑limiting hooks.
   * Implement Spot (server time, instruments, ticker, order lifecycle) and Futures (instruments, positions, orders) returning **core models**.
-  * Canonicalize symbols to `BASE-QUOTE`; use `*big.Rat` for all numerics; marshal via `core.FormatDecimal`.
+  * Canonicalize symbols to `BASE-QUOTE`; use `*big.Rat` for all numerics; marshal via `numeric.Format`.
   * Map enums/statuses exhaustively with `switch`; default must error.
 * **Validate:**
 
@@ -281,7 +282,7 @@ How to contribute and the exact path for adding a new exchange adapter.
 
   * In `errors.go`, wrap to `*errs.E` with canonical codes; include raw exchange details.
   * In `status.go` (and friends), implement exhaustive `mapOrderStatus/Type/Side/TIF`.
-  * Replace any floats with `*big.Rat`; ensure (Un)MarshalJSON uses `core.FormatDecimal`; always call `core.ToCanonicalSymbol`.
+  * Replace any floats with `*big.Rat`; ensure (Un)MarshalJSON uses `numeric.Format`; always call `core.ToCanonicalSymbol`.
 * **Validate:**
 
   ```bash
@@ -310,7 +311,7 @@ How to contribute and the exact path for adding a new exchange adapter.
 ### Pull request checklist (copy/paste)
 
 * [ ] Unit tests (`-race`) green.
-* [ ] Symbols canonical; decimals via `*big.Rat` + `core.FormatDecimal`.
+* [ ] Symbols canonical; decimals via `*big.Rat` + `numeric.Format`.
 * [ ] If protocol touched: docs updated **and** `core.ProtocolVersion` bumped; adapters match.
 * [ ] Adapter README includes env vars and base URLs; minimal file set present.
 

@@ -12,7 +12,7 @@ import (
 	"github.com/coachpo/meltica/core"
 	coreexchange "github.com/coachpo/meltica/core/exchange"
 	"github.com/coachpo/meltica/exchanges/binance/infra/rest"
-	"github.com/coachpo/meltica/exchanges/binance/infra/wsinfra"
+	"github.com/coachpo/meltica/exchanges/binance/infra/ws"
 	"github.com/coachpo/meltica/exchanges/binance/internal"
 	"github.com/coachpo/meltica/exchanges/binance/routing"
 )
@@ -23,7 +23,7 @@ type Exchange struct {
 	restClient *rest.Client
 	restRouter *routing.RESTRouter
 
-	wsInfra  *wsinfra.Client
+	wsInfra  *ws.Client
 	wsRouter *routing.WSRouter
 
 	instCache map[core.Market]map[string]core.Instrument
@@ -66,7 +66,7 @@ func NewWithSettings(settings config.Settings) (*Exchange, error) {
 		Timeout:        settings.Binance.HTTPTimeout,
 	})
 	restRouter := routing.NewRESTRouter(restClient)
-	wsInfra := wsinfra.NewClient(wsinfra.Config{
+	wsInfra := ws.NewClient(ws.Config{
 		PublicURL:        settings.Binance.PublicWSURL,
 		PrivateURL:       settings.Binance.PrivateWSURL,
 		HandshakeTimeout: settings.Binance.HandshakeTimeout,
@@ -105,7 +105,7 @@ func (x *Exchange) UpdateConfig(opts ...config.Option) error {
 		Timeout:        newCfg.Binance.HTTPTimeout,
 	})
 	restRouter := routing.NewRESTRouter(restClient)
-	wsInfra := wsinfra.NewClient(wsinfra.Config{
+	wsInfra := ws.NewClient(ws.Config{
 		PublicURL:        newCfg.Binance.PublicWSURL,
 		PrivateURL:       newCfg.Binance.PrivateWSURL,
 		HandshakeTimeout: newCfg.Binance.HandshakeTimeout,

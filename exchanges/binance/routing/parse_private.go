@@ -7,7 +7,7 @@ import (
 
 	"github.com/coachpo/meltica/core"
 	coreexchange "github.com/coachpo/meltica/core/exchange"
-	corews "github.com/coachpo/meltica/core/ws"
+	coretopics "github.com/coachpo/meltica/core/topics"
 	"github.com/coachpo/meltica/exchanges/binance/internal"
 )
 
@@ -80,7 +80,7 @@ func (w *WSRouter) parseBalanceUpdate(msg *RoutedMessage, payload []byte, event 
 			amt, _ := parseDecimalToRat(b.Free.String())
 			be.Balances = append(be.Balances, core.Balance{Asset: b.Asset, Available: amt, Time: time.UnixMilli(oap.EventTime)})
 		}
-		msg.Topic = corews.UserBalanceTopic()
+		msg.Topic = coretopics.UserBalance()
 		msg.Route = coreexchange.RouteBalanceSnapshot
 		msg.Parsed = &be
 		return nil
@@ -94,7 +94,7 @@ func (w *WSRouter) parseBalanceUpdate(msg *RoutedMessage, payload []byte, event 
 			return err
 		}
 		amt, _ := parseDecimalToRat(bu.Delta.String())
-		msg.Topic = corews.UserBalanceTopic()
+		msg.Topic = coretopics.UserBalance()
 		msg.Route = coreexchange.RouteBalanceSnapshot
 		msg.Parsed = &coreexchange.BalanceEvent{
 			Balances: []core.Balance{

@@ -92,10 +92,10 @@ This document defines deterministic validation rules derived from `ABSTRACTIONS_
   - All numeric price/size/amount/qty fields in the model types MUST have type `*big.Rat` (AST field type check by name match: `Price`, `Size`, `Amount`, `Qty`, `AveragePrice`, etc., per golden allowlist).
 
 11) CORE-FORMATDECIMAL-USE (MUST)
-- Intent: Serialization uses `core.FormatDecimal`.
+- Intent: Serialization uses `numeric.Format`.
 - Scope: `core/` JSON marshaling code and `exchanges/**` adapters' serialization helpers.
 - Validation standard:
-  - Any `MarshalJSON` involving `*big.Rat` MUST call `core.FormatDecimal` for string output. Static analysis: within `MarshalJSON`, if a `*big.Rat` field is serialized, search for a call to `core.FormatDecimal` in the same function; absence is a fail.
+  - Any `MarshalJSON` involving `*big.Rat` MUST call `numeric.Format` for string output. Static analysis: within `MarshalJSON`, if a `*big.Rat` field is serialized, search for a call to `numeric.Format` in the same function; absence is a fail.
 
 12) CORE-SYMBOL-CANONICAL (MUST)
 - Intent: Enforce canonical symbol form `BASE-QUOTE` uppercase.
@@ -244,5 +244,3 @@ go test ./...
 ```
 
 All MUST rules are intended to be machine-verifiable and block merges when violated.
-
-

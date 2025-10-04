@@ -7,7 +7,7 @@ import (
 
 	coreexchange "github.com/coachpo/meltica/core/exchange"
 	"github.com/coachpo/meltica/core/exchange/mocks"
-	corews "github.com/coachpo/meltica/core/ws"
+	coretopics "github.com/coachpo/meltica/core/topics"
 )
 
 type stubDeps struct {
@@ -67,7 +67,7 @@ func TestWSRouterSubscribePublicUsesStreamClient(t *testing.T) {
 	router := NewWSRouter(streamClient, deps)
 	defer router.Close()
 
-	sub, err := router.SubscribePublic(ctx, corews.TradeTopic("BTC-USDT"))
+	sub, err := router.SubscribePublic(ctx, coretopics.Trade("BTC-USDT"))
 	if err != nil {
 		t.Fatalf("subscribe public failed: %v", err)
 	}
