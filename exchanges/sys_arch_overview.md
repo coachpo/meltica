@@ -1,6 +1,7 @@
 # System Architecture Overview
 
 The system is structured into three logical layers — **Level 1**, **Level 2**, and **Level 3** — each responsible for a specific aspect of communication and business processing.
+This layered structure supports both WebSocket and HTTP REST interfaces while maintaining consistent message flow and error handling.
 
 ---
 
@@ -13,6 +14,8 @@ Provides the fundamental infrastructure for network communication.
 - Manages physical connections for both **WebSocket** and **REST** clients.  
 - Handles connection lifecycle operations: **connect**, **reconnect**, and **ping/pong** (for WebSocket).  
 - Acts as the entry and exit point for all inbound and outbound data.
+- Handles request signing for authenticated API calls.
+- Reports connection-related errors and exchange errors to Level 2 for parsing and routing.
 
 ---
 
@@ -25,9 +28,15 @@ Handles message routing, translation, and request/response formatting between th
 - **WebSocket:**
   - Manages **subscriptions** and **unsubscriptions**.
   - Routes incoming messages to the correct business handler.
+  - Converts raw WebSocket messages into a standardized internal format for business processing.
 - **REST:**
   - Builds and formats **HTTP requests** (URL, path, headers, payload).
   - Converts raw **HTTP responses** into a standardized internal format for business processing.
+
+**Error Handling:**
+- Receives error notifications from Level 1.
+- Parses and categorizes errors (e.g., connection issues, protocol violations, invalid responses, exchange API errors).
+- Forwards structured error information to Level 3 for appropriate handling.
 
 ---
 
@@ -40,6 +49,7 @@ Implements the domain and business logic.
 - Generates business-level requests and passes them to **Level 2**.  
 - Processes normalized responses and messages received from **Level 2**.  
 - Distributes results to client interfaces, services, or other consumers.
+- Handles error messages from Level 2, performing recovery actions, user notifications, or logging based on business rules.
 
 ---
 
@@ -47,5 +57,5 @@ Implements the domain and business logic.
 
 | Communication Type | Level 1 | Level 2 | Level 3 | Description |
 |--------------------|----------|----------|----------|--------------|
-| **WebSocket** | Connection management (connect, reconnect, ping/pong) | Message routing, subscription/unsubscription | Business logic, request generation | Continuous, bidirectional stream |
-| **REST (HTTP)** | Connection handling | Request building & response normalization | Business logic, request initiation | Stateless, point-to-point request/response |
+| **WebSocket** | Connection management (connect, reconnect, ping/pong) | Message routing, subscription/unsubscription, message conversion | Business logic, request generation | Continuous, bidirectional stream |
+| **REST (HTTP)** | Connection handling, request signing | Request building & response normalization | Business logic, request initiation | Stateless, point-to-point request/response |
