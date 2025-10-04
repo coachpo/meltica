@@ -9,10 +9,9 @@ import (
 	"time"
 
 	"github.com/coachpo/meltica/core"
-	corews "github.com/coachpo/meltica/core/ws"
 )
 
-func appendDepthLevels(dst *[]corews.DepthLevel, raw any) {
+func appendDepthLevels(dst *[]core.BookDepthLevel, raw any) {
 	levels, ok := raw.([]any)
 	if !ok {
 		return
@@ -39,7 +38,7 @@ func appendDepthLevels(dst *[]corews.DepthLevel, raw any) {
 		}
 		price := parseDecimalStr(priceStr)
 		qty := parseDecimalStr(qtyStr)
-		*dst = append(*dst, corews.DepthLevel{Price: price, Qty: qty})
+		*dst = append(*dst, core.BookDepthLevel{Price: price, Qty: qty})
 	}
 }
 

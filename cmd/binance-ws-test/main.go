@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"github.com/coachpo/meltica/core"
+	coreprovider "github.com/coachpo/meltica/core/provider"
 	corews "github.com/coachpo/meltica/core/ws"
 	"github.com/coachpo/meltica/providers/binance"
 )
@@ -89,20 +90,20 @@ func printMessage(msg *core.Message) {
 	timestamp := msg.At.Format("15:04:05.000")
 
 	switch msg.Event {
-	case corews.TopicTrade:
-		if trade, ok := msg.Parsed.(*corews.TradeEvent); ok {
+	case coreprovider.RouteTradeUpdate:
+		if trade, ok := msg.Parsed.(*coreprovider.TradeEvent); ok {
 			fmt.Printf("[%s] TRADE %s: Price=%s, Qty=%s\n",
 				timestamp, trade.Symbol,
 				formatRat(trade.Price), formatRat(trade.Quantity))
 		}
-	case corews.TopicTicker:
-		if ticker, ok := msg.Parsed.(*corews.TickerEvent); ok {
+	case coreprovider.RouteTickerUpdate:
+		if ticker, ok := msg.Parsed.(*coreprovider.TickerEvent); ok {
 			fmt.Printf("[%s] TICKER %s: Bid=%s, Ask=%s\n",
 				timestamp, ticker.Symbol,
 				formatRat(ticker.Bid), formatRat(ticker.Ask))
 		}
-	case corews.TopicBook:
-		if book, ok := msg.Parsed.(*corews.BookEvent); ok {
+	case coreprovider.RouteBookSnapshot:
+		if book, ok := msg.Parsed.(*coreprovider.BookEvent); ok {
 			fmt.Printf("[%s] BOOK %s: Bids=%d, Asks=%d\n",
 				timestamp, book.Symbol, len(book.Bids), len(book.Asks))
 			// Print top 3 bids and asks

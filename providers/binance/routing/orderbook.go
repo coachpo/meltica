@@ -1,4 +1,4 @@
-package ws
+package routing
 
 import (
 	"fmt"
@@ -6,7 +6,8 @@ import (
 	"sync"
 	"time"
 
-	corews "github.com/coachpo/meltica/core/ws"
+	"github.com/coachpo/meltica/core"
+	coreprovider "github.com/coachpo/meltica/core/provider"
 )
 
 // OrderBookManager manages order book state for different symbols.
@@ -56,13 +57,13 @@ type OrderBook struct {
 type BufferedDepthEvent struct {
 	FirstUpdateID int64
 	LastUpdateID  int64
-	Bids          []corews.DepthLevel
-	Asks          []corews.DepthLevel
+	Bids          []core.BookDepthLevel
+	Asks          []core.BookDepthLevel
 	EventTime     time.Time
 }
 
 // InitializeFromSnapshot initializes the order book from a snapshot and applies buffered events
-func (ob *OrderBook) InitializeFromSnapshot(snapshot corews.BookEvent, snapshotUpdateID int64) error {
+func (ob *OrderBook) InitializeFromSnapshot(snapshot coreprovider.BookEvent, snapshotUpdateID int64) error {
 	ob.mu.Lock()
 	defer ob.mu.Unlock()
 
@@ -147,7 +148,7 @@ func (ob *OrderBook) InitializeFromSnapshot(snapshot corews.BookEvent, snapshotU
 }
 
 // BufferEvent buffers a depth event during initialization
-func (ob *OrderBook) BufferEvent(firstUpdateID, lastUpdateID int64, bids, asks []corews.DepthLevel, eventTime time.Time) {
+func (ob *OrderBook) BufferEvent(firstUpdateID, lastUpdateID int64, bids, asks []core.BookDepthLevel, eventTime time.Time) {
 	ob.mu.Lock()
 	if ob.isInitialized {
 		ob.mu.Unlock()
@@ -174,16 +175,16 @@ func (ob *OrderBook) BufferEvent(firstUpdateID, lastUpdateID int64, bids, asks [
 }
 
 // Latest returns a snapshot of the current book state without clearing the buffer.
-func (ob *OrderBook) Latest() corews.BookEvent {
+func (ob *OrderBook) Latest() coreprovider.BookEvent {
 	ob.mu.RLock()
 	defer ob.mu.RUnlock()
 
-	bids := make([]corews.DepthLevel, 0, len(ob.Bids))
-	asks := make([]corews.DepthLevel, 0, len(ob.Asks))
+	bids := make([]core.BookDepthLevel, 0, len(ob.Bids))
+	asks := make([]core.BookDepthLevel, 0, len(ob.Asks))
 
 	for priceStr, qty := range ob.Bids {
 		if price, ok := new(big.Rat).SetString(priceStr); ok {
-			bids = append(bids, corews.DepthLevel{
+			bids = append(bids, core.BookDepthLevel{
 				Price: price,
 				Qty:   new(big.Rat).Set(qty),
 			})
@@ -192,14 +193,14 @@ func (ob *OrderBook) Latest() corews.BookEvent {
 
 	for priceStr, qty := range ob.Asks {
 		if price, ok := new(big.Rat).SetString(priceStr); ok {
-			asks = append(asks, corews.DepthLevel{
+			asks = append(asks, core.BookDepthLevel{
 				Price: price,
 				Qty:   new(big.Rat).Set(qty),
 			})
 		}
 	}
 
-	return corews.BookEvent{
+	return coreprovider.BookEvent{
 		Symbol: ob.Symbol,
 		Bids:   bids,
 		Asks:   asks,
@@ -222,7 +223,7 @@ func (ob *OrderBook) WithWriteLock(fn func(ob *OrderBook)) {
 }
 
 // UpdateFromSnapshot updates the order book from a full snapshot.
-func (ob *OrderBook) UpdateFromSnapshot(bids, asks []corews.DepthLevel, lastUpdateID int64, updateTime time.Time) {
+func (ob *OrderBook) UpdateFromSnapshot(bids, asks []core.BookDepthLevel, lastUpdateID int64, updateTime time.Time) {
 	ob.mu.Lock()
 	defer ob.mu.Unlock()
 
@@ -246,16 +247,16 @@ func (ob *OrderBook) UpdateFromSnapshot(bids, asks []corews.DepthLevel, lastUpda
 }
 
 // GetSnapshot returns the current order book as a core BookEvent.
-func (ob *OrderBook) GetSnapshot() corews.BookEvent {
+func (ob *OrderBook) GetSnapshot() coreprovider.BookEvent {
 	ob.mu.RLock()
 	defer ob.mu.RUnlock()
 
-	bids := make([]corews.DepthLevel, 0, len(ob.Bids))
-	asks := make([]corews.DepthLevel, 0, len(ob.Asks))
+	bids := make([]core.BookDepthLevel, 0, len(ob.Bids))
+	asks := make([]core.BookDepthLevel, 0, len(ob.Asks))
 
 	for priceStr, qty := range ob.Bids {
 		if price, ok := new(big.Rat).SetString(priceStr); ok {
-			bids = append(bids, corews.DepthLevel{
+			bids = append(bids, core.BookDepthLevel{
 				Price: price,
 				Qty:   new(big.Rat).Set(qty),
 			})
@@ -264,14 +265,14 @@ func (ob *OrderBook) GetSnapshot() corews.BookEvent {
 
 	for priceStr, qty := range ob.Asks {
 		if price, ok := new(big.Rat).SetString(priceStr); ok {
-			asks = append(asks, corews.DepthLevel{
+			asks = append(asks, core.BookDepthLevel{
 				Price: price,
 				Qty:   new(big.Rat).Set(qty),
 			})
 		}
 	}
 
-	return corews.BookEvent{
+	return coreprovider.BookEvent{
 		Symbol: ob.Symbol,
 		Bids:   bids,
 		Asks:   asks,
@@ -300,7 +301,7 @@ func (ob *OrderBook) SetLastUpdateID(updateID int64) {
 // - For each price level in bids (b) and asks (a), set the new quantity in the order book
 // - If the quantity is zero, remove the price level from the order book
 // - Set the order book update ID to the last update ID (u) in the processed event
-func UpdateFromBinanceDelta(orderBook *OrderBook, bids, asks []corews.DepthLevel, firstUpdateID, lastUpdateID int64, updateTime time.Time) bool {
+func UpdateFromBinanceDelta(orderBook *OrderBook, bids, asks []core.BookDepthLevel, firstUpdateID, lastUpdateID int64, updateTime time.Time) bool {
 	success := true
 
 	orderBook.WithWriteLock(func(ob *OrderBook) {

@@ -10,6 +10,8 @@ import (
 	"sort"
 	"time"
 
+	"github.com/coachpo/meltica/core"
+	coreprovider "github.com/coachpo/meltica/core/provider"
 	corews "github.com/coachpo/meltica/core/ws"
 	"github.com/coachpo/meltica/providers/binance"
 )
@@ -34,6 +36,9 @@ func main() {
 	}
 	defer provider.Close()
 
+	validateRESTLayer(ctx, provider)
+	validateWSRouting(ctx, provider)
+
 	snapshots, errs, err := provider.OrderBookSnapshots(ctx, canonicalSymbol)
 	if err != nil {
 		log.Fatalf("failed to start order book stream: %v", err)
@@ -42,7 +47,7 @@ func main() {
 	ticker := time.NewTicker(refreshInterval)
 	defer ticker.Stop()
 
-	var latest corews.BookEvent
+	var latest coreprovider.BookEvent
 	var hasSnapshot bool
 	var lastRender time.Time
 
@@ -74,7 +79,61 @@ func main() {
 	}
 }
 
-func renderSnapshot(event corews.BookEvent) {
+func validateRESTLayer(ctx context.Context, provider *binance.Provider) {
+	const snapshotDepth = 100
+	snapshot, updateID, err := provider.DepthSnapshot(ctx, canonicalSymbol, snapshotDepth)
+	if err != nil {
+		log.Printf("REST validation failed: %v", err)
+		return
+	}
+	fmt.Printf("REST layer OK: snapshot %d levels fetched (LastUpdateID=%d)\n", len(snapshot.Bids)+len(snapshot.Asks), updateID)
+	topBid := bestLevel(snapshot.Bids, true)
+	topAsk := bestLevel(snapshot.Asks, false)
+	fmt.Printf("  Top of book via REST -> Bid %s / %s, Ask %s / %s\n",
+		formatRat(topBid.qty, 6), formatRat(topBid.price, 2),
+		formatRat(topAsk.price, 2), formatRat(topAsk.qty, 6))
+}
+
+func validateWSRouting(ctx context.Context, provider *binance.Provider) {
+	ws := provider.WS()
+	sub, err := ws.SubscribePublic(ctx, corews.BookTopic(canonicalSymbol))
+	if err != nil {
+		log.Printf("WS routing validation failed: %v", err)
+		return
+	}
+	go func() {
+		defer sub.Close()
+		eventsValidated := 0
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case err := <-sub.Err():
+				if err != nil {
+					log.Printf("WS routing error: %v", err)
+				}
+				return
+			case msg, ok := <-sub.C():
+				if !ok {
+					return
+				}
+				if book, ok := msg.Parsed.(*coreprovider.BookEvent); ok {
+					fmt.Printf("WS routing OK: received depth delta with %d/%d levels\n", len(book.Bids), len(book.Asks))
+					eventsValidated++
+				}
+				if tickerEvt, ok := msg.Parsed.(*coreprovider.TickerEvent); ok {
+					fmt.Printf("WS routing OK: ticker update bid %s ask %s\n", formatRat(tickerEvt.Bid, 2), formatRat(tickerEvt.Ask, 2))
+					eventsValidated++
+				}
+				if eventsValidated >= 2 {
+					return
+				}
+			}
+		}
+	}()
+}
+
+func renderSnapshot(event coreprovider.BookEvent) {
 	bids := topLevels(event.Bids, displayLevels, true)
 	asks := topLevels(event.Asks, displayLevels, false)
 
@@ -111,7 +170,7 @@ type bookLevel struct {
 	qty   *big.Rat
 }
 
-func topLevels(levels []corews.DepthLevel, limit int, desc bool) []bookLevel {
+func topLevels(levels []core.BookDepthLevel, limit int, desc bool) []bookLevel {
 	filtered := make([]bookLevel, 0, len(levels))
 	for _, level := range levels {
 		if level.Price == nil || level.Qty == nil || level.Qty.Sign() == 0 {
@@ -140,4 +199,12 @@ func formatRat(r *big.Rat, precision int) string {
 		return "0"
 	}
 	return r.FloatString(precision)
+}
+
+func bestLevel(levels []core.BookDepthLevel, desc bool) bookLevel {
+	filtered := topLevels(levels, 1, desc)
+	if len(filtered) == 0 {
+		return bookLevel{}
+	}
+	return filtered[0]
 }

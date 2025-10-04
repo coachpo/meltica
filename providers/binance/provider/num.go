@@ -1,4 +1,4 @@
-package binance
+package provider
 
 import (
 	"math/big"

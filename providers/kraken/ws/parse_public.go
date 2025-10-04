@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/coachpo/meltica/core"
+	coreprovider "github.com/coachpo/meltica/core/provider"
 	corews "github.com/coachpo/meltica/core/ws"
 )
 
@@ -82,7 +83,7 @@ func (w *WS) parseTrades(msg *core.Message, payload any, symbol string) error {
 	if !ok || len(rows) == 0 {
 		return nil
 	}
-	var events []*corews.TradeEvent
+	var events []*coreprovider.TradeEvent
 	for _, row := range rows {
 		rec, ok := row.(map[string]any)
 		if !ok {
@@ -100,10 +101,10 @@ func (w *WS) parseTrades(msg *core.Message, payload any, symbol string) error {
 		if when.IsZero() {
 			when = time.Now().UTC()
 		}
-		events = append(events, &corews.TradeEvent{Symbol: sym, Price: price, Quantity: qty, Time: when})
+		events = append(events, &coreprovider.TradeEvent{Symbol: sym, Price: price, Quantity: qty, Time: when})
 	}
 	if len(events) > 0 {
-		msg.Event = KRKTopicTrade
+		msg.Event = coreprovider.RouteTradeUpdate
 		msg.Parsed = events[len(events)-1]
 	}
 	return nil
@@ -116,8 +117,8 @@ func (w *WS) parseTicker(msg *core.Message, payload any, symbol string) error {
 	}
 	bid := parseDecimalStr(valueString(firstPresent(row, "bid", "best_bid")))
 	ask := parseDecimalStr(valueString(firstPresent(row, "ask", "best_ask")))
-	msg.Event = KRKTopicTicker
-	msg.Parsed = &corews.TickerEvent{Symbol: symbol, Bid: bid, Ask: ask, Time: time.Now().UTC()}
+	msg.Event = coreprovider.RouteTickerUpdate
+	msg.Parsed = &coreprovider.TickerEvent{Symbol: symbol, Bid: bid, Ask: ask, Time: time.Now().UTC()}
 	return nil
 }
 
@@ -126,14 +127,14 @@ func (w *WS) parseBook(msg *core.Message, payload any, symbol string) error {
 	if !ok {
 		return nil
 	}
-	de := corews.BookEvent{Symbol: symbol, Time: time.Now().UTC()}
+	de := coreprovider.BookEvent{Symbol: symbol, Time: time.Now().UTC()}
 	if rawBids, ok := row["bids"]; ok {
 		appendDepthLevels(&de.Bids, rawBids)
 	}
 	if rawAsks, ok := row["asks"]; ok {
 		appendDepthLevels(&de.Asks, rawAsks)
 	}
-	msg.Event = KRKTopicBook
+	msg.Event = coreprovider.RouteBookSnapshot
 	msg.Parsed = &de
 	return nil
 }

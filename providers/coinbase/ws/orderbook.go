@@ -5,7 +5,8 @@ import (
 	"sync"
 	"time"
 
-	corews "github.com/coachpo/meltica/core/ws"
+	"github.com/coachpo/meltica/core"
+	coreprovider "github.com/coachpo/meltica/core/provider"
 )
 
 // OrderBookManager manages order book state for different symbols.
@@ -55,7 +56,7 @@ func (ob *OrderBook) WithWriteLock(fn func(ob *OrderBook)) {
 }
 
 // UpdateFromSnapshot updates the order book from a full snapshot.
-func (ob *OrderBook) UpdateFromSnapshot(bids, asks []corews.DepthLevel, updateTime time.Time) {
+func (ob *OrderBook) UpdateFromSnapshot(bids, asks []core.BookDepthLevel, updateTime time.Time) {
 	ob.mu.Lock()
 	defer ob.mu.Unlock()
 
@@ -78,16 +79,16 @@ func (ob *OrderBook) UpdateFromSnapshot(bids, asks []corews.DepthLevel, updateTi
 }
 
 // GetSnapshot returns the current order book as a core BookEvent.
-func (ob *OrderBook) GetSnapshot() corews.BookEvent {
+func (ob *OrderBook) GetSnapshot() coreprovider.BookEvent {
 	ob.mu.RLock()
 	defer ob.mu.RUnlock()
 
-	bids := make([]corews.DepthLevel, 0, len(ob.Bids))
-	asks := make([]corews.DepthLevel, 0, len(ob.Asks))
+	bids := make([]core.BookDepthLevel, 0, len(ob.Bids))
+	asks := make([]core.BookDepthLevel, 0, len(ob.Asks))
 
 	for priceStr, qty := range ob.Bids {
 		if price, ok := new(big.Rat).SetString(priceStr); ok {
-			bids = append(bids, corews.DepthLevel{
+			bids = append(bids, core.BookDepthLevel{
 				Price: price,
 				Qty:   new(big.Rat).Set(qty),
 			})
@@ -96,14 +97,14 @@ func (ob *OrderBook) GetSnapshot() corews.BookEvent {
 
 	for priceStr, qty := range ob.Asks {
 		if price, ok := new(big.Rat).SetString(priceStr); ok {
-			asks = append(asks, corews.DepthLevel{
+			asks = append(asks, core.BookDepthLevel{
 				Price: price,
 				Qty:   new(big.Rat).Set(qty),
 			})
 		}
 	}
 
-	return corews.BookEvent{
+	return coreprovider.BookEvent{
 		Symbol: ob.Symbol,
 		Bids:   bids,
 		Asks:   asks,
@@ -126,7 +127,7 @@ func (ob *OrderBook) SetLastUpdateID(updateID int64) {
 }
 
 // UpdateFromCoinbaseDelta applies Coinbase level2 deltas to the order book.
-func UpdateFromCoinbaseDelta(orderBook *OrderBook, bids, asks []corews.DepthLevel, updateTime time.Time) {
+func UpdateFromCoinbaseDelta(orderBook *OrderBook, bids, asks []core.BookDepthLevel, updateTime time.Time) {
 	orderBook.WithWriteLock(func(ob *OrderBook) {
 		for _, level := range bids {
 			priceStr := level.Price.String()

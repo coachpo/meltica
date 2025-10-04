@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/coachpo/meltica/core"
+	coreprovider "github.com/coachpo/meltica/core/provider"
 	corews "github.com/coachpo/meltica/core/ws"
 )
 
@@ -56,8 +57,8 @@ func (w *WS) parseOrderUpdate(msg *core.Message, payload []json.RawMessage) erro
 	filled, _ := parseDecimalToRat(rec.AccFillSz)
 	avg, _ := parseDecimalToRat(rec.AvgPx)
 	msg.Topic = corews.UserOrderTopic(rec.InstID)
-	msg.Event = corews.TopicUserOrder
-	msg.Parsed = &corews.OrderEvent{
+	msg.Event = coreprovider.RouteOrderUpdate
+	msg.Parsed = &coreprovider.OrderEvent{
 		Symbol:    rec.InstID,
 		OrderID:   rec.OrdID,
 		Status:    mapOKXStatus(rec.State),
@@ -69,7 +70,7 @@ func (w *WS) parseOrderUpdate(msg *core.Message, payload []json.RawMessage) erro
 }
 
 func (w *WS) parseBalanceUpdate(msg *core.Message, payload []json.RawMessage) error {
-	var balances []corews.Balance
+	var balances []core.Balance
 	for _, raw := range payload {
 		var entry struct {
 			BalData []struct {
@@ -82,14 +83,14 @@ func (w *WS) parseBalanceUpdate(msg *core.Message, payload []json.RawMessage) er
 		}
 		for _, bal := range entry.BalData {
 			amt, _ := parseDecimalToRat(bal.CashBal)
-			balances = append(balances, corews.Balance{Asset: bal.Ccy, Available: amt, Time: time.Now()})
+			balances = append(balances, core.Balance{Asset: bal.Ccy, Available: amt, Time: time.Now()})
 		}
 	}
 	if len(balances) == 0 {
 		return nil
 	}
 	msg.Topic = corews.UserBalanceTopic()
-	msg.Event = corews.TopicUserBalance
-	msg.Parsed = &corews.BalanceEvent{Balances: balances}
+	msg.Event = coreprovider.RouteBalanceSnapshot
+	msg.Parsed = &coreprovider.BalanceEvent{Balances: balances}
 	return nil
 }

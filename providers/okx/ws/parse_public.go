@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/coachpo/meltica/core"
+	coreprovider "github.com/coachpo/meltica/core/provider"
 	corews "github.com/coachpo/meltica/core/ws"
 )
 
@@ -68,8 +69,8 @@ func (w *WS) parseTradeSnapshot(msg *core.Message, payload []json.RawMessage, in
 	if when.IsZero() {
 		when = time.Now()
 	}
-	msg.Event = corews.TopicTrade
-	msg.Parsed = &corews.TradeEvent{Symbol: instrument, Price: price, Quantity: qty, Time: when}
+	msg.Event = coreprovider.RouteTradeUpdate
+	msg.Parsed = &coreprovider.TradeEvent{Symbol: instrument, Price: price, Quantity: qty, Time: when}
 	return nil
 }
 
@@ -91,8 +92,8 @@ func (w *WS) parseTickerSnapshot(msg *core.Message, payload []json.RawMessage, i
 	if when.IsZero() {
 		when = time.Now()
 	}
-	msg.Event = corews.TopicTicker
-	msg.Parsed = &corews.TickerEvent{Symbol: instrument, Bid: bid, Ask: ask, Time: when}
+	msg.Event = coreprovider.RouteTickerUpdate
+	msg.Parsed = &coreprovider.TickerEvent{Symbol: instrument, Bid: bid, Ask: ask, Time: when}
 	return nil
 }
 
@@ -147,7 +148,7 @@ func (w *WS) parseBookData(msg *core.Message, payload []json.RawMessage, instrum
 	// Get the complete order book snapshot
 	completeSnapshot := orderBook.GetSnapshot()
 
-	msg.Event = corews.TopicBook
+	msg.Event = coreprovider.RouteBookSnapshot
 	msg.Parsed = &completeSnapshot
 	return nil
 }

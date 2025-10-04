@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/coachpo/meltica/core"
+	coreprovider "github.com/coachpo/meltica/core/provider"
 	corews "github.com/coachpo/meltica/core/ws"
 )
 
@@ -38,22 +39,22 @@ func (w *WS) parseOrderEvent(msg *core.Message, event string, env map[string]any
 	filled := parseDecimal(fmt.Sprint(env["filled_size"]))
 	avg := parseDecimal(fmt.Sprint(env["price"]))
 	msg.Topic = topicFromProviderName(event, symbol)
-	msg.Event = corews.TopicUserOrder
-	msg.Parsed = &corews.OrderEvent{Symbol: symbol, OrderID: id, Status: status, FilledQty: filled, AvgPrice: avg, Time: parseTime(fmt.Sprint(env["time"]))}
+	msg.Event = coreprovider.RouteOrderUpdate
+	msg.Parsed = &coreprovider.OrderEvent{Symbol: symbol, OrderID: id, Status: status, FilledQty: filled, AvgPrice: avg, Time: parseTime(fmt.Sprint(env["time"]))}
 	return nil
 }
 
 func (w *WS) parseBalance(msg *core.Message, event string, env map[string]any) error {
 	accounts, _ := env["accounts"].([]any)
-	balances := make([]corews.Balance, 0, len(accounts))
+	balances := make([]core.Balance, 0, len(accounts))
 	for _, acct := range accounts {
 		row, _ := acct.(map[string]any)
 		asset := strings.ToUpper(fmt.Sprint(row["currency"]))
 		free := parseDecimal(fmt.Sprint(row["balance"]))
-		balances = append(balances, corews.Balance{Asset: asset, Available: free, Time: parseTime(fmt.Sprint(env["time"]))})
+		balances = append(balances, core.Balance{Asset: asset, Available: free, Time: parseTime(fmt.Sprint(env["time"]))})
 	}
 	msg.Topic = topicFromProviderName(event, "")
-	msg.Event = corews.TopicUserBalance
-	msg.Parsed = &corews.BalanceEvent{Balances: balances}
+	msg.Event = coreprovider.RouteBalanceSnapshot
+	msg.Parsed = &coreprovider.BalanceEvent{Balances: balances}
 	return nil
 }

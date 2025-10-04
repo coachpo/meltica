@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/coachpo/meltica/core"
+	coreprovider "github.com/coachpo/meltica/core/provider"
 	corews "github.com/coachpo/meltica/core/ws"
 )
 
@@ -39,10 +40,10 @@ func (w *WS) parsePublicMessage(msg *core.Message, payload []byte) error {
 func (w *WS) parseTicker(msg *core.Message, env map[string]any) error {
 	symbol := w.WSCanonicalSymbol(fmt.Sprint(env["product_id"]))
 	msg.Topic = topicFromProviderName(CNBTopicTicker, symbol)
-	msg.Event = corews.TopicTicker
+	msg.Event = coreprovider.RouteTickerUpdate
 	bid := parseDecimal(fmt.Sprint(env["best_bid"]))
 	ask := parseDecimal(fmt.Sprint(env["best_ask"]))
-	msg.Parsed = &corews.TickerEvent{Symbol: symbol, Bid: bid, Ask: ask, Time: time.Now().UTC()}
+	msg.Parsed = &coreprovider.TickerEvent{Symbol: symbol, Bid: bid, Ask: ask, Time: time.Now().UTC()}
 	return nil
 }
 
@@ -51,8 +52,8 @@ func (w *WS) parseMatch(msg *core.Message, env map[string]any) error {
 	price := parseDecimal(fmt.Sprint(env["price"]))
 	qty := parseDecimal(fmt.Sprint(env["size"]))
 	msg.Topic = topicFromProviderName(CNBTopicTrade, symbol)
-	msg.Event = corews.TopicTrade
-	msg.Parsed = &corews.TradeEvent{Symbol: symbol, Price: price, Quantity: qty, Time: parseTime(fmt.Sprint(env["time"]))}
+	msg.Event = coreprovider.RouteTradeUpdate
+	msg.Parsed = &coreprovider.TradeEvent{Symbol: symbol, Price: price, Quantity: qty, Time: parseTime(fmt.Sprint(env["time"]))}
 	return nil
 }
 
@@ -65,7 +66,7 @@ func (w *WS) parseL2(msg *core.Message, env map[string]any) error {
 	changes, _ := env["changes"].([]any)
 	updateTime := parseTime(fmt.Sprint(env["time"]))
 
-	var bids, asks []corews.DepthLevel
+	var bids, asks []core.BookDepthLevel
 	for _, change := range changes {
 		row, _ := change.([]any)
 		if len(row) < 3 {
@@ -74,7 +75,7 @@ func (w *WS) parseL2(msg *core.Message, env map[string]any) error {
 		side := fmt.Sprint(row[0])
 		price := parseDecimal(fmt.Sprint(row[1]))
 		qty := parseDecimal(fmt.Sprint(row[2]))
-		lvl := corews.DepthLevel{Price: price, Qty: qty}
+		lvl := core.BookDepthLevel{Price: price, Qty: qty}
 		if strings.EqualFold(side, "buy") {
 			bids = append(bids, lvl)
 		} else {
@@ -89,7 +90,7 @@ func (w *WS) parseL2(msg *core.Message, env map[string]any) error {
 	completeSnapshot := orderBook.GetSnapshot()
 
 	msg.Topic = topicFromProviderName("l2update", symbol)
-	msg.Event = corews.TopicBook
+	msg.Event = coreprovider.RouteBookSnapshot
 	msg.Parsed = &completeSnapshot
 	return nil
 }
@@ -104,7 +105,7 @@ func (w *WS) parseSnapshot(msg *core.Message, env map[string]any) error {
 	orderBook := w.orderBooks.GetOrCreateOrderBook(symbol)
 
 	updateTime := parseTime(fmt.Sprint(env["time"]))
-	var bids, asks []corews.DepthLevel
+	var bids, asks []core.BookDepthLevel
 
 	if bidsData, ok := env["bids"].([]any); ok {
 		bids = buildLevels(bidsData)
@@ -120,13 +121,13 @@ func (w *WS) parseSnapshot(msg *core.Message, env map[string]any) error {
 	completeSnapshot := orderBook.GetSnapshot()
 
 	msg.Topic = topicFromProviderName("snapshot", symbol)
-	msg.Event = corews.TopicBook
+	msg.Event = coreprovider.RouteBookSnapshot
 	msg.Parsed = &completeSnapshot
 	return nil
 }
 
-func buildLevels(raw []any) []corews.DepthLevel {
-	out := make([]corews.DepthLevel, 0, len(raw))
+func buildLevels(raw []any) []core.BookDepthLevel {
+	out := make([]core.BookDepthLevel, 0, len(raw))
 	for _, row := range raw {
 		vals, _ := row.([]any)
 		if len(vals) < 2 {
@@ -134,7 +135,7 @@ func buildLevels(raw []any) []corews.DepthLevel {
 		}
 		price := parseDecimal(fmt.Sprint(vals[0]))
 		qty := parseDecimal(fmt.Sprint(vals[1]))
-		out = append(out, corews.DepthLevel{Price: price, Qty: qty})
+		out = append(out, core.BookDepthLevel{Price: price, Qty: qty})
 	}
 	return out
 }

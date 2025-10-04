@@ -1,8 +1,9 @@
-package binance
+package status
 
 import "github.com/coachpo/meltica/core"
 
-func mapBStatus(s string) core.OrderStatus {
+// MapOrderStatus converts Binance order status codes to core order statuses.
+func MapOrderStatus(s string) core.OrderStatus {
 	switch s {
 	case "NEW":
 		return core.OrderNew
@@ -19,7 +20,8 @@ func mapBStatus(s string) core.OrderStatus {
 	}
 }
 
-func mapBTIF(t core.TimeInForce) string {
+// MapTimeInForce converts canonical time-in-force values to Binance codes.
+func MapTimeInForce(t core.TimeInForce) string {
 	switch t {
 	case core.GTC:
 		return "GTC"

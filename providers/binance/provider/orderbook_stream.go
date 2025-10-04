@@ -1,4 +1,4 @@
-package binance
+package provider
 
 import (
 	"context"
@@ -7,38 +7,28 @@ import (
 	"strings"
 	"time"
 
+	coreprovider "github.com/coachpo/meltica/core/provider"
 	corews "github.com/coachpo/meltica/core/ws"
-	"github.com/coachpo/meltica/providers/binance/ws"
+	"github.com/coachpo/meltica/providers/binance/routing"
 )
 
-// OrderBookSnapshots returns a channel of synchronized Binance order book snapshots
-// for the given symbol. The symbol must be provided in canonical form (e.g., BTC-USDT)
-// or in Binance native form (e.g., BTCUSDT). The function handles snapshot initialization,
-// incremental stream subscription, and automatic recovery via the provider's internal
-// order book manager.
-func (p *Provider) OrderBookSnapshots(ctx context.Context, symbol string) (<-chan corews.BookEvent, <-chan error, error) {
+func (p *Provider) OrderBookSnapshots(ctx context.Context, symbol string) (<-chan coreprovider.BookEvent, <-chan error, error) {
 	canonicalSymbol, err := p.canonicalizeSymbol(symbol)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	wsIface := p.WS()
-	handler, ok := wsIface.(*ws.WS)
-	if !ok {
-		return nil, nil, errors.New("binance: unexpected websocket handler type")
-	}
-
-	sub, err := handler.SubscribePublic(ctx, corews.BookTopic(canonicalSymbol))
+	sub, err := p.wsRouter.SubscribePublic(ctx, corews.BookTopic(canonicalSymbol))
 	if err != nil {
 		return nil, nil, fmt.Errorf("binance: subscribe depth stream: %w", err)
 	}
 
-	if err := p.initializeWithRetries(ctx, handler, canonicalSymbol); err != nil {
-		sub.Close()
+	if err := p.initializeWithRetries(ctx, p.wsRouter, canonicalSymbol); err != nil {
+		_ = sub.Close()
 		return nil, nil, err
 	}
 
-	events := make(chan corews.BookEvent, 32)
+	events := make(chan coreprovider.BookEvent, 32)
 	errs := make(chan error, 1)
 
 	go func() {
@@ -47,7 +37,7 @@ func (p *Provider) OrderBookSnapshots(ctx context.Context, symbol string) (<-cha
 		defer sub.Close()
 
 		publishSnapshot := func() bool {
-			snapshot, ok := handler.OrderBookSnapshot(canonicalSymbol)
+			snapshot, ok := p.wsRouter.OrderBookSnapshot(canonicalSymbol)
 			if !ok {
 				return true
 			}
@@ -59,13 +49,15 @@ func (p *Provider) OrderBookSnapshots(ctx context.Context, symbol string) (<-cha
 			}
 		}
 
-		// Emit initial snapshot (if ready).
 		if !publishSnapshot() {
 			return
 		}
 
 		refreshTicker := time.NewTicker(500 * time.Millisecond)
 		defer refreshTicker.Stop()
+
+		routed := sub.C()
+		routeErrs := sub.Err()
 
 		for {
 			select {
@@ -75,7 +67,7 @@ func (p *Provider) OrderBookSnapshots(ctx context.Context, symbol string) (<-cha
 				if !publishSnapshot() {
 					return
 				}
-			case _, ok := <-sub.C():
+			case _, ok := <-routed:
 				if !ok {
 					publishSnapshot()
 					return
@@ -83,7 +75,7 @@ func (p *Provider) OrderBookSnapshots(ctx context.Context, symbol string) (<-cha
 				if !publishSnapshot() {
 					return
 				}
-			case err, ok := <-sub.Err():
+			case err, ok := <-routeErrs:
 				if !ok {
 					return
 				}
@@ -130,7 +122,7 @@ func (p *Provider) canonicalizeSymbol(symbol string) (string, error) {
 	return canonical, nil
 }
 
-func (p *Provider) initializeWithRetries(ctx context.Context, handler *ws.WS, symbol string) error {
+func (p *Provider) initializeWithRetries(ctx context.Context, handler *routing.WSRouter, symbol string) error {
 	const maxRetries = 5
 	var lastErr error
 	for attempt := 0; attempt < maxRetries; attempt++ {

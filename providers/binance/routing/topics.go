@@ -1,10 +1,9 @@
-package ws
+package routing
 
 import (
 	corews "github.com/coachpo/meltica/core/ws"
 )
 
-// Binance-specific topic constants
 const (
 	BNXTradeChannel     = "trade"
 	BNXTickerChannel    = "bookTicker"
