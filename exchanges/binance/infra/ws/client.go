@@ -1,4 +1,4 @@
-package wsinfra
+package ws
 
 import (
 	"context"
