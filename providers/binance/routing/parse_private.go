@@ -51,7 +51,7 @@ func (w *WSRouter) parseOrderUpdate(msg *RoutedMessage, payload []byte) error {
 	msg.Parsed = &coreprovider.OrderEvent{
 		Symbol:    ou.Order.Symbol,
 		OrderID:   fmt.Sprintf("%d", ou.Order.ID),
-		Status:    status.MapOrderStatus(ou.Order.Status),
+		Status:    MapOrderStatus(ou.Order.Status),
 		FilledQty: filled,
 		AvgPrice:  avg,
 		Time:      time.UnixMilli(ou.Order.EventTime),

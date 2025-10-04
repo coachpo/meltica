@@ -14,9 +14,11 @@ import (
 	"time"
 
 	"github.com/coachpo/meltica/core"
+	coreprovider "github.com/coachpo/meltica/core/provider"
 	"github.com/coachpo/meltica/errs"
-	cbws "github.com/coachpo/meltica/providers/coinbase/ws"
-	"github.com/coachpo/meltica/transport"
+	"github.com/coachpo/meltica/providers/coinbase/infra/rest"
+	"github.com/coachpo/meltica/providers/coinbase/infra/wsinfra"
+	"github.com/coachpo/meltica/providers/coinbase/routing"
 )
 
 var capabilities = core.Capabilities(
@@ -28,7 +30,9 @@ var capabilities = core.Capabilities(
 
 type Provider struct {
 	name       string
-	rest       *transport.Client
+	restClient *rest.Client
+	wsInfra    *wsinfra.Client
+	wsRouter   *routing.WSRouter
 	apiKey     string
 	secret     string
 	passphrase string
@@ -40,12 +44,18 @@ type Provider struct {
 }
 
 func TestOnlyNewProvider() *Provider {
-	return &Provider{
+	restClient, _ := rest.NewClient(rest.Config{})
+	wsInfra := wsinfra.NewClient()
+	p := &Provider{
 		name:          "coinbase",
+		restClient:    restClient,
+		wsInfra:       wsInfra,
 		instCache:     map[string]core.Instrument{},
 		canonToNative: map[string]string{},
 		nativeToCanon: map[string]string{},
 	}
+	p.wsRouter = routing.NewWSRouter(wsInfra, p)
+	return p
 }
 
 func TestOnlyNormalizeBalances(raw []accountBalance) []core.Balance {
@@ -53,37 +63,40 @@ func TestOnlyNormalizeBalances(raw []accountBalance) []core.Balance {
 }
 
 func New(apiKey, secret, passphrase string) (*Provider, error) {
-	httpClient := &http.Client{Timeout: 15 * time.Second}
-	rest := &transport.Client{
-		HTTP:    httpClient,
-		BaseURL: "https://api.exchange.coinbase.com",
-		Retry: transport.RetryPolicy{
-			MaxRetries: 3,
-			BaseDelay:  250 * time.Millisecond,
-			MaxDelay:   1500 * time.Millisecond,
-		},
-		DefaultHeaders: map[string]string{
-			"Accept":       "application/json",
-			"Content-Type": "application/json",
-			"User-Agent":   "meltica-coinbase/0.1",
-		},
-		OnHTTPError: mapHTTPError,
+	restClient, err := rest.NewClient(rest.Config{APIKey: apiKey, Secret: secret, Passphrase: passphrase, HTTPClient: &http.Client{Timeout: 15 * time.Second}})
+	if err != nil {
+		return nil, err
 	}
+	wsInfra := wsinfra.NewClient()
 	p := &Provider{
-		name:       "coinbase",
-		rest:       rest,
-		apiKey:     apiKey,
-		secret:     secret,
-		passphrase: passphrase,
+		name:          "coinbase",
+		restClient:    restClient,
+		wsInfra:       wsInfra,
+		apiKey:        apiKey,
+		secret:        secret,
+		passphrase:    passphrase,
+		instCache:     map[string]core.Instrument{},
+		canonToNative: map[string]string{},
+		nativeToCanon: map[string]string{},
 	}
-	if apiKey != "" && secret != "" && passphrase != "" {
-		signer, err := newSigner(apiKey, secret, passphrase)
-		if err != nil {
-			return nil, err
-		}
-		rest.Signer = signer
-	}
+	p.wsRouter = routing.NewWSRouter(wsInfra, p)
 	return p, nil
+}
+
+func (p *Provider) dispatchREST(ctx context.Context, method, path string, query map[string]string, body []byte, signed bool, out any) error {
+	if p.restClient == nil {
+		return errors.New("coinbase: rest client not initialized")
+	}
+	req := coreprovider.RESTRequest{Method: method, Path: path, Query: query, Body: body, Signed: signed}
+	return p.restClient.Do(ctx, req, out)
+}
+
+func (p *Provider) dispatchRESTWithHeaders(ctx context.Context, method, path string, query map[string]string, body []byte, signed bool, out any) (http.Header, error) {
+	if p.restClient == nil {
+		return nil, errors.New("coinbase: rest client not initialized")
+	}
+	req := coreprovider.RESTRequest{Method: method, Path: path, Query: query, Body: body, Signed: signed}
+	return p.restClient.DoWithHeaders(ctx, req, out)
 }
 
 func (p *Provider) Name() string { return p.name }
@@ -98,9 +111,20 @@ func (p *Provider) LinearFutures(ctx context.Context) core.FuturesAPI { return u
 
 func (p *Provider) InverseFutures(ctx context.Context) core.FuturesAPI { return unsupportedFutures{} }
 
-func (p *Provider) WS() core.WS { return cbws.New(p) }
+func (p *Provider) WS() core.WS {
+	if p.wsRouter == nil {
+		p.wsInfra = wsinfra.NewClient()
+		p.wsRouter = routing.NewWSRouter(p.wsInfra, p)
+	}
+	return newWSService(p.wsRouter)
+}
 
-func (p *Provider) Close() error { return nil }
+func (p *Provider) Close() error {
+	if p.wsRouter != nil {
+		_ = p.wsRouter.Close()
+	}
+	return nil
+}
 
 // WebSocket support methods
 func (p *Provider) Native(symbol string) string {
@@ -178,7 +202,7 @@ func (s spotAPI) ServerTime(ctx context.Context) (time.Time, error) {
 	var resp struct {
 		Epoch float64 `json:"epoch"`
 	}
-	if err := s.p.rest.Do(ctx, http.MethodGet, "/time", nil, nil, false, &resp); err != nil {
+	if err := s.p.dispatchREST(ctx, http.MethodGet, "/time", nil, nil, false, &resp); err != nil {
 		return time.Time{}, err
 	}
 	if resp.Epoch == 0 {
@@ -190,7 +214,7 @@ func (s spotAPI) ServerTime(ctx context.Context) (time.Time, error) {
 
 func (s spotAPI) Instruments(ctx context.Context) ([]core.Instrument, error) {
 	var products []product
-	if err := s.p.rest.Do(ctx, http.MethodGet, "/products", nil, nil, false, &products); err != nil {
+	if err := s.p.dispatchREST(ctx, http.MethodGet, "/products", nil, nil, false, &products); err != nil {
 		return nil, err
 	}
 	out := make([]core.Instrument, 0, len(products))
@@ -238,7 +262,7 @@ func (s spotAPI) Ticker(ctx context.Context, symbol string) (core.Ticker, error)
 		Time time.Time `json:"time"`
 	}
 	path := fmt.Sprintf("/products/%s/ticker", url.PathEscape(product))
-	if err := s.p.rest.Do(ctx, http.MethodGet, path, nil, nil, false, &resp); err != nil {
+	if err := s.p.dispatchREST(ctx, http.MethodGet, path, nil, nil, false, &resp); err != nil {
 		return core.Ticker{}, err
 	}
 	bid := parseDecimal(resp.Bid)
@@ -248,7 +272,7 @@ func (s spotAPI) Ticker(ctx context.Context, symbol string) (core.Ticker, error)
 
 func (s spotAPI) Balances(ctx context.Context) ([]core.Balance, error) {
 	var resp []accountBalance
-	if err := s.p.rest.Do(ctx, http.MethodGet, "/accounts", nil, nil, true, &resp); err != nil {
+	if err := s.p.dispatchREST(ctx, http.MethodGet, "/accounts", nil, nil, true, &resp); err != nil {
 		return nil, err
 	}
 	return normalizeBalances(resp), nil
@@ -275,7 +299,7 @@ func (s spotAPI) Trades(ctx context.Context, symbol string, since int64) ([]core
 			params["after"] = fmt.Sprintf("%d", since)
 		}
 		var resp []fill
-		hdr, err := s.p.rest.DoWithHeaders(ctx, http.MethodGet, "/fills", params, nil, true, &resp)
+		hdr, err := s.p.dispatchRESTWithHeaders(ctx, http.MethodGet, "/fills", params, nil, true, &resp)
 		if err != nil {
 			return nil, err
 		}
@@ -341,7 +365,7 @@ func (s spotAPI) PlaceOrder(ctx context.Context, req core.OrderRequest) (core.Or
 		return core.Order{}, err
 	}
 	var resp orderResponse
-	if err := s.p.rest.Do(ctx, http.MethodPost, "/orders", nil, body, true, &resp); err != nil {
+	if err := s.p.dispatchREST(ctx, http.MethodPost, "/orders", nil, body, true, &resp); err != nil {
 		return core.Order{}, err
 	}
 	symbolCanon := req.Symbol
@@ -365,7 +389,7 @@ func (s spotAPI) GetOrder(ctx context.Context, symbol, id, clientID string) (cor
 		return core.Order{}, errors.New("coinbase: order id or client id required")
 	}
 	var resp orderResponse
-	if err := s.p.rest.Do(ctx, http.MethodGet, path, nil, nil, true, &resp); err != nil {
+	if err := s.p.dispatchREST(ctx, http.MethodGet, path, nil, nil, true, &resp); err != nil {
 		return core.Order{}, err
 	}
 	filled := parseDecimal(resp.FilledSize)
@@ -401,7 +425,7 @@ func (s spotAPI) CancelOrder(ctx context.Context, symbol, id, clientID string) e
 	default:
 		return errors.New("coinbase: cancel requires order id or client id")
 	}
-	return s.p.rest.Do(ctx, http.MethodDelete, path, nil, nil, true, nil)
+	return s.p.dispatchREST(ctx, http.MethodDelete, path, nil, nil, true, nil)
 }
 
 // Symbol conversion (static demo): only BTC-USD style to BTC-USDT is not 1:1 on Coinbase,
@@ -610,8 +634,4 @@ func mapStatus(status, reason string) core.OrderStatus {
 	default:
 		return core.OrderNew
 	}
-}
-
-func mapHTTPError(status int, body []byte) error {
-	return fmt.Errorf("coinbase http %d: %s", status, string(body))
 }

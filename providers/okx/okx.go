@@ -3,6 +3,7 @@ package okx
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
 	"net/http"
@@ -11,13 +12,17 @@ import (
 	"time"
 
 	"github.com/coachpo/meltica/core"
-	okxws "github.com/coachpo/meltica/providers/okx/ws"
-	"github.com/coachpo/meltica/transport"
+	coreprovider "github.com/coachpo/meltica/core/provider"
+	"github.com/coachpo/meltica/providers/okx/infra/rest"
+	"github.com/coachpo/meltica/providers/okx/infra/wsinfra"
+	"github.com/coachpo/meltica/providers/okx/routing"
 )
 
 type Provider struct {
 	name       string
-	rest       *transport.Client
+	restClient *rest.Client
+	wsInfra    *wsinfra.Client
+	wsRouter   *routing.WSRouter
 	apiKey     string
 	secret     string
 	passphrase string
@@ -36,32 +41,30 @@ var capabilities = core.Capabilities(
 )
 
 func New(publicKey, secret, passphrase string) (*Provider, error) {
-	httpClient := &http.Client{Timeout: 10 * time.Second}
-	rest := &transport.Client{HTTP: httpClient, BaseURL: "https://www.okx.com"}
-	rest.Signer = okxSigner(publicKey, secret, passphrase)
-	return &Provider{name: "okx", rest: rest, apiKey: publicKey, secret: secret, passphrase: passphrase}, nil
+	restClient, err := rest.NewClient(rest.Config{APIKey: publicKey, Secret: secret, Passphrase: passphrase, HTTPClient: &http.Client{Timeout: 10 * time.Second}})
+	if err != nil {
+		return nil, err
+	}
+	wsInfra := wsinfra.NewClient()
+	p := &Provider{
+		name:       "okx",
+		restClient: restClient,
+		wsInfra:    wsInfra,
+		apiKey:     publicKey,
+		secret:     secret,
+		passphrase: passphrase,
+		instCache:  map[string]core.Instrument{},
+	}
+	p.wsRouter = routing.NewWSRouter(wsInfra, p)
+	return p, nil
 }
 
-// do wraps transport.Do and handles OKX envelope {code,msg,data}
 func (p *Provider) do(ctx context.Context, method, path string, query map[string]string, body []byte, signed bool, out any) error {
-	var env struct {
-		Code string          `json:"code"`
-		Msg  string          `json:"msg"`
-		Data json.RawMessage `json:"data"`
+	if p.restClient == nil {
+		return errors.New("okx: rest client not initialized")
 	}
-	if err := p.rest.Do(ctx, method, path, query, body, signed, &env); err != nil {
-		return err
-	}
-	if env.Code != "0" && env.Code != "" {
-		return mapOKXCode(200, env.Code, env.Msg)
-	}
-	if out == nil {
-		return nil
-	}
-	if len(env.Data) == 0 || string(env.Data) == "null" {
-		return nil
-	}
-	return json.Unmarshal(env.Data, out)
+	req := coreprovider.RESTRequest{Method: method, Path: path, Query: query, Body: body, Signed: signed}
+	return p.restClient.Do(ctx, req, out)
 }
 
 func (p *Provider) Name() string { return p.name }
@@ -73,8 +76,20 @@ func (p *Provider) SupportedProtocolVersion() string { return core.ProtocolVersi
 func (p *Provider) Spot(ctx context.Context) core.SpotAPI              { return spotAPI{p} }
 func (p *Provider) LinearFutures(ctx context.Context) core.FuturesAPI  { return futAPI{p} }
 func (p *Provider) InverseFutures(ctx context.Context) core.FuturesAPI { return futAPI{p} }
-func (p *Provider) WS() core.WS                                        { return okxws.New(p) }
-func (p *Provider) Close() error                                       { return nil }
+func (p *Provider) WS() core.WS {
+	if p.wsRouter == nil {
+		p.wsInfra = wsinfra.NewClient()
+		p.wsRouter = routing.NewWSRouter(p.wsInfra, p)
+	}
+	return newWSService(p.wsRouter)
+}
+
+func (p *Provider) Close() error {
+	if p.wsRouter != nil {
+		_ = p.wsRouter.Close()
+	}
+	return nil
+}
 
 // WebSocket support methods
 func (p *Provider) APIKey() string {

@@ -15,8 +15,9 @@ import (
 
 	"github.com/coachpo/meltica/core"
 	"github.com/coachpo/meltica/errs"
-	krakenws "github.com/coachpo/meltica/providers/kraken/ws"
-	"github.com/coachpo/meltica/transport"
+	"github.com/coachpo/meltica/providers/kraken/infra/rest"
+	"github.com/coachpo/meltica/providers/kraken/infra/wsinfra"
+	"github.com/coachpo/meltica/providers/kraken/routing"
 )
 
 // capability bitset for Kraken features.
@@ -34,7 +35,10 @@ var capabilities = core.Capabilities(
 // Provider implements core.Provider for Kraken.
 type Provider struct {
 	name            string
-	rest            *transport.Client
+	restClient      *rest.Client
+	restRouter      *routing.RESTRouter
+	wsInfra         *wsinfra.Client
+	wsRouter        *routing.WSRouter
 	apiKey          string
 	secret          string
 	instCache       map[string]core.Instrument
@@ -48,12 +52,19 @@ type Provider struct {
 
 // TestOnlyNewProvider constructs a provider instance for tests.
 func TestOnlyNewProvider() *Provider {
-	return &Provider{
+	restClient := rest.NewClient(rest.Config{HTTPClient: &http.Client{Timeout: 15 * time.Second}})
+	p := &Provider{
 		name:            "kraken",
+		restClient:      restClient,
+		restRouter:      routing.NewRESTRouter(restClient),
+		wsInfra:         wsinfra.NewClient(),
 		instCache:       map[string]core.Instrument{},
 		canonToKraken:   map[string]string{},
 		canonToKrakenWS: map[string]string{},
+		nativeToCanon:   map[string]string{},
 	}
+	p.wsRouter = routing.NewWSRouter(p.wsInfra, p)
+	return p
 }
 
 // TestOnlyNormalizeBalances exposes balance normalization for fixtures.
@@ -63,26 +74,31 @@ func TestOnlyNormalizeBalances(raw map[string]string) []core.Balance {
 
 // New constructs a Kraken provider with optional API credentials.
 func New(apiKey, secret string) (*Provider, error) {
-	httpClient := &http.Client{Timeout: 15 * time.Second}
-	rest := &transport.Client{
-		HTTP:    httpClient,
-		BaseURL: "https://api.kraken.com",
-		Retry: transport.RetryPolicy{
-			MaxRetries: 3,
-			BaseDelay:  250 * time.Millisecond,
-			MaxDelay:   1500 * time.Millisecond,
-		},
-		DefaultHeaders: map[string]string{
-			"Accept":     "application/json",
-			"User-Agent": "meltica-kraken/0.1",
-		},
+	restClient := rest.NewClient(rest.Config{APIKey: apiKey, Secret: secret, HTTPClient: &http.Client{Timeout: 15 * time.Second}})
+	restRouter := routing.NewRESTRouter(restClient)
+	wsInfra := wsinfra.NewClient()
+	p := &Provider{
+		name:            "kraken",
+		restClient:      restClient,
+		restRouter:      restRouter,
+		wsInfra:         wsInfra,
+		apiKey:          apiKey,
+		secret:          secret,
+		instCache:       map[string]core.Instrument{},
+		canonToKraken:   map[string]string{},
+		canonToKrakenWS: map[string]string{},
+		nativeToCanon:   map[string]string{},
 	}
-	rest.OnHTTPError = mapHTTPError
-	p := &Provider{name: "kraken", rest: rest, apiKey: apiKey, secret: secret}
-	if apiKey != "" && secret != "" {
-		rest.Signer = newSigner(apiKey, secret)
-	}
+	p.wsRouter = routing.NewWSRouter(wsInfra, p)
 	return p, nil
+}
+
+func (p *Provider) dispatchREST(ctx context.Context, api rest.API, method, path string, query map[string]string, body []byte, signed bool, out any) error {
+	if p.restRouter == nil {
+		return errors.New("kraken: rest router not initialized")
+	}
+	msg := routing.RESTMessage{API: api, Method: method, Path: path, Query: query, Body: body, Signed: signed}
+	return p.restRouter.Dispatch(ctx, msg, out)
 }
 
 // Name reports the adapter identifier.
@@ -105,10 +121,21 @@ func (p *Provider) InverseFutures(ctx context.Context) core.FuturesAPI {
 }
 
 // WS returns the websocket handler.
-func (p *Provider) WS() core.WS { return krakenws.New(p) }
+func (p *Provider) WS() core.WS {
+	if p.wsRouter == nil {
+		p.wsInfra = wsinfra.NewClient()
+		p.wsRouter = routing.NewWSRouter(p.wsInfra, p)
+	}
+	return newWSService(p.wsRouter)
+}
 
 // Close cleans up resources.
-func (p *Provider) Close() error { return nil }
+func (p *Provider) Close() error {
+	if p.wsRouter != nil {
+		_ = p.wsRouter.Close()
+	}
+	return nil
+}
 
 // WebSocket support methods
 func (p *Provider) NativeSymbolForWS(canon string) string {
@@ -127,7 +154,7 @@ func (p *Provider) NativeSymbolForWS(canon string) string {
 
 func (p *Provider) CanonicalSymbol(exch string, requested []string) string {
 	if exch == "" {
-		return krakenws.CanonicalFromRequested(exch, requested)
+		return routing.CanonicalFromRequested(exch, requested)
 	}
 	upper := strings.ToUpper(strings.TrimSpace(exch))
 	if p.nativeToCanon != nil {
@@ -148,7 +175,7 @@ func (p *Provider) CanonicalSymbol(exch string, requested []string) string {
 			return c
 		}
 	}
-	return krakenws.CanonicalFromRequested(upper, requested)
+	return routing.CanonicalFromRequested(upper, requested)
 }
 
 func (p *Provider) MapNativeToCanon(native string) string {
@@ -200,10 +227,10 @@ func (p *Provider) getWSToken(ctx context.Context) (string, error) {
 			Expires int64  `json:"expires"`
 		} `json:"result"`
 	}
-	if err := p.rest.Do(ctx, http.MethodPost, "/0/private/GetWebSocketsToken", nil, []byte(form.Encode()), true, &resp); err != nil {
+	if err := p.dispatchREST(ctx, rest.SpotAPI, http.MethodPost, "/0/private/GetWebSocketsToken", nil, []byte(form.Encode()), true, &resp); err != nil {
 		return "", err
 	}
-	if err := resultError(resp.Error); err != nil {
+	if err := rest.ResultError(resp.Error); err != nil {
 		return "", err
 	}
 	if len(resp.Result) == 0 || resp.Result[0].Token == "" {
@@ -230,7 +257,7 @@ func (p *Provider) doPrivate(ctx context.Context, path string, form url.Values, 
 	}
 	form.Set("nonce", strconv.FormatInt(time.Now().UnixMilli(), 10))
 	body := []byte(form.Encode())
-	return p.rest.Do(ctx, http.MethodPost, path, nil, body, true, out)
+	return p.dispatchREST(ctx, rest.SpotAPI, http.MethodPost, path, nil, body, true, out)
 }
 
 func (p *Provider) mapNativeToCanon(native string) string {
@@ -257,10 +284,10 @@ func (s spotAPI) ServerTime(ctx context.Context) (time.Time, error) {
 			UnixTime int64 `json:"unixtime"`
 		} `json:"result"`
 	}
-	if err := s.p.rest.Do(ctx, http.MethodGet, "/0/public/Time", nil, nil, false, &resp); err != nil {
+	if err := s.p.dispatchREST(ctx, rest.SpotAPI, http.MethodGet, "/0/public/Time", nil, nil, false, &resp); err != nil {
 		return time.Time{}, err
 	}
-	if err := resultError(resp.Error); err != nil {
+	if err := rest.ResultError(resp.Error); err != nil {
 		return time.Time{}, err
 	}
 	if resp.Result.UnixTime == 0 {
@@ -274,10 +301,10 @@ func (s spotAPI) Instruments(ctx context.Context) ([]core.Instrument, error) {
 		Error  []string             `json:"error"`
 		Result map[string]assetPair `json:"result"`
 	}
-	if err := s.p.rest.Do(ctx, http.MethodGet, "/0/public/AssetPairs", nil, nil, false, &resp); err != nil {
+	if err := s.p.dispatchREST(ctx, rest.SpotAPI, http.MethodGet, "/0/public/AssetPairs", nil, nil, false, &resp); err != nil {
 		return nil, err
 	}
-	if err := resultError(resp.Error); err != nil {
+	if err := rest.ResultError(resp.Error); err != nil {
 		return nil, err
 	}
 	out := make([]core.Instrument, 0, len(resp.Result))
@@ -335,10 +362,10 @@ func (s spotAPI) Ticker(ctx context.Context, symbol string) (core.Ticker, error)
 		Error  []string                        `json:"error"`
 		Result map[string]krakenTickerEnvelope `json:"result"`
 	}
-	if err := s.p.rest.Do(ctx, http.MethodGet, "/0/public/Ticker", query, nil, false, &resp); err != nil {
+	if err := s.p.dispatchREST(ctx, rest.SpotAPI, http.MethodGet, "/0/public/Ticker", query, nil, false, &resp); err != nil {
 		return core.Ticker{}, err
 	}
-	if err := resultError(resp.Error); err != nil {
+	if err := rest.ResultError(resp.Error); err != nil {
 		return core.Ticker{}, err
 	}
 	for _, data := range resp.Result {
@@ -357,7 +384,7 @@ func (s spotAPI) Balances(ctx context.Context) ([]core.Balance, error) {
 	if err := s.p.doPrivate(ctx, "/0/private/Balance", nil, &resp); err != nil {
 		return nil, err
 	}
-	if err := resultError(resp.Error); err != nil {
+	if err := rest.ResultError(resp.Error); err != nil {
 		return nil, err
 	}
 	return normalizeBalances(resp.Result), nil
@@ -393,7 +420,7 @@ func (s spotAPI) Trades(ctx context.Context, symbol string, since int64) ([]core
 		if err := s.p.doPrivate(ctx, "/0/private/TradesHistory", form, &resp); err != nil {
 			return nil, err
 		}
-		if err := resultError(resp.Error); err != nil {
+		if err := rest.ResultError(resp.Error); err != nil {
 			return nil, err
 		}
 		batch := make([]core.Trade, 0, len(resp.Result.Trades))
@@ -475,10 +502,10 @@ func (s spotAPI) PlaceOrder(ctx context.Context, req core.OrderRequest) (core.Or
 			TxID []string `json:"txid"`
 		} `json:"result"`
 	}
-	if err := s.p.rest.Do(ctx, http.MethodPost, "/0/private/AddOrder", nil, body, true, &resp); err != nil {
+	if err := s.p.dispatchREST(ctx, rest.SpotAPI, http.MethodPost, "/0/private/AddOrder", nil, body, true, &resp); err != nil {
 		return core.Order{}, err
 	}
-	if err := resultError(resp.Error); err != nil {
+	if err := rest.ResultError(resp.Error); err != nil {
 		return core.Order{}, err
 	}
 	orderID := ""
@@ -502,10 +529,10 @@ func (s spotAPI) GetOrder(ctx context.Context, symbol, id, clientID string) (cor
 		Error  []string               `json:"error"`
 		Result map[string]krakenOrder `json:"result"`
 	}
-	if err := s.p.rest.Do(ctx, http.MethodPost, "/0/private/QueryOrders", nil, body, true, &resp); err != nil {
+	if err := s.p.dispatchREST(ctx, rest.SpotAPI, http.MethodPost, "/0/private/QueryOrders", nil, body, true, &resp); err != nil {
 		return core.Order{}, err
 	}
-	if err := resultError(resp.Error); err != nil {
+	if err := rest.ResultError(resp.Error); err != nil {
 		return core.Order{}, err
 	}
 	for _, ord := range resp.Result {
@@ -535,10 +562,10 @@ func (s spotAPI) CancelOrder(ctx context.Context, symbol, id, clientID string) e
 			Count int `json:"count"`
 		} `json:"result"`
 	}
-	if err := s.p.rest.Do(ctx, http.MethodPost, "/0/private/CancelOrder", nil, body, true, &resp); err != nil {
+	if err := s.p.dispatchREST(ctx, rest.SpotAPI, http.MethodPost, "/0/private/CancelOrder", nil, body, true, &resp); err != nil {
 		return err
 	}
-	return resultError(resp.Error)
+	return rest.ResultError(resp.Error)
 }
 
 // Symbol conversion (static demo): only BTCUSDT <-> BTC-USDT
@@ -563,10 +590,10 @@ func (f futuresAPI) Instruments(ctx context.Context) ([]core.Instrument, error) 
 		Error  []string            `json:"error"`
 		Result []krakenFuturesInst `json:"result"`
 	}
-	if err := f.p.rest.Do(ctx, http.MethodGet, "/api/v3/instruments", nil, nil, false, &resp); err != nil {
+	if err := f.p.dispatchREST(ctx, rest.FuturesAPI, http.MethodGet, "/api/v3/instruments", nil, nil, false, &resp); err != nil {
 		return nil, err
 	}
-	if err := resultError(resp.Error); err != nil {
+	if err := rest.ResultError(resp.Error); err != nil {
 		return nil, err
 	}
 	out := make([]core.Instrument, 0, len(resp.Result))
@@ -600,10 +627,10 @@ func (f futuresAPI) Ticker(ctx context.Context, symbol string) (core.Ticker, err
 		Error  []string                       `json:"error"`
 		Result map[string]krakenFuturesTicker `json:"result"`
 	}
-	if err := f.p.rest.Do(ctx, http.MethodGet, "/api/v3/tickers", nil, nil, false, &resp); err != nil {
+	if err := f.p.dispatchREST(ctx, rest.FuturesAPI, http.MethodGet, "/api/v3/tickers", nil, nil, false, &resp); err != nil {
 		return core.Ticker{}, err
 	}
-	if err := resultError(resp.Error); err != nil {
+	if err := rest.ResultError(resp.Error); err != nil {
 		return core.Ticker{}, err
 	}
 	for _, tick := range resp.Result {
@@ -636,10 +663,10 @@ func (f futuresAPI) PlaceOrder(ctx context.Context, req core.OrderRequest) (core
 			OrderID string `json:"order_id"`
 		} `json:"result"`
 	}
-	if err := f.p.rest.Do(ctx, http.MethodPost, "/api/v3/sendorder", nil, body, true, &resp); err != nil {
+	if err := f.p.dispatchREST(ctx, rest.FuturesAPI, http.MethodPost, "/api/v3/sendorder", nil, body, true, &resp); err != nil {
 		return core.Order{}, err
 	}
-	if err := resultError(resp.Error); err != nil {
+	if err := rest.ResultError(resp.Error); err != nil {
 		return core.Order{}, err
 	}
 	return core.Order{ID: resp.Result.OrderID, Symbol: req.Symbol, Status: core.OrderNew}, nil
@@ -650,10 +677,10 @@ func (f futuresAPI) Positions(ctx context.Context, symbols ...string) ([]core.Po
 		Error  []string                `json:"error"`
 		Result []krakenFuturesPosition `json:"result"`
 	}
-	if err := f.p.rest.Do(ctx, http.MethodGet, "/api/v3/openpositions", nil, nil, true, &resp); err != nil {
+	if err := f.p.dispatchREST(ctx, rest.FuturesAPI, http.MethodGet, "/api/v3/openpositions", nil, nil, true, &resp); err != nil {
 		return nil, err
 	}
-	if err := resultError(resp.Error); err != nil {
+	if err := rest.ResultError(resp.Error); err != nil {
 		return nil, err
 	}
 	out := make([]core.Position, 0, len(resp.Result))
