@@ -1,11 +1,11 @@
 package binance
 
 import (
-	"github.com/coachpo/meltica/exchanges/binance/provider"
+	"github.com/coachpo/meltica/exchanges/binance/exchange"
 )
 
-type Exchange = provider.Exchange
+type Exchange = exchange.Exchange
 
 func New(apiKey, secret string) (*Exchange, error) {
-	return provider.New(apiKey, secret)
+	return exchange.New(apiKey, secret)
 }
