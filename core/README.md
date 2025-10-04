@@ -171,9 +171,9 @@ topic := topics.Trade("BTC-USDT")
 channel, symbol := topics.Parse("trade:BTC-USDT")
 ```
 
-### Topic Mappers (`exchanges/infra/topics`)
+### Topic Mappers (`exchanges/shared/infra/topics`)
 
-`exchanges/infra/topics` exposes channel mapping helpers for exchange adapters.
+`exchanges/shared/infra/topics` exposes channel mapping helpers for exchange adapters.
 
 ```go
 mapper := infratopics.NewMapper(infratopics.MappingConfig{ProtocolToExchange: map[string]string{topics.TopicTrade: "trade"}})

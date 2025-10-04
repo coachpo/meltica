@@ -2,7 +2,7 @@ package routing
 
 import (
 	coretopics "github.com/coachpo/meltica/core/topics"
-	infratopics "github.com/coachpo/meltica/exchanges/infra/topics"
+	infratopics "github.com/coachpo/meltica/exchanges/shared/infra/topics"
 )
 
 const (

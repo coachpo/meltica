@@ -1,64 +1,28 @@
 package routing
 
 import (
-	"context"
-	"net/http"
 	"strings"
 
 	coreexchange "github.com/coachpo/meltica/core/exchange"
 	"github.com/coachpo/meltica/exchanges/binance/infra/rest"
+	genericrouting "github.com/coachpo/meltica/exchanges/shared/routing"
 )
 
-// RESTMessage encapsulates information needed to route a REST request through Level 2.
-type RESTMessage struct {
-	API    rest.API
-	Method string
-	Path   string
-	Query  map[string]string
-	Body   []byte
-	Signed bool
-	Header http.Header
-}
-
-// RESTRouter inspects REST messages and forwards them to the correct Level 1 client.
-type RESTRouter struct {
-	client coreexchange.RESTClient
-}
-
 // NewRESTRouter constructs a router backed by the Level 1 REST infrastructure client.
-func NewRESTRouter(client coreexchange.RESTClient) *RESTRouter {
-	return &RESTRouter{client: client}
+func NewRESTRouter(client coreexchange.RESTClient) genericrouting.RESTDispatcher {
+	resolver := genericrouting.RESTAPIResolverFunc(func(msg genericrouting.RESTMessage) string {
+		return inferAPI(msg.Path)
+	})
+	return genericrouting.NewDefaultRESTRouter(client, resolver)
 }
 
-// Dispatch sends the REST message to the appropriate Binance API surface.
-func (r *RESTRouter) Dispatch(ctx context.Context, msg RESTMessage, out any) error {
-	api := msg.API
-	if api == "" {
-		api = inferAPI(msg.Path)
-	}
-	req := coreexchange.RESTRequest{
-		API:    string(api),
-		Method: msg.Method,
-		Path:   msg.Path,
-		Query:  msg.Query,
-		Body:   msg.Body,
-		Signed: msg.Signed,
-		Header: msg.Header,
-	}
-	resp, err := r.client.DoRequest(ctx, req)
-	if err != nil {
-		return r.client.HandleError(ctx, req, err)
-	}
-	return r.client.HandleResponse(ctx, req, resp, out)
-}
-
-func inferAPI(path string) rest.API {
+func inferAPI(path string) string {
 	switch {
 	case strings.HasPrefix(path, "/fapi/"):
-		return rest.LinearAPI
+		return string(rest.LinearAPI)
 	case strings.HasPrefix(path, "/dapi/"):
-		return rest.InverseAPI
+		return string(rest.InverseAPI)
 	default:
-		return rest.SpotAPI
+		return string(rest.SpotAPI)
 	}
 }

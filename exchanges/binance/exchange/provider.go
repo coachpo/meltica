@@ -14,17 +14,18 @@ import (
 	"github.com/coachpo/meltica/exchanges/binance/infra/rest"
 	"github.com/coachpo/meltica/exchanges/binance/infra/ws"
 	"github.com/coachpo/meltica/exchanges/binance/internal"
-	"github.com/coachpo/meltica/exchanges/binance/routing"
+	bnrouting "github.com/coachpo/meltica/exchanges/binance/routing"
+	routingrest "github.com/coachpo/meltica/exchanges/shared/routing"
 )
 
 type Exchange struct {
 	name string
 
 	restClient *rest.Client
-	restRouter *routing.RESTRouter
+	restRouter routingrest.RESTDispatcher
 
 	wsInfra  *ws.Client
-	wsRouter *routing.WSRouter
+	wsRouter *bnrouting.WSRouter
 
 	instCache map[core.Market]map[string]core.Instrument
 	symbols   *symbolRegistry
@@ -46,30 +47,26 @@ var capabilities = core.Capabilities(
 
 func New(apiKey, secret string, opts ...config.Option) (*Exchange, error) {
 	settings := config.FromEnv()
-	settings = config.Apply(settings, opts...)
-	if v := strings.TrimSpace(apiKey); v != "" {
-		settings.Binance.APIKey = v
-	}
-	if v := strings.TrimSpace(secret); v != "" {
-		settings.Binance.APISecret = v
-	}
+	options := append(opts, config.WithBinanceAPI(apiKey, secret))
+	settings = config.Apply(settings, options...)
 	return NewWithSettings(settings)
 }
 
 func NewWithSettings(settings config.Settings) (*Exchange, error) {
+	binCfg := resolveBinanceSettings(settings)
 	restClient := rest.NewClient(rest.Config{
-		APIKey:         settings.Binance.APIKey,
-		Secret:         settings.Binance.APISecret,
-		SpotBaseURL:    settings.Binance.SpotBaseURL,
-		LinearBaseURL:  settings.Binance.LinearBaseURL,
-		InverseBaseURL: settings.Binance.InverseBaseURL,
-		Timeout:        settings.Binance.HTTPTimeout,
+		APIKey:         binCfg.Credentials.APIKey,
+		Secret:         binCfg.Credentials.APISecret,
+		SpotBaseURL:    binCfg.REST[config.BinanceRESTSurfaceSpot],
+		LinearBaseURL:  binCfg.REST[config.BinanceRESTSurfaceLinear],
+		InverseBaseURL: binCfg.REST[config.BinanceRESTSurfaceInverse],
+		Timeout:        binCfg.HTTPTimeout,
 	})
-	restRouter := routing.NewRESTRouter(restClient)
+	restRouter := bnrouting.NewRESTRouter(restClient)
 	wsInfra := ws.NewClient(ws.Config{
-		PublicURL:        settings.Binance.PublicWSURL,
-		PrivateURL:       settings.Binance.PrivateWSURL,
-		HandshakeTimeout: settings.Binance.HandshakeTimeout,
+		PublicURL:        binCfg.Websocket.PublicURL,
+		PrivateURL:       binCfg.Websocket.PrivateURL,
+		HandshakeTimeout: binCfg.HandshakeTimeout,
 	})
 
 	x := &Exchange{
@@ -79,9 +76,9 @@ func NewWithSettings(settings config.Settings) (*Exchange, error) {
 		wsInfra:    wsInfra,
 		instCache:  make(map[core.Market]map[string]core.Instrument),
 		symbols:    newSymbolRegistry(),
-		cfg:        settings,
+		cfg:        config.Apply(settings),
 	}
-	x.wsRouter = routing.NewWSRouter(wsInfra, x)
+	x.wsRouter = bnrouting.NewWSRouter(wsInfra, x)
 	return x, nil
 }
 
@@ -96,19 +93,20 @@ func (x *Exchange) Config() config.Settings {
 func (x *Exchange) UpdateConfig(opts ...config.Option) error {
 	base := x.Config()
 	newCfg := config.Apply(base, opts...)
+	binCfg := resolveBinanceSettings(newCfg)
 	restClient := rest.NewClient(rest.Config{
-		APIKey:         newCfg.Binance.APIKey,
-		Secret:         newCfg.Binance.APISecret,
-		SpotBaseURL:    newCfg.Binance.SpotBaseURL,
-		LinearBaseURL:  newCfg.Binance.LinearBaseURL,
-		InverseBaseURL: newCfg.Binance.InverseBaseURL,
-		Timeout:        newCfg.Binance.HTTPTimeout,
+		APIKey:         binCfg.Credentials.APIKey,
+		Secret:         binCfg.Credentials.APISecret,
+		SpotBaseURL:    binCfg.REST[config.BinanceRESTSurfaceSpot],
+		LinearBaseURL:  binCfg.REST[config.BinanceRESTSurfaceLinear],
+		InverseBaseURL: binCfg.REST[config.BinanceRESTSurfaceInverse],
+		Timeout:        binCfg.HTTPTimeout,
 	})
-	restRouter := routing.NewRESTRouter(restClient)
+	restRouter := bnrouting.NewRESTRouter(restClient)
 	wsInfra := ws.NewClient(ws.Config{
-		PublicURL:        newCfg.Binance.PublicWSURL,
-		PrivateURL:       newCfg.Binance.PrivateWSURL,
-		HandshakeTimeout: newCfg.Binance.HandshakeTimeout,
+		PublicURL:        binCfg.Websocket.PublicURL,
+		PrivateURL:       binCfg.Websocket.PrivateURL,
+		HandshakeTimeout: binCfg.HandshakeTimeout,
 	})
 
 	x.cfgMu.Lock()
@@ -118,7 +116,7 @@ func (x *Exchange) UpdateConfig(opts ...config.Option) error {
 	x.restClient = restClient
 	x.restRouter = restRouter
 	x.wsInfra = wsInfra
-	x.wsRouter = routing.NewWSRouter(wsInfra, x)
+	x.wsRouter = bnrouting.NewWSRouter(wsInfra, x)
 	x.cfg = newCfg
 	x.cfgMu.Unlock()
 
@@ -151,6 +149,40 @@ func (x *Exchange) Close() error {
 	return nil
 }
 
+func resolveBinanceSettings(cfg config.Settings) config.ExchangeSettings {
+	defaults, _ := config.DefaultExchangeSettings(config.ExchangeBinance)
+	override, ok := cfg.Exchange(config.ExchangeBinance)
+	if !ok {
+		return defaults
+	}
+
+	merged := defaults
+	for k, v := range override.REST {
+		if trimmed := strings.TrimSpace(v); trimmed != "" {
+			merged.REST[k] = trimmed
+		}
+	}
+	if pub := strings.TrimSpace(override.Websocket.PublicURL); pub != "" {
+		merged.Websocket.PublicURL = pub
+	}
+	if priv := strings.TrimSpace(override.Websocket.PrivateURL); priv != "" {
+		merged.Websocket.PrivateURL = priv
+	}
+	if override.HTTPTimeout > 0 {
+		merged.HTTPTimeout = override.HTTPTimeout
+	}
+	if override.HandshakeTimeout > 0 {
+		merged.HandshakeTimeout = override.HandshakeTimeout
+	}
+	if key := strings.TrimSpace(override.Credentials.APIKey); key != "" {
+		merged.Credentials.APIKey = key
+	}
+	if secret := strings.TrimSpace(override.Credentials.APISecret); secret != "" {
+		merged.Credentials.APISecret = secret
+	}
+	return merged
+}
+
 // CanonicalSymbol converts Binance native symbols to canonical form with caching support.
 func (x *Exchange) CanonicalSymbol(binanceSymbol string) (string, error) {
 	trimmed := strings.ToUpper(strings.TrimSpace(binanceSymbol))
@@ -180,7 +212,7 @@ func (x *Exchange) CreateListenKey(ctx context.Context) (string, error) {
 	var resp struct {
 		ListenKey string `json:"listenKey"`
 	}
-	msg := routing.RESTMessage{API: rest.SpotAPI, Method: http.MethodPost, Path: "/api/v3/userDataStream"}
+	msg := routingrest.RESTMessage{API: string(rest.SpotAPI), Method: http.MethodPost, Path: "/api/v3/userDataStream"}
 	if err := x.restRouter.Dispatch(ctx, msg, &resp); err != nil {
 		return "", err
 	}
@@ -188,12 +220,12 @@ func (x *Exchange) CreateListenKey(ctx context.Context) (string, error) {
 }
 
 func (x *Exchange) KeepAliveListenKey(ctx context.Context, key string) error {
-	msg := routing.RESTMessage{API: rest.SpotAPI, Method: http.MethodPut, Path: "/api/v3/userDataStream", Query: map[string]string{"listenKey": key}}
+	msg := routingrest.RESTMessage{API: string(rest.SpotAPI), Method: http.MethodPut, Path: "/api/v3/userDataStream", Query: map[string]string{"listenKey": key}}
 	return x.restRouter.Dispatch(ctx, msg, nil)
 }
 
 func (x *Exchange) CloseListenKey(ctx context.Context, key string) error {
-	msg := routing.RESTMessage{API: rest.SpotAPI, Method: http.MethodDelete, Path: "/api/v3/userDataStream", Query: map[string]string{"listenKey": key}}
+	msg := routingrest.RESTMessage{API: string(rest.SpotAPI), Method: http.MethodDelete, Path: "/api/v3/userDataStream", Query: map[string]string{"listenKey": key}}
 	return x.restRouter.Dispatch(ctx, msg, nil)
 }
 
@@ -215,7 +247,7 @@ func (x *Exchange) DepthSnapshot(ctx context.Context, symbol string, limit int) 
 		Bids         [][]interface{} `json:"bids"`
 		Asks         [][]interface{} `json:"asks"`
 	}
-	msg := routing.RESTMessage{API: rest.SpotAPI, Method: http.MethodGet, Path: "/api/v3/depth", Query: params}
+	msg := routingrest.RESTMessage{API: string(rest.SpotAPI), Method: http.MethodGet, Path: "/api/v3/depth", Query: params}
 	if err := x.restRouter.Dispatch(ctx, msg, &resp); err != nil {
 		return coreexchange.BookEvent{}, 0, err
 	}

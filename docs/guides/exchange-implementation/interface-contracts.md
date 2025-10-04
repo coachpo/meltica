@@ -35,9 +35,11 @@ type RESTClient interface {
 ### Example usage
 
 ```go
-router := routing.NewRESTRouter(restClient)
-msg := routing.RESTMessage{
-    API:    rest.SpotAPI,
+import exchangesrouting "github.com/coachpo/meltica/exchanges/shared/routing"
+
+router := exchangesrouting.NewDefaultRESTRouter(restClient, nil)
+msg := exchangesrouting.RESTMessage{
+    API:    string(rest.SpotAPI),
     Method: http.MethodGet,
     Path:   "/api/v3/time",
 }

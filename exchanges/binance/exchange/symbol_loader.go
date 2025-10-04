@@ -10,8 +10,8 @@ import (
 	"github.com/coachpo/meltica/core"
 	"github.com/coachpo/meltica/exchanges/binance/infra/rest"
 	"github.com/coachpo/meltica/exchanges/binance/internal"
-	"github.com/coachpo/meltica/exchanges/binance/routing"
-	numeric "github.com/coachpo/meltica/exchanges/infra/numeric"
+	numeric "github.com/coachpo/meltica/exchanges/shared/infra/numeric"
+	routingrest "github.com/coachpo/meltica/exchanges/shared/routing"
 )
 
 type marketSpec struct {
@@ -89,7 +89,7 @@ func (x *Exchange) fetchMarketSymbols(ctx context.Context, spec marketSpec) ([]s
 			} `json:"filters"`
 		} `json:"symbols"`
 	}
-	msg := routing.RESTMessage{API: spec.api, Method: http.MethodGet, Path: spec.path}
+	msg := routingrest.RESTMessage{API: string(spec.api), Method: http.MethodGet, Path: spec.path}
 	if err := x.restRouter.Dispatch(ctx, msg, &resp); err != nil {
 		return nil, err
 	}

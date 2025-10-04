@@ -67,7 +67,7 @@ go run ./cmd/main
 ### Core Modules
 
 * **`core/`** – Canonical domain models & interfaces (`Exchange`, markets, symbols, topics, WS events); capability bitsets.
-* **`exchanges/infra/`** – Shared adapters infrastructure (numeric helpers, transport clients, rate limiters, topic mappers).
+* **`exchanges/shared/infra/`** – Shared adapters infrastructure (numeric helpers, transport clients, rate limiters, topic mappers).
 * **`exchanges/`** – Venue adapters (REST + WS + signing + error/status mapping) per exchange.
 * **`transport/`** – HTTP client with retries, signing hooks; token‑bucket rate limiting; WS helpers.
 * **`errs/`** – Unified error envelope and standardized capability errors.
@@ -157,7 +157,7 @@ interface Exchange {
 
 ## Performance & Reliability Notes
 
-* Token‑bucket rate limiting in `exchanges/infra/transport` to protect against venue throttling.
+* Token‑bucket rate limiting in `exchanges/shared/infra/transport` to protect against venue throttling.
 * Decimal math helpers respect instrument scales; avoid binary float for price/size.
 * Event decoding aims for zero‑allocation hot paths where possible.
 

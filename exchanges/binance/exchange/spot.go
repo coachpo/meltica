@@ -10,8 +10,8 @@ import (
 	coreexchange "github.com/coachpo/meltica/core/exchange"
 	"github.com/coachpo/meltica/exchanges/binance/infra/rest"
 	"github.com/coachpo/meltica/exchanges/binance/internal"
-	"github.com/coachpo/meltica/exchanges/binance/routing"
-	"github.com/coachpo/meltica/exchanges/infra/numeric"
+	"github.com/coachpo/meltica/exchanges/shared/infra/numeric"
+	routingrest "github.com/coachpo/meltica/exchanges/shared/routing"
 )
 
 type spotAPI struct{ x *Exchange }
@@ -20,7 +20,7 @@ func (s spotAPI) ServerTime(ctx context.Context) (time.Time, error) {
 	var resp struct {
 		ServerTime int64 `json:"serverTime"`
 	}
-	msg := routing.RESTMessage{API: rest.SpotAPI, Method: http.MethodGet, Path: "/api/v3/time"}
+	msg := routingrest.RESTMessage{API: string(rest.SpotAPI), Method: http.MethodGet, Path: "/api/v3/time"}
 	if err := s.x.restRouter.Dispatch(ctx, msg, &resp); err != nil {
 		return time.Time{}, err
 	}
@@ -44,7 +44,7 @@ func (s spotAPI) Ticker(ctx context.Context, symbol string) (core.Ticker, error)
 		return core.Ticker{}, err
 	}
 	params := map[string]string{"symbol": native}
-	msg := routing.RESTMessage{API: rest.SpotAPI, Method: http.MethodGet, Path: "/api/v3/ticker/bookTicker", Query: params}
+	msg := routingrest.RESTMessage{API: string(rest.SpotAPI), Method: http.MethodGet, Path: "/api/v3/ticker/bookTicker", Query: params}
 	if err := s.x.restRouter.Dispatch(ctx, msg, &resp); err != nil {
 		return core.Ticker{}, err
 	}
@@ -59,7 +59,7 @@ func (s spotAPI) Balances(ctx context.Context) ([]core.Balance, error) {
 		Free   string `json:"free"`
 		Locked string `json:"locked"`
 	}
-	msg := routing.RESTMessage{API: rest.SpotAPI, Method: http.MethodGet, Path: "/api/v3/account", Signed: true}
+	msg := routingrest.RESTMessage{API: string(rest.SpotAPI), Method: http.MethodGet, Path: "/api/v3/account", Signed: true}
 	if err := s.x.restRouter.Dispatch(ctx, msg, &resp); err != nil {
 		return nil, err
 	}
@@ -87,7 +87,7 @@ func (s spotAPI) Trades(ctx context.Context, symbol string, since int64) ([]core
 		IsBuyer bool   `json:"isBuyer"`
 		Time    int64  `json:"time"`
 	}
-	msg := routing.RESTMessage{API: rest.SpotAPI, Method: http.MethodGet, Path: "/api/v3/myTrades", Query: params, Signed: true}
+	msg := routingrest.RESTMessage{API: string(rest.SpotAPI), Method: http.MethodGet, Path: "/api/v3/myTrades", Query: params, Signed: true}
 	if err := s.x.restRouter.Dispatch(ctx, msg, &resp); err != nil {
 		return nil, err
 	}
@@ -136,7 +136,7 @@ func (s spotAPI) PlaceOrder(ctx context.Context, req core.OrderRequest) (core.Or
 		Symbol  string `json:"symbol"`
 		Status  string `json:"status"`
 	}
-	msg := routing.RESTMessage{API: rest.SpotAPI, Method: http.MethodPost, Path: "/api/v3/order", Query: q, Signed: true}
+	msg := routingrest.RESTMessage{API: string(rest.SpotAPI), Method: http.MethodPost, Path: "/api/v3/order", Query: q, Signed: true}
 	if err := s.x.restRouter.Dispatch(ctx, msg, &resp); err != nil {
 		return core.Order{}, err
 	}
@@ -159,7 +159,7 @@ func (s spotAPI) GetOrder(ctx context.Context, symbol, id, clientID string) (cor
 		OrderID int64  `json:"orderId"`
 		Status  string `json:"status"`
 	}
-	msg := routing.RESTMessage{API: rest.SpotAPI, Method: http.MethodGet, Path: "/api/v3/order", Query: q, Signed: true}
+	msg := routingrest.RESTMessage{API: string(rest.SpotAPI), Method: http.MethodGet, Path: "/api/v3/order", Query: q, Signed: true}
 	if err := s.x.restRouter.Dispatch(ctx, msg, &resp); err != nil {
 		return core.Order{}, err
 	}
@@ -178,7 +178,7 @@ func (s spotAPI) CancelOrder(ctx context.Context, symbol, id, clientID string) e
 	if clientID != "" {
 		q["origClientOrderId"] = clientID
 	}
-	msg := routing.RESTMessage{API: rest.SpotAPI, Method: http.MethodDelete, Path: "/api/v3/order", Query: q, Signed: true}
+	msg := routingrest.RESTMessage{API: string(rest.SpotAPI), Method: http.MethodDelete, Path: "/api/v3/order", Query: q, Signed: true}
 	return s.x.restRouter.Dispatch(ctx, msg, nil)
 }
 

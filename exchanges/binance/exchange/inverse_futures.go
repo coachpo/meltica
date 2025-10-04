@@ -10,8 +10,8 @@ import (
 	"github.com/coachpo/meltica/core"
 	"github.com/coachpo/meltica/exchanges/binance/infra/rest"
 	"github.com/coachpo/meltica/exchanges/binance/internal"
-	"github.com/coachpo/meltica/exchanges/binance/routing"
-	numeric "github.com/coachpo/meltica/exchanges/infra/numeric"
+	numeric "github.com/coachpo/meltica/exchanges/shared/infra/numeric"
+	routingrest "github.com/coachpo/meltica/exchanges/shared/routing"
 )
 
 type inverseAPI struct{ x *Exchange }
@@ -29,7 +29,7 @@ func (d inverseAPI) Ticker(ctx context.Context, symbol string) (core.Ticker, err
 		return core.Ticker{}, err
 	}
 	params := map[string]string{"symbol": native}
-	msg := routing.RESTMessage{API: rest.InverseAPI, Method: http.MethodGet, Path: "/dapi/v1/ticker/bookTicker", Query: params}
+	msg := routingrest.RESTMessage{API: string(rest.InverseAPI), Method: http.MethodGet, Path: "/dapi/v1/ticker/bookTicker", Query: params}
 	if err := d.x.restRouter.Dispatch(ctx, msg, &struct{}{}); err != nil {
 		return core.Ticker{}, err
 	}
@@ -60,7 +60,7 @@ func (d inverseAPI) PlaceOrder(ctx context.Context, req core.OrderRequest) (core
 		OrderID int64  `json:"orderId"`
 		Status  string `json:"status"`
 	}
-	msg := routing.RESTMessage{API: rest.InverseAPI, Method: http.MethodPost, Path: "/dapi/v1/order", Query: q, Signed: true}
+	msg := routingrest.RESTMessage{API: string(rest.InverseAPI), Method: http.MethodPost, Path: "/dapi/v1/order", Query: q, Signed: true}
 	if err := d.x.restRouter.Dispatch(ctx, msg, &resp); err != nil {
 		return core.Order{}, err
 	}
@@ -77,7 +77,7 @@ func (d inverseAPI) Positions(ctx context.Context, symbols ...string) ([]core.Po
 		q["symbol"] = nativeSymbol
 	}
 	var raw []map[string]any
-	msg := routing.RESTMessage{API: rest.InverseAPI, Method: http.MethodGet, Path: "/dapi/v1/positionRisk", Query: q, Signed: true}
+	msg := routingrest.RESTMessage{API: string(rest.InverseAPI), Method: http.MethodGet, Path: "/dapi/v1/positionRisk", Query: q, Signed: true}
 	if err := d.x.restRouter.Dispatch(ctx, msg, &raw); err != nil {
 		return nil, err
 	}

@@ -11,7 +11,7 @@ import (
 	coreexchange "github.com/coachpo/meltica/core/exchange"
 	coretopics "github.com/coachpo/meltica/core/topics"
 	"github.com/coachpo/meltica/exchanges/binance/internal"
-	numeric "github.com/coachpo/meltica/exchanges/infra/numeric"
+	numeric "github.com/coachpo/meltica/exchanges/shared/infra/numeric"
 )
 
 type binanceEnvelope struct {

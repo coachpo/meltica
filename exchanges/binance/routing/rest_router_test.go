@@ -9,6 +9,7 @@ import (
 	coreexchange "github.com/coachpo/meltica/core/exchange"
 	"github.com/coachpo/meltica/core/exchange/mocks"
 	"github.com/coachpo/meltica/exchanges/binance/infra/rest"
+	routingrest "github.com/coachpo/meltica/exchanges/shared/routing"
 )
 
 func TestRESTRouterDispatchSuccess(t *testing.T) {
@@ -28,7 +29,7 @@ func TestRESTRouterDispatchSuccess(t *testing.T) {
 		return nil
 	}
 	router := NewRESTRouter(client)
-	msg := RESTMessage{API: rest.SpotAPI, Method: http.MethodGet, Path: "/api/v3/time"}
+	msg := routingrest.RESTMessage{API: string(rest.SpotAPI), Method: http.MethodGet, Path: "/api/v3/time"}
 	if err := router.Dispatch(ctx, msg, nil); err != nil {
 		t.Fatalf("dispatch returned error: %v", err)
 	}
@@ -57,7 +58,7 @@ func TestRESTRouterDispatchError(t *testing.T) {
 		return returnedErr
 	}
 	router := NewRESTRouter(client)
-	msg := RESTMessage{API: rest.LinearAPI, Method: http.MethodGet, Path: "/fapi/v1/time"}
+	msg := routingrest.RESTMessage{API: string(rest.LinearAPI), Method: http.MethodGet, Path: "/fapi/v1/time"}
 	err := router.Dispatch(ctx, msg, nil)
 	if !handleErrorCalled {
 		t.Fatalf("expected handle error to be called")
