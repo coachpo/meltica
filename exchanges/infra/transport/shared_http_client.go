@@ -39,11 +39,6 @@ type Client struct {
 	OnHTTPError    func(status int, body []byte) error
 }
 
-func (c *Client) Do(ctx context.Context, method, path string, query map[string]string, body []byte, signed bool, out any) error {
-	_, _, err := c.DoWithHeaders(ctx, method, path, query, body, signed, nil, out)
-	return err
-}
-
 func (c *Client) DoWithHeaders(ctx context.Context, method, path string, query map[string]string, body []byte, signed bool, header http.Header, out any) (http.Header, int, error) {
 	if c.HTTP == nil {
 		return nil, 0, errors.New("http client not configured")
@@ -86,14 +81,12 @@ func (c *Client) DoWithHeaders(ctx context.Context, method, path string, query m
 		}
 		req.Header.Set(k, v)
 	}
-	if header != nil {
-		for k, vs := range header {
-			for _, v := range vs {
-				if v == "" {
-					continue
-				}
-				req.Header.Add(k, v)
+	for k, vs := range header {
+		for _, v := range vs {
+			if v == "" {
+				continue
 			}
+			req.Header.Add(k, v)
 		}
 	}
 	if reqBody != nil && req.Header.Get("Content-Type") == "" {
