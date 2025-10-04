@@ -177,7 +177,7 @@ channel, symbol := topics.Parse("trade:BTC-USDT")
 
 ```go
 mapper := infratopics.NewMapper(infratopics.MappingConfig{ProtocolToExchange: map[string]string{topics.TopicTrade: "trade"}})
-channel := mapper.ToExchange(topics.TopicTrade)
+channel := mapper.ExchangeChannelID(topics.TopicTrade)
 ```
 
 ## Provider Interface
