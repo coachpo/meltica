@@ -1,17 +1,17 @@
-package exchange
+package binance
 
 import (
 	"context"
 	"strings"
 	"time"
 
-	coreexchange "github.com/coachpo/meltica/core/exchange"
+	corestreams "github.com/coachpo/meltica/core/streams"
 	coretopics "github.com/coachpo/meltica/core/topics"
 	"github.com/coachpo/meltica/exchanges/binance/internal"
 	"github.com/coachpo/meltica/exchanges/binance/routing"
 )
 
-func (x *Exchange) OrderBookSnapshots(ctx context.Context, symbol string) (<-chan coreexchange.BookEvent, <-chan error, error) {
+func (x *Exchange) OrderBookSnapshots(ctx context.Context, symbol string) (<-chan corestreams.BookEvent, <-chan error, error) {
 	canonicalSymbol, err := x.canonicalizeSymbol(symbol)
 	if err != nil {
 		return nil, nil, err
@@ -27,7 +27,7 @@ func (x *Exchange) OrderBookSnapshots(ctx context.Context, symbol string) (<-cha
 		return nil, nil, err
 	}
 
-	events := make(chan coreexchange.BookEvent, 32)
+	events := make(chan corestreams.BookEvent, 32)
 	errs := make(chan error, 1)
 
 	go func() {
