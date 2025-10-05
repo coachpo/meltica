@@ -78,18 +78,21 @@ func (x *Exchange) ensureAllSymbols(ctx context.Context) error {
 func (x *Exchange) fetchMarketSymbols(ctx context.Context, spec marketSpec) ([]symbolPayload, error) {
 	var resp struct {
 		Symbols []struct {
-			Symbol  string `json:"symbol"`
-			Base    string `json:"baseAsset"`
-			Quote   string `json:"quoteAsset"`
-			Status  string `json:"status"`
-			Filters []struct {
+			Symbol              string `json:"symbol"`
+			Base                string `json:"baseAsset"`
+			Quote               string `json:"quoteAsset"`
+			Status              string `json:"status"`
+			BasePrecision       int    `json:"baseAssetPrecision"`
+			QuoteAssetPrecision int    `json:"quoteAssetPrecision"`
+			QuotePrecision      int    `json:"quotePrecision"`
+			Filters             []struct {
 				FilterType string `json:"filterType"`
 				TickSize   string `json:"tickSize"`
 				StepSize   string `json:"stepSize"`
 			} `json:"filters"`
 		} `json:"symbols"`
 	}
-	msg := routingrest.RESTMessage{API: string(spec.api), Method: http.MethodGet, Path: spec.path}
+	msg := routingrest.RESTMessage{API: string(spec.api), Method: http.MethodGet, Path: spec.path, Query: map[string]string{"symbolStatus": "TRADING"}}
 	if err := x.restRouter.Dispatch(ctx, msg, &resp); err != nil {
 		return nil, err
 	}
@@ -106,13 +109,16 @@ func (x *Exchange) fetchMarketSymbols(ctx context.Context, spec marketSpec) ([]s
 		if base == "" || quote == "" || native == "" {
 			continue
 		}
-		priceScale, qtyScale := 0, 0
+		priceScale := maxInt(sdef.QuoteAssetPrecision, sdef.QuotePrecision)
+		qtyScale := sdef.BasePrecision
 		for _, ft := range sdef.Filters {
 			switch ft.FilterType {
 			case "PRICE_FILTER":
-				priceScale = numeric.ScaleFromStep(ft.TickSize)
+				scale := numeric.ScaleFromStep(ft.TickSize)
+				priceScale = maxInt(priceScale, scale)
 			case "LOT_SIZE":
-				qtyScale = numeric.ScaleFromStep(ft.StepSize)
+				scale := numeric.ScaleFromStep(ft.StepSize)
+				qtyScale = maxInt(qtyScale, scale)
 			}
 		}
 		inst := core.Instrument{Symbol: core.CanonicalSymbol(base, quote), Base: base, Quote: quote, Market: spec.market, PriceScale: priceScale, QtyScale: qtyScale}
@@ -165,4 +171,11 @@ func normalizedContext(ctx context.Context, timeout time.Duration) (context.Cont
 		return ctx, func() {}
 	}
 	return context.WithTimeout(ctx, timeout)
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
