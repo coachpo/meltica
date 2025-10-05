@@ -187,10 +187,17 @@ func (pc ExchangeCapabilities) Has(cap Capability) bool {
 }
 
 // Exchange is the stable abstraction implemented by every concrete exchange adapter.
+// Callers should inspect Capabilities() to determine which market services are supported; methods
+// may return stubs that surface ErrNotSupported when invoked against unsupported capabilities.
 type Exchange interface {
 	Name() string
 	Capabilities() ExchangeCapabilities
 	SupportedProtocolVersion() string
+	Spot(ctx context.Context) SpotAPI
+	LinearFutures(ctx context.Context) FuturesAPI
+	InverseFutures(ctx context.Context) FuturesAPI
+	WS() WS
+	Close() error
 }
 
 // SpotAPI exposes canonicalized spot REST endpoints.

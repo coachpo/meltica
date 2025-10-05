@@ -8,17 +8,19 @@ import (
 	"os"
 	"os/signal"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/coachpo/meltica/core"
 	coreexchange "github.com/coachpo/meltica/core/exchange"
+	coreexchanges "github.com/coachpo/meltica/core/exchanges"
+	corebinance "github.com/coachpo/meltica/core/exchanges/binance"
 	coretopics "github.com/coachpo/meltica/core/topics"
-	"github.com/coachpo/meltica/exchanges/binance"
 )
 
 const (
-	nativeSymbol    = "BTCUSDT"
-	canonicalSymbol = "BTC-USDT"
+	defaultBase  = "BTC"
+	defaultQuote = "USDT"
 )
 
 type marketEventKind string
@@ -49,41 +51,295 @@ type marketSubscribeCommand struct {
 
 type marketUnsubscribeCommand struct{}
 
+// MarketManager manages concurrent market data streams
+type MarketManager struct {
+	exchange   core.Exchange
+	orderBooks orderBookProvider
+	events     chan marketEvent
+	wg         sync.WaitGroup
+	mu         sync.RWMutex
+	cancel     context.CancelFunc
+
+	// Active subscriptions
+	sub        core.Subscription
+	bookCancel context.CancelFunc
+}
+
+type orderBookProvider interface {
+	OrderBookSnapshots(ctx context.Context, symbol string) (<-chan coreexchange.BookEvent, <-chan error, error)
+}
+
+func NewMarketManager(exchange core.Exchange) *MarketManager {
+	orderBook, _ := exchange.(orderBookProvider)
+	return &MarketManager{
+		exchange:   exchange,
+		orderBooks: orderBook,
+		events:     make(chan marketEvent, 256),
+	}
+}
+
+func (m *MarketManager) Start(ctx context.Context) {
+	ctx, cancel := context.WithCancel(ctx)
+	m.cancel = cancel
+
+	// Start the event router
+	m.wg.Add(1)
+	go m.eventRouter(ctx)
+}
+
+func (m *MarketManager) Stop() {
+	if m.cancel != nil {
+		m.cancel()
+	}
+	m.wg.Wait()
+	close(m.events)
+}
+
+func (m *MarketManager) Events() <-chan marketEvent {
+	return m.events
+}
+
+func (m *MarketManager) Subscribe(cmd marketSubscribeCommand) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Clean up existing subscriptions
+	m.cleanupSubscriptions()
+
+	// Start new subscriptions
+	if len(cmd.Topics) > 0 {
+		m.startWebSocketSubscription(cmd.Topics)
+	}
+	if cmd.BookSymbol != "" {
+		m.startOrderBookSubscription(cmd.BookSymbol)
+	}
+
+	m.emit(marketEvent{
+		Kind:    marketEventSystem,
+		Message: fmt.Sprintf("subscribed topics=%v book=%s", cmd.Topics, cmd.BookSymbol),
+	})
+}
+
+func (m *MarketManager) Unsubscribe() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.cleanupSubscriptions()
+	m.emit(marketEvent{
+		Kind:    marketEventSystem,
+		Message: "unsubscribed",
+	})
+}
+
+func (m *MarketManager) cleanupSubscriptions() {
+	if m.sub != nil {
+		_ = m.sub.Close()
+		m.sub = nil
+	}
+	if m.bookCancel != nil {
+		m.bookCancel()
+		m.bookCancel = nil
+	}
+}
+
+func (m *MarketManager) startWebSocketSubscription(topics []string) {
+	ctx := context.Background() // Will be managed by the manager's context
+
+	sub, err := m.exchange.WS().SubscribePublic(ctx, topics...)
+	if err != nil {
+		m.emit(marketEvent{
+			Kind:    marketEventError,
+			Message: "subscribe public",
+			Err:     err,
+		})
+		return
+	}
+
+	m.sub = sub
+
+	// Start goroutine to handle websocket messages
+	m.wg.Add(1)
+	go m.handleWebSocketMessages(sub.C(), sub.Err())
+}
+
+func (m *MarketManager) startOrderBookSubscription(symbol string) {
+	if m.orderBooks == nil {
+		m.emit(marketEvent{
+			Kind:    marketEventError,
+			Message: "order book snapshots not supported",
+		})
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	m.bookCancel = cancel
+
+	snapshots, errs, err := m.orderBooks.OrderBookSnapshots(ctx, symbol)
+	if err != nil {
+		cancel()
+		m.emit(marketEvent{
+			Kind:    marketEventError,
+			Message: "order book initialization",
+			Err:     err,
+		})
+		return
+	}
+
+	// Start goroutine to handle order book snapshots
+	m.wg.Add(1)
+	go m.handleOrderBookSnapshots(snapshots, errs)
+}
+
+func (m *MarketManager) handleWebSocketMessages(msgCh <-chan core.Message, errCh <-chan error) {
+	defer m.wg.Done()
+
+	for {
+		select {
+		case msg, ok := <-msgCh:
+			if !ok {
+				return
+			}
+			m.handleWSMessage(msg)
+		case err, ok := <-errCh:
+			if !ok {
+				return
+			}
+			if err != nil {
+				m.emit(marketEvent{
+					Kind:    marketEventError,
+					Message: "websocket subscription error",
+					Err:     err,
+				})
+			}
+		}
+	}
+}
+
+func (m *MarketManager) handleOrderBookSnapshots(snapshots <-chan coreexchange.BookEvent, errs <-chan error) {
+	defer m.wg.Done()
+
+	for {
+		select {
+		case book, ok := <-snapshots:
+			if !ok {
+				return
+			}
+			bookCopy := book
+			m.emit(marketEvent{
+				Kind:    marketEventBook,
+				Topic:   coretopics.Book(book.Symbol),
+				Payload: &bookCopy,
+				Time:    book.Time,
+			})
+		case err, ok := <-errs:
+			if !ok {
+				return
+			}
+			if err != nil {
+				m.emit(marketEvent{
+					Kind:    marketEventError,
+					Message: "order book snapshot error",
+					Err:     err,
+				})
+			}
+		}
+	}
+}
+
+func (m *MarketManager) handleWSMessage(msg core.Message) {
+	switch evt := msg.Parsed.(type) {
+	case *coreexchange.TradeEvent:
+		m.emit(marketEvent{
+			Kind:    marketEventTrade,
+			Topic:   msg.Topic,
+			Payload: evt,
+			Time:    evt.Time,
+		})
+	case *coreexchange.TickerEvent:
+		m.emit(marketEvent{
+			Kind:    marketEventTicker,
+			Topic:   msg.Topic,
+			Payload: evt,
+			Time:    evt.Time,
+		})
+	case *coreexchange.BookEvent:
+		m.emit(marketEvent{
+			Kind:    marketEventBook,
+			Topic:   msg.Topic,
+			Payload: evt,
+			Time:    evt.Time,
+		})
+	default:
+		m.emit(marketEvent{
+			Kind:    marketEventSystem,
+			Topic:   msg.Topic,
+			Message: fmt.Sprintf("unhandled message route=%s", msg.Event),
+			Time:    msg.At,
+		})
+	}
+}
+
+func (m *MarketManager) eventRouter(ctx context.Context) {
+	defer m.wg.Done()
+
+	// This goroutine just ensures we properly close the events channel
+	// when the context is cancelled
+	<-ctx.Done()
+}
+
+func (m *MarketManager) emit(evt marketEvent) {
+	select {
+	case m.events <- evt:
+	default:
+		// Drop event if channel is full to prevent blocking
+		log.Printf("event channel full, dropping event: %v", evt.Kind)
+	}
+}
+
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
 	fmt.Println("Starting Binance Order Book Management Validation...")
-	fmt.Printf("Monitoring %s depth via exchange pipelines...\n", nativeSymbol)
 
-	exchange, err := binance.New("", "")
+	exchange, err := coreexchanges.Resolve(corebinance.Name)
 	if err != nil {
 		log.Fatalf("failed to create Binance exchange: %v", err)
 	}
 	defer exchange.Close()
 
-	eventLoop := newMarketEventLoop(exchange)
-	go eventLoop.Run(ctx)
+	canonicalSymbol := core.CanonicalSymbol(defaultBase, defaultQuote)
+	nativeSymbol, err := core.NativeSymbol(corebinance.Name, canonicalSymbol)
+	if err != nil {
+		log.Printf("failed to resolve native symbol for %s: %v", canonicalSymbol, err)
+		nativeSymbol = canonicalSymbol
+	}
 
-	command := marketSubscribeCommand{
+	fmt.Printf("Monitoring %s depth via exchange pipelines...\n", nativeSymbol)
+
+	manager := NewMarketManager(exchange)
+	manager.Start(ctx)
+	defer manager.Stop()
+
+	// Subscribe to market data
+	manager.Subscribe(marketSubscribeCommand{
 		Topics: []string{
 			coretopics.Trade(canonicalSymbol),
 			coretopics.Ticker(canonicalSymbol),
 		},
 		BookSymbol: canonicalSymbol,
-	}
-	eventLoop.Publish(command)
+	})
 
 	var lastBookLog time.Time
 
+	// Main event processing loop
 	for {
 		select {
 		case <-ctx.Done():
 			fmt.Println("Stopping order book monitor...")
 			return
-		case evt, ok := <-eventLoop.Events():
+		case evt, ok := <-manager.Events():
 			if !ok {
-				fmt.Println("Event loop terminated")
+				fmt.Println("Event channel closed")
 				return
 			}
 			handleEvent(evt, &lastBookLog)
@@ -196,173 +452,4 @@ func bestLevel(levels []core.BookDepthLevel, desc bool) bookLevel {
 		return bookLevel{}
 	}
 	return filtered[0]
-}
-
-type loopState struct {
-	sub        core.Subscription
-	wsMsgCh    <-chan core.Message
-	wsErrCh    <-chan error
-	bookCh     <-chan coreexchange.BookEvent
-	bookErrCh  <-chan error
-	bookCancel context.CancelFunc
-}
-
-func (s *loopState) shutdown() {
-	if s.sub != nil {
-		_ = s.sub.Close()
-		s.sub = nil
-	}
-	if s.bookCancel != nil {
-		s.bookCancel()
-		s.bookCancel = nil
-	}
-	s.wsMsgCh = nil
-	s.wsErrCh = nil
-	s.bookCh = nil
-	s.bookErrCh = nil
-}
-
-type marketEventLoop struct {
-	exchange *binance.Exchange
-	commands chan marketCommand
-	events   chan marketEvent
-}
-
-func newMarketEventLoop(exchange *binance.Exchange) *marketEventLoop {
-	return &marketEventLoop{
-		exchange: exchange,
-		commands: make(chan marketCommand, 16),
-		events:   make(chan marketEvent, 256),
-	}
-}
-
-func (l *marketEventLoop) Publish(cmd marketCommand) {
-	select {
-	case l.commands <- cmd:
-	default:
-		go func() { l.commands <- cmd }()
-	}
-}
-
-func (l *marketEventLoop) Events() <-chan marketEvent {
-	return l.events
-}
-
-func (l *marketEventLoop) Run(ctx context.Context) {
-	defer close(l.events)
-
-	state := loopState{}
-
-	for {
-		select {
-		case <-ctx.Done():
-			state.shutdown()
-			return
-		case cmd := <-l.commands:
-			state = l.handleCommand(ctx, cmd, state)
-		case msg, ok := <-state.wsMsgCh:
-			if !ok {
-				state.wsMsgCh = nil
-				continue
-			}
-			l.handleWSMessage(ctx, msg)
-		case err, ok := <-state.wsErrCh:
-			if !ok {
-				state.wsErrCh = nil
-				continue
-			}
-			if err != nil {
-				l.emit(ctx, marketEvent{Kind: marketEventError, Message: "websocket subscription error", Err: err})
-			}
-			if state.sub != nil {
-				_ = state.sub.Close()
-				state.sub = nil
-			}
-			state.wsMsgCh = nil
-			state.wsErrCh = nil
-		case book, ok := <-state.bookCh:
-			if !ok {
-				state.bookCh = nil
-				continue
-			}
-			bookCopy := book
-			l.emit(ctx, marketEvent{
-				Kind:    marketEventBook,
-				Topic:   coretopics.Book(book.Symbol),
-				Payload: &bookCopy,
-				Time:    book.Time,
-			})
-		case err, ok := <-state.bookErrCh:
-			if !ok {
-				state.bookErrCh = nil
-				continue
-			}
-			if err != nil {
-				l.emit(ctx, marketEvent{Kind: marketEventError, Message: "order book snapshot error", Err: err})
-			}
-		}
-	}
-}
-
-func (l *marketEventLoop) handleCommand(ctx context.Context, cmd marketCommand, state loopState) loopState {
-	switch c := cmd.(type) {
-	case marketSubscribeCommand:
-		state.shutdown()
-		state = loopState{}
-		if len(c.Topics) > 0 {
-			sub, err := l.exchange.WS().SubscribePublic(ctx, c.Topics...)
-			if err != nil {
-				l.emit(ctx, marketEvent{Kind: marketEventError, Message: "subscribe public", Err: err})
-				return state
-			}
-			state.sub = sub
-			state.wsMsgCh = sub.C()
-			state.wsErrCh = sub.Err()
-		}
-		if c.BookSymbol != "" {
-			bookCtx, cancel := context.WithCancel(ctx)
-			snapshots, errs, err := l.exchange.OrderBookSnapshots(bookCtx, c.BookSymbol)
-			if err != nil {
-				cancel()
-				l.emit(ctx, marketEvent{Kind: marketEventError, Message: "order book initialization", Err: err})
-			} else {
-				state.bookCancel = cancel
-				state.bookCh = snapshots
-				state.bookErrCh = errs
-			}
-		}
-		l.emit(ctx, marketEvent{
-			Kind:    marketEventSystem,
-			Message: fmt.Sprintf("subscribed topics=%v book=%s", c.Topics, c.BookSymbol),
-		})
-		return state
-	case marketUnsubscribeCommand:
-		state.shutdown()
-		l.emit(ctx, marketEvent{Kind: marketEventSystem, Message: "unsubscribed"})
-		return loopState{}
-	default:
-		l.emit(ctx, marketEvent{Kind: marketEventSystem, Message: fmt.Sprintf("unknown command %T", cmd)})
-		return state
-	}
-}
-
-func (l *marketEventLoop) handleWSMessage(ctx context.Context, msg core.Message) {
-	switch evt := msg.Parsed.(type) {
-	case *coreexchange.TradeEvent:
-		l.emit(ctx, marketEvent{Kind: marketEventTrade, Topic: msg.Topic, Payload: evt, Time: evt.Time})
-	case *coreexchange.TickerEvent:
-		l.emit(ctx, marketEvent{Kind: marketEventTicker, Topic: msg.Topic, Payload: evt, Time: evt.Time})
-	case *coreexchange.BookEvent:
-		l.emit(ctx, marketEvent{Kind: marketEventBook, Topic: msg.Topic, Payload: evt, Time: evt.Time})
-	default:
-		l.emit(ctx, marketEvent{Kind: marketEventSystem, Topic: msg.Topic, Message: fmt.Sprintf("unhandled message route=%s", msg.Event), Time: msg.At})
-	}
-}
-
-func (l *marketEventLoop) emit(ctx context.Context, evt marketEvent) {
-	select {
-	case <-ctx.Done():
-		return
-	case l.events <- evt:
-	}
 }

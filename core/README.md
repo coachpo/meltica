@@ -180,14 +180,14 @@ mapper := infratopics.NewMapper(infratopics.MappingConfig{ProtocolToExchange: ma
 channel := mapper.ExchangeChannelID(topics.TopicTrade)
 ```
 
-## Provider Interface
+## Exchange Interface
 
-The main `Provider` interface defines the contract all exchange adapters must implement:
+The main `core.Exchange` interface defines the contract all exchange adapters must implement:
 
 ```go
-type Provider interface {
+type Exchange interface {
     Name() string
-    Capabilities() ProviderCapabilities
+    Capabilities() ExchangeCapabilities
     SupportedProtocolVersion() string
     Spot(ctx context.Context) SpotAPI
     LinearFutures(ctx context.Context) FuturesAPI
@@ -272,9 +272,12 @@ The package provides utilities for canonical symbol handling:
 // Canonical format: BASE-QUOTE (e.g., "BTC-USDT")
 symbol := CanonicalSymbol("BTC", "USDT")  // Returns "BTC-USDT"
 
-// Convert to exchange-specific formats
-binanceSymbol := CanonicalToBinance("BTC-USDT")  // Returns "BTCUSDT"
-okxSymbol := CanonicalToOKX("BTC-USDT")          // Returns "BTC-USDT"
+// Resolve to an exchange-native format via the registered mapper
+binance := ExchangeNameFrom("binance")
+binanceSymbol, err := NativeSymbol(binance, symbol)
+if err != nil {
+    // handle unsupported symbol
+}
 ```
 
 ## Provider Registry
@@ -282,13 +285,14 @@ okxSymbol := CanonicalToOKX("BTC-USDT")          // Returns "BTC-USDT"
 Providers can be registered and instantiated through the global registry:
 
 ```go
-// Register a provider
-Register("binance", func(cfg any) (Provider, error) {
+// Register a provider (typically done in an init function)
+binanceName := ExchangeNameFrom("binance")
+exchanges.Register(binanceName, func(cfg exchanges.Config) (Provider, error) {
     // Return configured provider
 })
 
 // Create a provider instance
-provider, err := New("binance", config)
+provider, err := exchanges.Resolve(binanceName)
 ```
 
 ## Decimal Precision
@@ -308,7 +312,7 @@ jsonData := numeric.Format(price, 2)  // Returns "50000.00"
 
 ```go
 // Create a provider
-provider, err := core.New("binance", config)
+provider, err := exchanges.Resolve(ExchangeNameFrom("binance"))
 if err != nil {
     log.Fatal(err)
 }
