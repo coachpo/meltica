@@ -1,80 +1,185 @@
-# Implementing an Exchange Adapter
+# Implementing a Provider
 
-This guide walks through the minimal files, API checkpoints, and validation steps required to add a new exchange adapter that conforms to the meltica protocol.
+This guide explains how to implement a new exchange provider in Meltica following the Level 1-3 architecture.
 
-## Directory Structure
+## Architecture Overview
 
-New exchange adapters should follow this structure:
+Meltica uses a three-layer architecture for exchange integration:
+
+### Level 1: Transport Layer
+- **REST Client**: HTTP request/response handling
+- **WebSocket Client**: Connection and message management
+- **Shared Infrastructure**: Rate limiting, numeric helpers
+
+### Level 2: Routing Layer  
+- **REST Router**: Maps normalized requests to exchange endpoints
+- **WebSocket Router**: Routes messages to normalized topics
+- **Data Parsing**: Converts exchange formats to core types
+
+### Level 3: Exchange Layer
+- **Provider**: Unified exchange interface
+- **Market Data**: Order books, tickers, trades
+- **Private Data**: Orders, balances, positions
+
+## Implementation Steps
+
+### 1. Create Exchange Package Structure
+
+Create a new directory under `exchanges/` following the Binance structure:
 
 ```
-exchanges/<name>/
-├── <name>.go                    # adapter entry point implementing core.Exchange
+exchanges/your-exchange/
 ├── exchange/
-│   ├── provider.go              # main provider implementation
-│   ├── spot.go                  # spot market implementation
-│   ├── linear_futures.go        # linear futures implementation
-│   ├── inverse_futures.go       # inverse futures implementation
-│   ├── symbol_loader.go         # symbol loading and conversion
-│   ├── symbol_registry.go       # symbol registry management
-│   └── ws_service.go            # WebSocket service implementation
+│   ├── provider.go      # Main provider implementation
+│   ├── spot.go          # Spot market implementation
+│   ├── linear_futures.go # Linear futures implementation
+│   ├── inverse_futures.go # Inverse futures implementation
+│   ├── symbol_loader.go # Symbol loading logic
+│   ├── symbol_registry.go # Symbol registry
+│   ├── orderbook_stream.go # Order book streaming
+│   └── ws_service.go    # WebSocket service
 ├── infra/
 │   ├── rest/
-│   │   ├── client.go            # REST client implementation
-│   │   ├── errors.go            # HTTP error normalization
-│   │   └── sign.go              # request signing helpers
+│   │   ├── client.go    # REST client
+│   │   ├── errors.go    # REST error handling
+│   │   └── sign.go      # Request signing
 │   └── ws/
-│       └── client.go            # WebSocket client implementation
+│       └── client.go    # WebSocket client
 ├── internal/
-│   ├── errors.go                # exchange-specific error handling
-│   └── status.go                # status mapping
+│   ├── errors.go        # Internal error types
+│   └── status.go        # Status mapping
 ├── routing/
-│   ├── rest_router.go           # REST request routing
-│   ├── ws_router.go             # WebSocket message routing
-│   ├── topics.go                # topic mapping configuration
-│   ├── parse_public.go          # public WebSocket message parsing
-│   ├── parse_private.go         # private WebSocket message parsing
-│   └── orderbook.go             # order book management
-└── README.md                    # adapter-specific notes and credential requirements
+│   ├── rest_router.go   # REST routing
+│   ├── ws_router.go     # WebSocket routing
+│   ├── parse_public.go  # Public data parsing
+│   ├── parse_private.go # Private data parsing
+│   ├── orderbook.go     # Order book handling
+│   └── topics.go        # Topic mapping
+└── your-exchange.go     # Package entry point
 ```
 
-## API Checklist
+### 2. Implement Level 1: Transport Layer
 
-- `Exchange.Capabilities()` returns a coherent bitset covering features exposed by the adapter
-- `Exchange.SupportedProtocolVersion()` returns `core.ProtocolVersion`
-- All REST surfaces return canonical models (`core.Instrument`, `core.Ticker`, `core.Order`, etc.)
-- Numeric quantities, prices, and balances use `*big.Rat`
-- Canonical symbols use `BASE-QUOTE` format
-- Enum conversions (`OrderSide`, `OrderType`, `TimeInForce`, `OrderStatus`) handle every exchange value and return errors for unsupported cases
-- WebSocket decoders emit concrete `core.*Event` structs with canonical fields
+#### REST Client
+Implement the `RESTClient` interface from `core/exchange/transport_contracts.go`:
 
-## Error and Status Mapping
+```go
+type RESTClient interface {
+    Connection
+    DoRequest(ctx context.Context, req RESTRequest) (*RESTResponse, error)
+    HandleResponse(ctx context.Context, req RESTRequest, resp *RESTResponse, out any) error
+    HandleError(ctx context.Context, req RESTRequest, err error) error
+}
+```
 
-- Map HTTP/transport failures to `*errs.E` with provider name and canonical `errs.Code`
-- Include raw exchange codes/messages in `RawCode`/`RawMsg`
-- Return `errs.CodeInvalid` for unsupported inputs, `errs.CodeExchange` for transport-layer issues, and `errs.CodeAuth` for credential failures
-- For unrecognized enum/status values, return an error instead of silently defaulting
+#### WebSocket Client
+Implement the `StreamClient` interface:
 
-## WebSocket Implementation
+```go
+type StreamClient interface {
+    Connection
+    Subscribe(ctx context.Context, topics ...StreamTopic) (StreamSubscription, error)
+    Unsubscribe(ctx context.Context, sub StreamSubscription, topics ...StreamTopic) error
+    Publish(ctx context.Context, message StreamMessage) error
+    HandleError(ctx context.Context, err error) error
+}
+```
 
-- Use the shared topic system from `core/topics` for canonical topic names
-- Implement topic mapping in routing layer using `exchanges/shared/infra/topics/mapper.go`
-- Public channels must emit appropriate event types for trades, tickers, and order books
-- Private channels emit order and balance events
-- Apply canonical symbol conversion before emitting events
+### 3. Implement Level 2: Routing Layer
 
-## Integration Testing
+#### REST Router
+Use the shared REST dispatcher pattern from `exchanges/shared/routing/rest_dispatcher.go`:
 
-- Write unit tests for all adapter components
-- Add integration tests for end-to-end flows
-- Respect environment variables for optional live testing
-- Document required environment variables in the adapter README
-- Skip live tests gracefully when credentials are absent
+```go
+// Map normalized requests to exchange-specific endpoints
+func (r *Router) MapRequest(req core.Request) (*exchange.RESTRequest, error) {
+    // Implementation details
+}
+```
 
-## Promotion Checklist
+#### WebSocket Router
+Implement the `Router` interface from `core/exchange/exchange.go`:
 
-1. `go test ./...` (unit + integration tests)
-2. Symbols canonical; decimals via `*big.Rat`
-3. Update `README.md` exchange table with capability status
-4. Submit PR with updated fixtures and protocol version bump when required
+```go
+type Router interface {
+    SubscribePublic(ctx context.Context, topics ...string) (Subscription, error)
+    SubscribePrivate(ctx context.Context) (Subscription, error)
+    Close() error
+}
+```
 
-Following this checklist ensures every new adapter enters the repository with predictable behavior and zero drift from the protocol contract.
+### 4. Implement Level 3: Exchange Layer
+
+#### Provider Implementation
+Create the main provider that implements the exchange interface:
+
+```go
+type Provider struct {
+    restClient   exchange.RESTClient
+    wsClient     exchange.StreamClient
+    restRouter   *routing.RESTRouter
+    wsRouter     *routing.WSRouter
+    symbolLoader *SymbolLoader
+}
+```
+
+#### Market Data Implementation
+Implement spot, linear futures, and inverse futures interfaces:
+
+```go
+// Spot market implementation
+type Spot struct {
+    provider *Provider
+}
+
+func (s *Spot) Ticker(ctx context.Context, symbol string) (*core.Ticker, error) {
+    // Implementation
+}
+```
+
+### 5. Configuration
+
+Add exchange configuration in `config/config.go`:
+
+```go
+// Add exchange constant
+const ExchangeYourExchange Exchange = "your-exchange"
+
+// Add to default settings
+func Default() *Config {
+    return &Config{
+        Exchanges: map[Exchange]ExchangeSettings{
+            // ... existing exchanges
+            ExchangeYourExchange: {
+                REST: map[string]string{
+                    "spot": "https://api.your-exchange.com",
+                    "futures": "https://fapi.your-exchange.com",
+                },
+                Websocket: map[string]string{
+                    "public": "wss://stream.your-exchange.com",
+                    "private": "wss://stream.your-exchange.com",
+                },
+            },
+        },
+    }
+}
+```
+
+### 6. Testing
+
+Follow the testing patterns from the Binance implementation:
+
+- Unit tests for parsing and normalization
+- Integration tests for REST and WebSocket flows
+- Use recorded fixtures for reliable testing
+
+## Best Practices
+
+1. **Reuse Shared Infrastructure**: Use numeric helpers, rate limiting, and topic mapping from `exchanges/shared/`
+2. **Follow Error Handling Patterns**: Use the standardized error types and status mapping
+3. **Implement Comprehensive Testing**: Cover all market types and data flows
+4. **Document Edge Cases**: Note any exchange-specific quirks or limitations
+
+## Example Implementation
+
+See the Binance implementation in `exchanges/binance/` for a complete reference implementation.

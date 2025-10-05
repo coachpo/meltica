@@ -1,140 +1,215 @@
-# Exchange Interface Contracts
+# Interface Contracts
 
-The shared `core` interfaces formalise how Level 1 connection clients interact with routing layers. Every exchange adapter must provide concrete implementations for these interfaces so higher layers (routing, business logic, CLI tools) can operate without depending on exchange-specific packages.
+This document describes the core interfaces that exchange providers must implement in Meltica.
 
-## Core Exchange Interface
+## Architecture Overview
+
+Meltica uses a three-layer architecture:
+
+- **Level 1**: Transport layer (REST/WebSocket clients)
+- **Level 2**: Routing layer (request/response mapping)
+- **Level 3**: Exchange layer (provider interface)
+
+## Level 1: Transport Contracts
+
+### REST Client Interface
 
 ```go
-// Exchange is the stable abstraction implemented by every concrete exchange adapter.
-type Exchange interface {
-    Name() string
-    Capabilities() ExchangeCapabilities
-    SupportedProtocolVersion() string
+type RESTClient interface {
+    Connection
+    DoRequest(ctx context.Context, req RESTRequest) (*RESTResponse, error)
+    HandleResponse(ctx context.Context, req RESTRequest, resp *RESTResponse, out any) error
+    HandleError(ctx context.Context, req RESTRequest, err error) error
 }
 ```
 
-This minimal interface provides basic identification and capability discovery for exchange implementations.
+**Responsibilities:**
+- Execute HTTP requests with proper headers and authentication
+- Handle rate limiting and retry logic
+- Parse responses and handle errors
+- Manage connection lifecycle
 
-## Market Data APIs
-
-### Spot API
+### WebSocket Client Interface
 
 ```go
-// SpotAPI exposes canonicalized spot REST endpoints.
-type SpotAPI interface {
-    ServerTime(ctx context.Context) (time.Time, error)
-    Instruments(ctx context.Context) ([]Instrument, error)
-    Ticker(ctx context.Context, symbol string) (Ticker, error)
-    Balances(ctx context.Context) ([]Balance, error)
-    Trades(ctx context.Context, symbol string, since int64) ([]Trade, error)
-    PlaceOrder(ctx context.Context, req OrderRequest) (Order, error)
-    GetOrder(ctx context.Context, symbol, id, clientID string) (Order, error)
-    CancelOrder(ctx context.Context, symbol, id, clientID string) error
-    // SpotNativeSymbol converts canonical spot symbols to exchange-native format.
-    SpotNativeSymbol(spotCanonical string) (string, error)
-    // SpotCanonicalSymbol converts native spot symbols to canonical format.
-    SpotCanonicalSymbol(spotNative string) (string, error)
+type StreamClient interface {
+    Connection
+    Subscribe(ctx context.Context, topics ...StreamTopic) (StreamSubscription, error)
+    Unsubscribe(ctx context.Context, sub StreamSubscription, topics ...StreamTopic) error
+    Publish(ctx context.Context, message StreamMessage) error
+    HandleError(ctx context.Context, err error) error
 }
 ```
 
-### Futures API
+**Responsibilities:**
+- Establish and maintain WebSocket connections
+- Handle subscription management
+- Process incoming messages
+- Send outbound messages
+- Handle connection errors and reconnects
+
+## Level 2: Routing Contracts
+
+### REST Router
+
+Exchange providers implement REST routing to map normalized requests to exchange-specific endpoints:
 
 ```go
-// FuturesAPI exposes canonicalized linear or inverse futures REST endpoints.
-type FuturesAPI interface {
-    Instruments(ctx context.Context) ([]Instrument, error)
-    Ticker(ctx context.Context, symbol string) (Ticker, error)
-    PlaceOrder(ctx context.Context, req OrderRequest) (Order, error)
-    Positions(ctx context.Context, symbols ...string) ([]Position, error)
-    // FutureNativeSymbol converts canonical futures symbols to exchange-native format.
-    FutureNativeSymbol(futureCanonical string) (string, error)
-    // FutureCanonicalSymbol converts native futures symbols to canonical format.
-    FutureCanonicalSymbol(futureNative string) (string, error)
+// Example from Binance implementation
+type RESTRouter struct {
+    dispatcher *rest_dispatcher.Dispatcher
+}
+
+func (r *RESTRouter) MapRequest(req core.Request) (*exchange.RESTRequest, error) {
+    // Implementation maps core requests to exchange-specific REST calls
 }
 ```
 
-## WebSocket Interface
+**Responsibilities:**
+- Map normalized request types to exchange endpoints
+- Handle request signing and authentication
+- Parse and normalize response data
+- Handle exchange-specific error formats
+
+### WebSocket Router
 
 ```go
-// WS exposes public and private websocket subscriptions.
-type WS interface {
+type Router interface {
     SubscribePublic(ctx context.Context, topics ...string) (Subscription, error)
-    SubscribePrivate(ctx context.Context, topics ...string) (Subscription, error)
-    // WSNativeSymbol converts canonical websocket symbols to exchange-native format.
-    WSNativeSymbol(wsCanonical string) (string, error)
-    // WSCanonicalSymbol converts native websocket symbols to canonical format.
-    WSCanonicalSymbol(wsNative string) (string, error)
-}
-
-// Subscription delivers normalized websocket messages for a topic set.
-type Subscription interface {
-    C() <-chan Message
-    Err() <-chan error
+    SubscribePrivate(ctx context.Context) (Subscription, error)
     Close() error
 }
-
-// Message is the canonical websocket envelope emitted by subscriptions.
-type Message struct {
-    Topic  string
-    Raw    []byte
-    At     time.Time
-    Event  string
-    Parsed any
-}
 ```
 
-## Capability System
+**Responsibilities:**
+- Map normalized topics to exchange-specific stream names
+- Parse raw WebSocket messages into normalized events
+- Handle subscription management
+- Route messages to appropriate handlers
 
-The capability system uses a bitmask approach to describe exchange features:
+## Level 3: Exchange Contracts
+
+### Provider Interface
+
+The main exchange provider interface that exposes all market data and trading operations:
 
 ```go
-// Capability describes a discrete feature of an exchange.
-type Capability uint64
-
-const (
-    CapabilitySpotPublicREST Capability = 1 << iota
-    CapabilitySpotTradingREST
-    CapabilityLinearPublicREST
-    CapabilityLinearTradingREST
-    CapabilityInversePublicREST
-    CapabilityInverseTradingREST
-    CapabilityWebsocketPublic
-    CapabilityWebsocketPrivate
-)
-
-// ExchangeCapabilities is a bitset describing the features available from an exchange implementation.
-type ExchangeCapabilities uint64
-
-// Capabilities builds a ExchangeCapabilities bitset from the provided features.
-func Capabilities(caps ...Capability) ExchangeCapabilities
-
-// Has reports whether the capability bit is present.
-func (pc ExchangeCapabilities) Has(cap Capability) bool
+// Provider struct from Binance implementation
+type Provider struct {
+    restClient   exchange.RESTClient
+    wsClient     exchange.StreamClient
+    restRouter   *routing.RESTRouter
+    wsRouter     *routing.WSRouter
+    symbolLoader *SymbolLoader
+}
 ```
 
-## Example Usage
+**Market Data Interfaces:**
 
 ```go
-import exchangesrouting "github.com/coachpo/meltica/exchanges/shared/routing"
-
-router := exchangesrouting.NewDefaultRESTRouter(restClient, nil)
-msg := exchangesrouting.RESTMessage{
-    API:    string(rest.SpotAPI),
-    Method: http.MethodGet,
-    Path:   "/api/v3/time",
+// Spot market interface
+type Spot interface {
+    Ticker(ctx context.Context, symbol string) (*core.Ticker, error)
+    Instruments(ctx context.Context) ([]core.Instrument, error)
+    // Additional spot methods...
 }
-if err := router.Dispatch(ctx, msg, &resp); err != nil {
-    log.Fatalf("time endpoint failed: %v", err)
+
+// Linear futures interface  
+type LinearFutures interface {
+    Ticker(ctx context.Context, symbol string) (*core.Ticker, error)
+    Positions(ctx context.Context, symbol string) ([]core.Position, error)
+    // Additional futures methods...
+}
+
+// Inverse futures interface
+type InverseFutures interface {
+    Ticker(ctx context.Context, symbol string) (*core.Ticker, error)
+    Positions(ctx context.Context) ([]core.Position, error)
+    // Additional inverse futures methods...
 }
 ```
 
-The router converts the `RESTMessage` into exchange-specific requests and handles response parsing. Consumers receive exchange-agnostic models without needing access to exchange internals.
+## Core Data Types
 
-## Testing Support
+### Market Data Events
 
-The `core/exchange/mocks` package provides lightweight doubles for testing:
+```go
+// Trade event
+type TradeEvent struct {
+    Symbol   string
+    Price    *big.Rat
+    Quantity *big.Rat
+    Time     time.Time
+}
 
-- `mocks.RESTClient` exposes function hooks for each method, making it easy to validate routing behaviour.
-- `mocks.StreamClient` and `mocks.StreamSubscription` help simulate websocket streams in unit tests.
+// Ticker event  
+type TickerEvent struct {
+    Symbol string
+    Bid    *big.Rat
+    Ask    *big.Rat
+    Time   time.Time
+}
 
-The Binance module includes interface-focused tests (`exchanges/binance/routing/rest_router_test.go`, `exchanges/binance/routing/ws_router_test.go`) that demonstrate how these mocks validate interactions.
+// Order book event
+type BookEvent struct {
+    Symbol string
+    Bids   []core.BookDepthLevel
+    Asks   []core.BookDepthLevel
+    Time   time.Time
+}
+```
+
+### Private Data Events
+
+```go
+// Order event
+type OrderEvent struct {
+    Symbol    string
+    OrderID   string
+    Status    core.OrderStatus
+    FilledQty *big.Rat
+    AvgPrice  *big.Rat
+    Time      time.Time
+}
+
+// Balance event
+type BalanceEvent struct {
+    Balances []core.Balance
+}
+```
+
+## Error Handling
+
+All interfaces should use the standardized error types from `errs/` package:
+
+```go
+// Example error handling
+if err != nil {
+    return nil, errs.New(
+        errs.CodeExchange,
+        "failed to fetch ticker",
+        errs.WithProvider("binance"),
+        errs.WithRawCode(strconv.Itoa(statusCode)),
+        errs.WithRawMsg(string(body)),
+    )
+}
+```
+
+## Testing Contracts
+
+Exchange providers should implement comprehensive testing:
+
+- Unit tests for parsing and normalization
+- Integration tests for REST and WebSocket flows
+- Error handling tests
+- Symbol conversion tests
+
+## Implementation Guidelines
+
+1. **Follow the Binance Pattern**: Use the Binance implementation as a reference
+2. **Reuse Shared Infrastructure**: Leverage components from `exchanges/shared/`
+3. **Handle All Edge Cases**: Implement proper error handling for all scenarios
+4. **Maintain Type Safety**: Use strongly typed interfaces throughout
+5. **Document Quirks**: Note any exchange-specific behaviors or limitations
+
+See the Binance implementation in `exchanges/binance/` for complete examples of all interface implementations.
