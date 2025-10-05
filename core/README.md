@@ -189,11 +189,23 @@ type Exchange interface {
     Name() string
     Capabilities() ExchangeCapabilities
     SupportedProtocolVersion() string
-    Spot(ctx context.Context) SpotAPI
-    LinearFutures(ctx context.Context) FuturesAPI
-    InverseFutures(ctx context.Context) FuturesAPI
-    WS() WS
     Close() error
+}
+
+type SpotParticipant interface {
+    Spot(ctx context.Context) SpotAPI
+}
+
+type LinearFuturesParticipant interface {
+    LinearFutures(ctx context.Context) FuturesAPI
+}
+
+type InverseFuturesParticipant interface {
+    InverseFutures(ctx context.Context) FuturesAPI
+}
+
+type WebsocketParticipant interface {
+    WS() WS
 }
 ```
 
@@ -320,34 +332,38 @@ defer exchange.Close()
 
 // Check capabilities
 if exchange.Capabilities().Has(core.CapabilitySpotPublicREST) {
-    // Get spot API
-    spot := exchange.Spot(ctx)
-    
-    // Get ticker data
-    ticker, err := spot.Ticker(ctx, "BTC-USDT")
-    if err != nil {
-        log.Fatal(err)
+    if participant, ok := exchange.(SpotParticipant); ok {
+        // Get spot API
+        spot := participant.Spot(ctx)
+
+        // Get ticker data
+        ticker, err := spot.Ticker(ctx, "BTC-USDT")
+        if err != nil {
+            log.Fatal(err)
+        }
+
+        fmt.Printf("BTC-USDT: Bid=%s Ask=%s\n", 
+            ticker.Bid.RatString(), 
+            ticker.Ask.RatString())
     }
-    
-    fmt.Printf("BTC-USDT: Bid=%s Ask=%s\n", 
-        ticker.Bid.RatString(), 
-        ticker.Ask.RatString())
 }
 
 // Subscribe to WebSocket events
-ws := exchange.WS()
-sub, err := ws.SubscribePublic(ctx, "ticker:BTC-USDT")
-if err != nil {
-    log.Fatal(err)
-}
+if participant, ok := exchange.(WebsocketParticipant); ok {
+    ws := participant.WS()
+    sub, err := ws.SubscribePublic(ctx, "ticker:BTC-USDT")
+    if err != nil {
+        log.Fatal(err)
+    }
 
-for {
-    select {
-    case msg := <-sub.C():
-        // Handle message
-        fmt.Printf("Received: %s\n", msg.Topic)
-    case err := <-sub.Err():
-        log.Printf("WebSocket error: %v", err)
+    for {
+        select {
+        case msg := <-sub.C():
+            // Handle message
+            fmt.Printf("Received: %s\n", msg.Topic)
+        case err := <-sub.Err():
+            log.Printf("WebSocket error: %v", err)
+        }
     }
 }
 ```

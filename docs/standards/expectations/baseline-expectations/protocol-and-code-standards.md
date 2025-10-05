@@ -3,7 +3,8 @@
 This document defines non-negotiable standards for the protocol and core code.
 
 ## STD-01: Freeze Exchange interface surface
-- Must have: `core.Exchange` interface exactly matching the current implementation; includes capability reporting and market access.
+- Must have: `core.Exchange` interface exposing only metadata methods (`Name`, `Capabilities`, `SupportedProtocolVersion`, `Close`).
+- Must have: Optional participant interfaces (`SpotParticipant`, `LinearFuturesParticipant`, `InverseFuturesParticipant`, `WebsocketParticipant`).
 - Must not have: Extra/removed methods or signature drift.
 - Validate:
   ```bash

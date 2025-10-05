@@ -55,6 +55,7 @@ type marketUnsubscribeCommand struct{}
 type MarketManager struct {
 	exchange   core.Exchange
 	orderBooks orderBookProvider
+	ws         core.WebsocketParticipant
 	events     chan marketEvent
 	wg         sync.WaitGroup
 	mu         sync.RWMutex
@@ -70,13 +71,18 @@ type orderBookProvider interface {
 	OrderBookSnapshots(ctx context.Context, symbol string) (<-chan corestreams.BookEvent, <-chan error, error)
 }
 
-func NewMarketManager(exchange core.Exchange) *MarketManager {
+func NewMarketManager(exchange core.Exchange) (*MarketManager, error) {
+	wsParticipant, ok := exchange.(core.WebsocketParticipant)
+	if !ok {
+		return nil, fmt.Errorf("exchange %s does not expose websocket access", exchange.Name())
+	}
 	orderBook, _ := exchange.(orderBookProvider)
 	return &MarketManager{
 		exchange:   exchange,
+		ws:         wsParticipant,
 		orderBooks: orderBook,
 		events:     make(chan marketEvent, 256),
-	}
+	}, nil
 }
 
 func (m *MarketManager) Start(ctx context.Context) {
@@ -152,7 +158,7 @@ func (m *MarketManager) startWebSocketSubscription(topics []string) {
 		ctx = context.Background()
 	}
 
-	sub, err := m.exchange.WS().SubscribePublic(ctx, topics...)
+	sub, err := m.ws.WS().SubscribePublic(ctx, topics...)
 	if err != nil {
 		m.emit(marketEvent{
 			Kind:    marketEventError,
@@ -345,7 +351,10 @@ func main() {
 
 	fmt.Printf("Monitoring %s depth via exchange pipelines...\n", nativeSymbol)
 
-	manager := NewMarketManager(exchange)
+	manager, err := NewMarketManager(exchange)
+	if err != nil {
+		log.Fatalf("exchange does not satisfy runtime requirements: %v", err)
+	}
 	manager.Start(ctx)
 	defer manager.Stop()
 

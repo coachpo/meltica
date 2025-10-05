@@ -187,17 +187,33 @@ func (pc ExchangeCapabilities) Has(cap Capability) bool {
 }
 
 // Exchange is the stable abstraction implemented by every concrete exchange adapter.
-// Callers should inspect Capabilities() to determine which market services are supported; methods
-// may return stubs that surface ErrNotSupported when invoked against unsupported capabilities.
+// The interface is intentionally business-agnostic; market-specific behaviour is surfaced through
+// optional participant interfaces such as SpotParticipant or WebsocketParticipant.
 type Exchange interface {
 	Name() string
 	Capabilities() ExchangeCapabilities
 	SupportedProtocolVersion() string
-	Spot(ctx context.Context) SpotAPI
-	LinearFutures(ctx context.Context) FuturesAPI
-	InverseFutures(ctx context.Context) FuturesAPI
-	WS() WS
 	Close() error
+}
+
+// SpotParticipant is implemented by exchanges that expose spot market APIs.
+type SpotParticipant interface {
+	Spot(ctx context.Context) SpotAPI
+}
+
+// LinearFuturesParticipant is implemented by exchanges that expose linear futures APIs.
+type LinearFuturesParticipant interface {
+	LinearFutures(ctx context.Context) FuturesAPI
+}
+
+// InverseFuturesParticipant is implemented by exchanges that expose inverse futures APIs.
+type InverseFuturesParticipant interface {
+	InverseFutures(ctx context.Context) FuturesAPI
+}
+
+// WebsocketParticipant is implemented by exchanges that provide websocket access.
+type WebsocketParticipant interface {
+	WS() WS
 }
 
 // SpotAPI exposes canonicalized spot REST endpoints.
