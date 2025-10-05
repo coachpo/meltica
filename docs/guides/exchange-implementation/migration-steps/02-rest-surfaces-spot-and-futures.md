@@ -13,7 +13,7 @@
 ## How to do it (follow exactly)
 1) **Wire clients**
    - In `exchange/provider.go`, implement constructors for HTTP clients with timeouts, retry/backoff, and rate-limiting hooks (reuse shared transport if available).
-   - Ensure methods on `SpotAPI` / `FuturesAPI` return **core models** (`Instrument`, `Ticker`, `Order`, `Position`, etc.).
+   - Ensure methods on provider interfaces return **core models** (`Instrument`, `Ticker`, `Order`, `Position`, etc.).
 
 2) **Canonical symbols**
    - Before constructing any model, convert exchange symbols to `BASE-QUOTE` uppercase (e.g., `"BTC-USDT"`). Use helpers from `core/symbols.go` such as `ToCanonicalSymbol(...)`.

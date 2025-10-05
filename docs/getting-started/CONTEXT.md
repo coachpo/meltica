@@ -29,7 +29,7 @@ This file provides a high‑level, always‑up‑to‑date orientation for the *
 
 ---
 
-## Essential Commands
+### Essential Commands
 
 ### Getting / Building
 
@@ -37,11 +37,11 @@ This file provides a high‑level, always‑up‑to‑date orientation for the *
 # Install module
 go get github.com/coachpo/meltica
 
-# Build the CLI
-go build -o meltica ./cmd/main
+# Build the project
+make build
 
-# Run directly
-go run ./cmd/main
+# Run tests
+make test
 ```
 
 ### Testing & Validation
@@ -56,7 +56,8 @@ go test ./... -race -count=1
 ### CLIs for Everyday Work
 
 ```bash
-# Stream market data
+# Build and run the main CLI
+make build
 go run ./cmd/main
 ```
 
@@ -317,9 +318,10 @@ MIT, see `LICENSE` at repo root.
 ## Quick Reference (Copy‑Paste)
 
 ```bash
-# Stream market data
-go run ./cmd/main
+# Build and test
+make build
+make test
 
 # Full test suite
-make test   # or: go test ./... -race -count=1
+go test ./... -race -count=1
 ```

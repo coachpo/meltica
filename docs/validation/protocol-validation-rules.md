@@ -25,22 +25,22 @@ This document defines validation rules for the meltica protocol. Each rule lists
   - No extra methods. Method names, parameter and result types MUST match exactly.
 
 2) CORE-IFACE-SPOT (MUST)
-- Intent: Freeze `SpotAPI` surface.
+- Intent: Freeze spot market interface surface.
 - Scope: `core/`.
 - Validation standard:
-  - Go AST must contain `type SpotAPI interface { ... }` with method names and signatures exactly matching the current implementation in `core/core.go`.
+  - Go AST must contain spot market interface methods with names and signatures exactly matching the current implementation in `core/core.go`.
 
 3) CORE-IFACE-FUTURES (MUST)
-- Intent: Freeze `FuturesAPI` surface.
+- Intent: Freeze futures market interface surface.
 - Scope: `core/`.
 - Validation standard:
   - Same approach as CORE-IFACE-SPOT, comparing against `core/core.go` implementation.
 
 4) CORE-IFACE-WS (MUST)
-- Intent: Freeze `WS` interface surface.
+- Intent: Freeze WebSocket interface surface.
 - Scope: `core/`.
 - Validation standard:
-  - Go AST must contain `type WS interface { ... }` matching current signatures. No extra/removed methods.
+  - Go AST must contain WebSocket interface methods matching current signatures. No extra/removed methods.
 
 5) CORE-MODELS-PRESENT (MUST)
 - Intent: Freeze model types and doc comments.

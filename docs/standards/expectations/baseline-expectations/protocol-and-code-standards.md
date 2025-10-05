@@ -10,18 +10,18 @@ This document defines non-negotiable standards for the protocol and core code.
   go build ./core && go test ./core -count=1
   ```
 
-## STD-02: Freeze SpotAPI
-- Must have: `core.SpotAPI` methods exactly as implemented.
+## STD-02: Freeze Spot Market Interface
+- Must have: Provider spot market methods exactly as implemented.
 - Must not have: Added/removed methods; type mismatches.
 - Validate: `go build ./core`
 
-## STD-03: Freeze FuturesAPI
-- Must have: `core.FuturesAPI` methods exactly as implemented.
+## STD-03: Freeze Futures Market Interface
+- Must have: Provider futures market methods exactly as implemented.
 - Must not have: Signature drift.
 - Validate: `go build ./core`
 
-## STD-04: Freeze WS interface
-- Must have: `core.WS` interface match current signatures.
+## STD-04: Freeze WebSocket Interface
+- Must have: Provider WebSocket interface match current signatures.
 - Must not have: Loose `interface{}` surfaces.
 - Validate: `go build ./core`
 
