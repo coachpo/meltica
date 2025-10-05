@@ -81,6 +81,24 @@ interface Exchange {
   Name() string
   Capabilities() ExchangeCapabilities
   SupportedProtocolVersion() string
+  Close() error
+}
+
+// Market-specific interfaces are implemented as separate participants
+interface SpotParticipant {
+  Spot(ctx context.Context) SpotAPI
+}
+
+interface LinearFuturesParticipant {
+  LinearFutures(ctx context.Context) FuturesAPI
+}
+
+interface InverseFuturesParticipant {
+  InverseFutures(ctx context.Context) FuturesAPI
+}
+
+interface WebsocketParticipant {
+  WS() WS
 }
 ```
 
@@ -206,122 +224,4 @@ How to contribute and the exact path for adding a new exchange adapter.
 * **Do:**
 
   * Create: `exchanges/<name>/<name>.go`, `exchange/provider.go`, `infra/rest/client.go`, `infra/ws/client.go`, `README.md`.
-  * Implement `Exchange` in `<name>.go`; `Name()` stable id; `SupportedProtocolVersion() == core.ProtocolVersion`.
-  * Declare `Capabilities()` bitset conservatively; document env vars in adapter README.
-* **Validate:**
-
-  ```bash
-  go build ./... && go test ./... -count=1
-  grep -R "SupportedProtocolVersion" -n exchanges/<name>
-  ```
-
-#### B — REST Surfaces: Spot & Futures
-
-**Goal:** Canonical REST APIs for Spot and (optionally) Futures.
-
-* **Do:**
-
-  * Wire HTTP clients with timeouts, retry/backoff, and rate‑limiting hooks.
-  * Implement Spot (server time, instruments, ticker, order lifecycle) and Futures (instruments, positions, orders) returning **core models**.
-  * Canonicalize symbols to `BASE-QUOTE`; use `*big.Rat` for all numerics.
-  * Map enums/statuses exhaustively with `switch`; default must error.
-* **Validate:**
-
-  ```bash
-  go build ./... && go test ./exchanges/<name> -count=1
-  ```
-
-#### C — WebSocket Public Streams
-
-**Goal:** Implement public WS channels (trades, ticker, depth) with robust reconnect and typed event decoding.
-
-* **Do:**
-
-  * In `exchanges/<name>/infra/ws/client.go`, implement connect logic with:
-    - Reconnect + jittered backoff
-    - Heartbeats/pings per provider spec
-    - Multiplexed subscriptions (topics like `trades:BTC-USDT`)
-  * Preserve subscription list across reconnect.
-  * Implement `decodeTradeToEvent`, `decodeTickerToEvent`, `decodeDepthToEvent` returning **concrete** `core.*Event` types.
-  * Always convert symbols to canonical `BASE-QUOTE` **before** emitting the event.
-  * Attach raw JSON to the event/message `Raw` field if the model supports it.
-* **Validate:**
-
-  ```bash
-  go test ./exchanges/<name> -run TestPublicWS -timeout 30m
-  ```
-
-#### D — WebSocket Private Streams
-
-**Goal:** Implement authenticated/private WS (orders, balances, positions) with sequencing and recovery.
-
-* **Do:**
-
-  * In `ws_private.go`, implement session creation per provider (listen key endpoints, signed subscribe frames, or cookies).
-  * Keep‑alive/refresh tokens or listen keys on schedule.
-  * Implement decoder functions returning **concrete** `core/ws.OrderEvent` and `core/ws.BalanceEvent` only.
-  * Canonicalize symbols before emitting.
-  * Track last sequence/ts; on reconnect, fetch deltas via REST if the provider supports it (orders/positions since `lastSeq`).
-* **Validate:**
-
-  ```bash
-  go test ./exchanges/<name> -run TestPrivateWS -timeout 30m
-  ```
-
-#### E — Error/Status Mapping, Symbols, Decimals, Enums
-
-**Goal:** Produce canonical errors and enums; enforce symbol and numeric policies across all code paths.
-
-* **Do:**
-
-  * In `errors.go`, wrap to `*errs.E` with canonical codes; include raw exchange details.
-  * In `status.go` (and friends), implement exhaustive `mapOrderStatus/Type/Side/TIF`.
-  * Replace any floats with `*big.Rat`; ensure (Un)MarshalJSON uses proper formatting; always call `core.ToCanonicalSymbol`.
-* **Validate:**
-
-  ```bash
-  go test ./exchanges/<name> -run TestErrorAndStatusGolden -count=1
-  ```
-
-#### F — Integration & Release
-
-**Goal:** Make the adapter provably compliant and wired into CI so regressions cannot merge.
-
-* **Do:**
-
-  * Ensure all unit tests pass.
-  * Add integration tests for end-to-end flows.
-  * CI gates:
-
-    ```bash
-    go build ./...
-    go test ./... -race -count=1
-    ```
-  * Protocol guard: fail CI if protocol changed without version bump; adapters must match.
-  * Optional live tests gated by documented env vars.
-  * Tag release per SemVer; update root README exchange matrix.
-* **Validate:** All above commands green locally and in CI; docs updated.
-
-### Pull request checklist (copy/paste)
-
-* [ ] Unit tests (`-race`) green.
-* [ ] Symbols canonical; decimals via `*big.Rat`.
-* [ ] If protocol touched: docs updated **and** `core.ProtocolVersion` bumped; adapters match.
-* [ ] Adapter README includes env vars and base URLs; minimal file set present.
-
-## License
-
-MIT, see `LICENSE` at repo root.
-
----
-
-## Quick Reference (Copy‑Paste)
-
-```bash
-# Build and test
-make build
-make test
-
-# Full test suite
-go test ./... -race -count=1
-```
+  * Implement `Exchange` in `<name>.go`; `Name()`

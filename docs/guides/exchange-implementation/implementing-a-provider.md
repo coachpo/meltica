@@ -29,33 +29,32 @@ Create a new directory under `exchanges/` following the Binance structure:
 
 ```
 exchanges/your-exchange/
-├── exchange/
-│   ├── provider.go      # Main provider implementation
-│   ├── spot.go          # Spot market implementation
-│   ├── linear_futures.go # Linear futures implementation
-│   ├── inverse_futures.go # Inverse futures implementation
-│   ├── symbol_loader.go # Symbol loading logic
-│   ├── symbol_registry.go # Symbol registry
-│   ├── orderbook_stream.go # Order book streaming
-│   └── ws_service.go    # WebSocket service
+├── your-exchange.go         # Package entry point
+├── spot.go                  # Spot market implementation
+├── linear_futures.go        # Linear futures implementation
+├── inverse_futures.go       # Inverse futures implementation
+├── depth.go                 # Depth/order book handling
+├── orderbook_snapshot.go    # Order book snapshot logic
+├── symbol_loader.go         # Symbol loading logic
+├── symbol_registry.go       # Symbol registry
+├── ws_service.go            # WebSocket service
 ├── infra/
 │   ├── rest/
-│   │   ├── client.go    # REST client
-│   │   ├── errors.go    # REST error handling
-│   │   └── sign.go      # Request signing
+│   │   ├── client.go        # REST client
+│   │   ├── errors.go        # REST error handling
+│   │   └── sign.go          # Request signing
 │   └── ws/
-│       └── client.go    # WebSocket client
+│       └── client.go        # WebSocket client
 ├── internal/
-│   ├── errors.go        # Internal error types
-│   └── status.go        # Status mapping
-├── routing/
-│   ├── rest_router.go   # REST routing
-│   ├── ws_router.go     # WebSocket routing
-│   ├── parse_public.go  # Public data parsing
-│   ├── parse_private.go # Private data parsing
-│   ├── orderbook.go     # Order book handling
-│   └── topics.go        # Topic mapping
-└── your-exchange.go     # Package entry point
+│   ├── errors.go            # Internal error types
+│   └── status.go            # Status mapping
+└── routing/
+    ├── rest_router.go       # REST routing
+    ├── ws_router.go         # WebSocket routing
+    ├── parse_public.go      # Public data parsing
+    ├── parse_private.go     # Private data parsing
+    ├── orderbook_state.go   # Order book state management
+    └── topics.go            # Topic mapping
 ```
 
 ### 2. Implement Level 1: Transport Layer
@@ -111,7 +110,7 @@ type Router interface {
 ### 4. Implement Level 3: Exchange Layer
 
 #### Provider Implementation
-Create the main provider that implements the exchange interface:
+Create the main provider that implements the Exchange interface and relevant participant interfaces:
 
 ```go
 type Provider struct {
@@ -120,6 +119,45 @@ type Provider struct {
     restRouter   *routing.RESTRouter
     wsRouter     *routing.WSRouter
     symbolLoader *SymbolLoader
+}
+
+// Implement Exchange interface
+func (p *Provider) Name() string {
+    return "your-exchange"
+}
+
+func (p *Provider) Capabilities() core.ExchangeCapabilities {
+    return core.ExchangeCapabilities{
+        Spot:          true,
+        LinearFutures: true,
+        InverseFutures: true,
+    }
+}
+
+func (p *Provider) SupportedProtocolVersion() string {
+    return core.ProtocolVersion
+}
+
+func (p *Provider) Close() error {
+    // Cleanup logic
+    return nil
+}
+
+// Implement participant interfaces
+func (p *Provider) Spot(ctx context.Context) core.SpotAPI {
+    return &Spot{provider: p}
+}
+
+func (p *Provider) LinearFutures(ctx context.Context) core.FuturesAPI {
+    return &LinearFutures{provider: p}
+}
+
+func (p *Provider) InverseFutures(ctx context.Context) core.FuturesAPI {
+    return &InverseFutures{provider: p}
+}
+
+func (p *Provider) WS() core.WS {
+    return p.wsRouter
 }
 ```
 

@@ -104,28 +104,78 @@ type Provider struct {
 }
 ```
 
+### Exchange Interface
+
+The core Exchange interface that all providers must implement:
+
+```go
+type Exchange interface {
+    Name() string
+    Capabilities() ExchangeCapabilities
+    SupportedProtocolVersion() string
+    Close() error
+}
+```
+
+### Market-Specific Participant Interfaces
+
+Exchange providers implement additional participant interfaces based on their capabilities:
+
+```go
+// Spot market participant
+type SpotParticipant interface {
+    Spot(ctx context.Context) SpotAPI
+}
+
+// Linear futures participant
+type LinearFuturesParticipant interface {
+    LinearFutures(ctx context.Context) FuturesAPI
+}
+
+// Inverse futures participant
+type InverseFuturesParticipant interface {
+    InverseFutures(ctx context.Context) FuturesAPI
+}
+
+// WebSocket participant
+type WebsocketParticipant interface {
+    WS() WS
+}
+```
+
 **Market Data Interfaces:**
 
 ```go
 // Spot market interface
-type Spot interface {
-    Ticker(ctx context.Context, symbol string) (*core.Ticker, error)
+type SpotAPI interface {
+    ServerTime(ctx context.Context) (time.Time, error)
     Instruments(ctx context.Context) ([]core.Instrument, error)
-    // Additional spot methods...
+    Ticker(ctx context.Context, symbol string) (core.Ticker, error)
+    Balances(ctx context.Context) ([]core.Balance, error)
+    Trades(ctx context.Context, symbol string, since int64) ([]core.Trade, error)
+    PlaceOrder(ctx context.Context, req core.OrderRequest) (core.Order, error)
+    GetOrder(ctx context.Context, symbol, id, clientID string) (core.Order, error)
+    CancelOrder(ctx context.Context, symbol, id, clientID string) error
+    SpotNativeSymbol(spotCanonical string) (string, error)
+    SpotCanonicalSymbol(spotNative string) (string, error)
 }
 
-// Linear futures interface  
-type LinearFutures interface {
-    Ticker(ctx context.Context, symbol string) (*core.Ticker, error)
-    Positions(ctx context.Context, symbol string) ([]core.Position, error)
-    // Additional futures methods...
+// Futures market interface  
+type FuturesAPI interface {
+    Instruments(ctx context.Context) ([]core.Instrument, error)
+    Ticker(ctx context.Context, symbol string) (core.Ticker, error)
+    PlaceOrder(ctx context.Context, req core.OrderRequest) (core.Order, error)
+    Positions(ctx context.Context, symbols ...string) ([]core.Position, error)
+    FutureNativeSymbol(futureCanonical string) (string, error)
+    FutureCanonicalSymbol(futureNative string) (string, error)
 }
 
-// Inverse futures interface
-type InverseFutures interface {
-    Ticker(ctx context.Context, symbol string) (*core.Ticker, error)
-    Positions(ctx context.Context) ([]core.Position, error)
-    // Additional inverse futures methods...
+// WebSocket interface
+type WS interface {
+    SubscribePublic(ctx context.Context, topics ...string) (core.Subscription, error)
+    SubscribePrivate(ctx context.Context, topics ...string) (core.Subscription, error)
+    WSNativeSymbol(wsCanonical string) (string, error)
+    WSCanonicalSymbol(wsNative string) (string, error)
 }
 ```
 

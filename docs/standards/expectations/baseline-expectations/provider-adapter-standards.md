@@ -19,10 +19,42 @@ All exchange providers must follow the three-layer architecture:
 - Handle data parsing and normalization
 
 ### Level 3: Exchange Layer
-- Implement the provider interface following the Binance pattern
-- Support spot, linear futures, and inverse futures markets
+
+- Implement the core `Exchange` interface:
+
+```go
+type Exchange interface {
+    Name() string
+    Capabilities() ExchangeCapabilities
+    SupportedProtocolVersion() string
+    Close() error
+}
+```
+
+- Implement relevant participant interfaces based on capabilities:
+
+```go
+type SpotParticipant interface {
+    Spot(ctx context.Context) SpotAPI
+}
+
+type LinearFuturesParticipant interface {
+    LinearFutures(ctx context.Context) FuturesAPI
+}
+
+type InverseFuturesParticipant interface {
+    InverseFutures(ctx context.Context) FuturesAPI
+}
+
+type WebsocketParticipant interface {
+    WS() WS
+}
+```
+
+- Support spot, linear futures, and inverse futures markets through participant interfaces
 - Provide symbol loading and conversion
 - Implement order book streaming
+- Ensure proper resource cleanup in `Close()` method
 
 ## Testing Standards
 

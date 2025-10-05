@@ -43,6 +43,36 @@ If you have an existing exchange implementation that needs to be updated:
 - **REST Client**: Updated to use `RESTClient` interface from `core/transport/transport_contracts.go`
 - **WebSocket Client**: Updated to use `StreamClient` interface
 - **Provider Pattern**: Standardized provider structure across all exchanges
+- **Exchange Interface**: All providers must implement the core `Exchange` interface:
+
+```go
+type Exchange interface {
+    Name() string
+    Capabilities() ExchangeCapabilities
+    SupportedProtocolVersion() string
+    Close() error
+}
+```
+
+- **Participant Interfaces**: Market-specific functionality is implemented through separate participant interfaces:
+
+```go
+type SpotParticipant interface {
+    Spot(ctx context.Context) SpotAPI
+}
+
+type LinearFuturesParticipant interface {
+    LinearFutures(ctx context.Context) FuturesAPI
+}
+
+type InverseFuturesParticipant interface {
+    InverseFutures(ctx context.Context) FuturesAPI
+}
+
+type WebsocketParticipant interface {
+    WS() WS
+}
+```
 
 ### Error Handling
 
@@ -71,11 +101,14 @@ If you have an existing exchange implementation that needs to be updated:
 ### Level 3: Exchange Layer
 
 - [ ] Create main provider struct
-- [ ] Implement spot market interface
+- [ ] Implement core `Exchange` interface
+- [ ] Implement relevant participant interfaces based on capabilities
+- [ ] Implement spot market interface (if supported)
 - [ ] Implement linear futures interface (if supported)
 - [ ] Implement inverse futures interface (if supported)
 - [ ] Add symbol loading and conversion
 - [ ] Implement order book streaming
+- [ ] Ensure proper cleanup in `Close()` method
 
 ### Testing
 
