@@ -8,7 +8,7 @@ The system now uses a unified approach for order book data processing. All order
 
 ### 1. Order Book State Management
 
-Each provider maintains local order book state for its symbols using an `OrderBookManager` defined in `providers/<name>/ws/orderbook.go`:
+Each provider maintains local order book state for its symbols using an `OrderBookManager` defined in `exchanges/<name>/routing/orderbook.go`:
 
 ```go
 type OrderBookManager struct {
@@ -52,15 +52,21 @@ type OrderBook struct {
 - **Sequence Management**: Uses `prevSeqId` and `seqId` for sequence tracking
 - **Data Format**: `["价格", "数量", "0", "订单数"]` - only uses price and quantity
 
-### 3. Simplified Topic Structure
+### 3. Topic Structure
 
-- **Removed**: `TopicDepth` and `DepthTopic()` function
-- **Unified**: All order book data now uses `TopicBook` and `BookTopic(symbol)`
-- **Result**: Only one topic type for order book data: `book:SYMBOL`
+Order book data uses the unified topic system from `core/topics`:
 
-### 4. Simplified Event Structure
+```go
+// Canonical topic for order book data
+const TopicBook = "book"
 
-The `DepthEvent` structure remains clean:
+// Create order book topic for a symbol
+func Book(symbol string) string { return TopicBook + ":" + symbol }
+```
+
+### 4. Event Structure
+
+The order book event structure:
 
 ```go
 type DepthEvent struct {
@@ -73,27 +79,29 @@ type DepthEvent struct {
 
 ### 5. Provider Behavior Summary
 
-| Provider | Input Type | Processing Method | Output |
-|----------|------------|-------------------|---------|
-| **Binance** | `depthUpdate` (incremental) | Delta merge with sequence tracking | Complete snapshot |
-| **Coinbase** | `l2update` (incremental) | Delta merge | Complete snapshot |
-| **Coinbase** | `snapshot` (full) | Direct replacement | Complete snapshot |
-| **OKX** | `books` (snapshot + incremental) | Snapshot replacement + delta merge | Complete snapshot |
-| **Kraken** | `book` (full) | Direct replacement | Complete snapshot |
+|| Provider | Input Type | Processing Method | Output |
+||----------|------------|-------------------|---------|
+|| **Binance** | `depthUpdate` (incremental) | Delta merge with sequence tracking | Complete snapshot |
+|| **Coinbase** | `l2update` (incremental) | Delta merge | Complete snapshot |
+|| **Coinbase** | `snapshot` (full) | Direct replacement | Complete snapshot |
+|| **OKX** | `books` (snapshot + incremental) | Snapshot replacement + delta merge | Complete snapshot |
+|| **Kraken** | `book` (full) | Direct replacement | Complete snapshot |
 
 ## Usage
 
 ### Subscribing to Order Book Data
 
 ```go
+import "github.com/coachpo/meltica/core/topics"
+
 // Subscribe to order book updates for BTC-USDT
-topic := corews.BookTopic("BTC-USDT") // Returns "book:BTC-USDT"
+topic := topics.Book("BTC-USDT") // Returns "book:BTC-USDT"
 ```
 
 ### Processing Order Book Events
 
 ```go
-func handleOrderBookEvent(event *corews.DepthEvent) {
+func handleOrderBookEvent(event *core.DepthEvent) {
     // All events are treated as complete snapshots
     log.Printf("Received order book for %s with %d bids, %d asks", 
         event.Symbol, len(event.Bids), len(event.Asks))

@@ -1,6 +1,6 @@
 GO111MODULE=on
 
-.PHONY: test lint vet tidy build standards ci clean binance-ws-test
+.PHONY: test lint vet tidy build build-linux-arm64 standards ci clean binance-ws-test
 
 lint:
 	golangci-lint run || true
@@ -14,6 +14,8 @@ test:
 build:
 	go build -o out/ ./...
 
+build-linux-arm64:
+	GOOS=linux GOARCH=arm64 go build -o out/linux-arm64/ ./...
 
 ci:
 	$(MAKE) vet

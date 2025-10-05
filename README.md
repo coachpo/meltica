@@ -13,17 +13,16 @@ This coffee inspiration reflects our approach to blending different exchange API
 - **Unified API**: Single interface for trading across multiple exchanges
 - **Multiple Markets**: Support for spot, linear futures, and inverse futures trading
 - **Real-time Data**: WebSocket subscriptions for market data and private account updates
-- **Protocol Compliance**: JSON Schema validation
 - **Extensible**: Easy to add new exchange providers
 
 ## Supported Providers
 
-| Provider | Spot REST | Spot Trading | Linear Futures | Inverse Futures | WebSocket Public | WebSocket Private |
-|----------|-----------|--------------|----------------|-----------------|------------------|-------------------|
-| **Binance** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **OKX** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **Coinbase** | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ |
-| **Kraken** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+|| Provider | Spot REST | Spot Trading | Linear Futures | Inverse Futures | WebSocket Public | WebSocket Private |
+||----------|-----------|--------------|----------------|-----------------|------------------|-------------------|
+|| **Binance** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+|| **OKX** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+|| **Coinbase** | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ |
+|| **Kraken** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 ### Capabilities by Provider
 
@@ -50,15 +49,14 @@ import (
     "fmt"
     "time"
     
-    "github.com/coachpo/meltica/providers/binance"
+    "github.com/coachpo/meltica/exchanges/binance"
 )
 
 func main() {
     ctx := context.Background()
     
-    // Create provider (no credentials needed for public data)
+    // Create exchange provider (no credentials needed for public data)
     client, _ := binance.New("", "")
-    defer client.Close()
     
     // Get server time
     spot := client.Spot(ctx)
@@ -91,14 +89,16 @@ inversePositions, _ := inverseFutures.Positions(ctx)
 ### WebSocket Subscriptions
 
 ```go
+import "github.com/coachpo/meltica/core/topics"
+
 // Public market data
-sub, _ := client.WS().SubscribePublic(ctx, "trades:BTC-USDT", "ticker:BTC-USDT")
+sub, _ := client.WS().SubscribePublic(ctx, topics.Trade("BTC-USDT"), topics.Ticker("BTC-USDT"))
 for msg := range sub.C() {
     fmt.Printf("Received: %s - %s\n", msg.Topic, string(msg.Raw))
 }
 
 // Private account updates
-privateSub, _ := client.WS().SubscribePrivate(ctx, "orders", "positions")
+privateSub, _ := client.WS().SubscribePrivate(ctx, topics.UserOrder("BTC-USDT"), topics.UserBalance())
 for msg := range privateSub.C() {
     // Handle order updates, position changes, etc.
 }
@@ -110,12 +110,6 @@ for msg := range privateSub.C() {
 // Using environment variables
 client, _ := binance.New(os.Getenv("BINANCE_KEY"), os.Getenv("BINANCE_SECRET"))
 
-// Using the registry system
-client, _ := core.New("binance", struct{ APIKey, Secret string }{
-    APIKey: os.Getenv("BINANCE_KEY"),
-    Secret: os.Getenv("BINANCE_SECRET"),
-})
-
 // Place an order
 order, _ := spot.PlaceOrder(ctx, core.OrderRequest{
     Symbol:   "BTC-USDT",
@@ -124,29 +118,6 @@ order, _ := spot.PlaceOrder(ctx, core.OrderRequest{
     Quantity: big.NewRat(1, 10), // 0.1 BTC
     Price:    big.NewRat(50000, 1), // $50,000
 })
-```
-
-## Multi-Provider Example
-
-```go
-import (
-    "github.com/coachpo/meltica/core"
-    "github.com/coachpo/meltica/providers/binance"
-    "github.com/coachpo/meltica/providers/okx"
-)
-
-func comparePrices() {
-    // Initialize multiple providers
-    binanceClient, _ := binance.New("", "")
-    okxClient, _ := okx.New("", "", "")
-    
-    // Get tickers from both exchanges
-    binanceTicker, _ := binanceClient.Spot(ctx).Ticker(ctx, "BTC-USDT")
-    okxTicker, _ := okxClient.Spot(ctx).Ticker(ctx, "BTC-USDT")
-    
-    fmt.Printf("Binance BTC-USDT: %s/%s\n", binanceTicker.Bid, binanceTicker.Ask)
-    fmt.Printf("OKX BTC-USDT: %s/%s\n", okxTicker.Bid, okxTicker.Ask)
-}
 ```
 
 ## Development
@@ -168,36 +139,7 @@ cd meltica
 make build
 
 # Or build individual tools
-go build -o market-stream ./cmd/market-stream
-# Build tools as needed
-```
-
-### Market Data Stream CLI
-
-```bash
-# Stream Binance trades for BTC-USDT
-go run ./cmd/market-stream --exchange binance --symbol BTC-USDT --channel trades
-
-# Subscribe to OKX top-of-book quotes
-go run ./cmd/market-stream --exchange okx --symbol ETH-USDT --channel ticker
-
-# Stream order book depth from Coinbase
-go run ./cmd/market-stream --exchange coinbase --symbol BTC-USD --channel depth
-```
-
-Available channels depend on the provider. Common options are `ticker`, `trades`, and `depth`.
-
-### Provider Development
-
-Providers are located in the `providers/` directory. Each provider implements the core interfaces defined in the `core` package.
-
-### Protocol Validation
-
-Validate JSON schemas and golden vectors:
-
-```bash
-# Run all tests
-go test ./...
+go build -o bin/ ./cmd/binance-ws-test
 ```
 
 ### Testing
@@ -209,19 +151,13 @@ go test ./... -count=1
 # Run with race detection
 go test ./... -race -count=1
 
-# Run tests with race detection
-go test ./... -race
-export BINANCE_SECRET=your_secret
-go test ./internal/test -count=1
-
-# Run specific provider tests
-go test ./providers/binance -v
+# Run specific exchange tests
+go test ./exchanges/binance -v
 ```
-
 
 ### Building & Tools
 
-All compiled binaries are output to the `out/` directory in the project root.
+All compiled binaries are output to the `bin/` directory in the project root.
 
 ```bash
 # Build all binaries
@@ -233,62 +169,55 @@ make lint      # Run linter (if golangci-lint is installed)
 make tidy      # Clean up Go modules
 
 # Clean build artifacts
-rm -rf out/
+make clean
 ```
 
 **Available Tools:**
 
+- `binance-ws-test`: WebSocket connection testing for Binance
+- `binance-ws-validation`: WebSocket message validation
+- `binance-orderbook-validation`: Order book validation
+- `binance-snapshot-test`: Snapshot testing
 
 **Directory Structure:**
 ```
 meltica/
-├── out/                 # Build output directory
-│   └── market-stream
-└── ...
+├── exchanges/           # Exchange-specific implementations
+│   ├── binance/        # Binance exchange adapter
+│   └── shared/         # Shared infrastructure
+├── core/               # Universal abstractions and interfaces
+├── cmd/                # Command-line tools
+└── bin/                # Build output directory
 ```
 
-The `out/` directory is automatically ignored by git.
+The `bin/` directory is automatically ignored by git.
 
 ## Architecture
 
 ### Core Components
 
 - **`core/`**: Universal abstractions and interfaces
-- **`providers/`**: Exchange-specific implementations
-- **`protocol/`**: JSON Schema definitions and validation
-- **`transport/`**: HTTP client with retry logic and rate limiting
+- **`exchanges/`**: Exchange-specific implementations
+- **`errs/`**: Error handling and normalization
+- **`config/`**: Configuration management
 
-### Provider Interface
+### Exchange Interface
 
-All providers implement the unified `Provider` interface:
+All exchanges implement the unified `Exchange` interface:
 
 ```go
-type Provider interface {
+type Exchange interface {
     Name() string
-    Capabilities() ProviderCapabilities
+    Capabilities() ExchangeCapabilities
     SupportedProtocolVersion() string
-    Spot(ctx context.Context) SpotAPI
-    LinearFutures(ctx context.Context) FuturesAPI
-    InverseFutures(ctx context.Context) FuturesAPI
-    WS() WS
-    Close() error
 }
 ```
-
-### Protocol Compliance
-
-The project enforces protocol compliance through:
-
-- **JSON Schema validation** for WebSocket events and data structures
-- **Conformance testing** to validate provider implementations
-- **Golden file testing** for consistent API responses
 
 ## Contributing
 
 1. Start with `docs/START-HERE.md` for the ordered guide
-2. Implement new providers using `docs/how-to/implementing-a-provider.md`
-3. Ensure protocol compliance with `docs/validation/protocol-validation-rules.md`
-4. Run all tests and validation tools before submitting
+2. Implement new exchanges using `docs/guides/exchange-implementation/implementing-a-provider.md`
+3. Run all tests and validation tools before submitting
 
 ## License
 

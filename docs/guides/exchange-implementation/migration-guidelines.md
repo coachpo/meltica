@@ -151,4 +151,9 @@
   - p95 REST latency within agreed SLO; no goroutine/FD leaks.
   - All clients safe for concurrent use; clean shutdown verified.
 
+### Current Status
+- **Completed**: Phases 0-7 (Core infrastructure, Binance Spot/Futures REST, WebSocket public/private)
+- **In Progress**: Phase 8 (Exchange abstraction)
+- **Pending**: Phases 9-15 (Additional exchanges, advanced features)
+
 - Delivered a phased, action-oriented plan with steps and explicit outcomes across core, transport, exchanges, WS, testing, observability, security, DX, and release.

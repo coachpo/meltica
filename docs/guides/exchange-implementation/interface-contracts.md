@@ -1,38 +1,118 @@
 # Exchange Interface Contracts
 
-The shared `core/exchange` interfaces formalise how Level 1 connection clients interact with routing layers. Every exchange adapter must provide concrete implementations for these interfaces so higher layers (routing, business logic, CLI tools) can operate without depending on exchange-specific packages.
+The shared `core` interfaces formalise how Level 1 connection clients interact with routing layers. Every exchange adapter must provide concrete implementations for these interfaces so higher layers (routing, business logic, CLI tools) can operate without depending on exchange-specific packages.
 
-## Connection lifecycle
+## Core Exchange Interface
 
 ```go
-// Connection is embedded by both RESTClient and StreamClient
-// Connect should verify connectivity and honour context cancellation.
-type Connection interface {
-    Connect(ctx context.Context) error
+// Exchange is the stable abstraction implemented by every concrete exchange adapter.
+type Exchange interface {
+    Name() string
+    Capabilities() ExchangeCapabilities
+    SupportedProtocolVersion() string
+}
+```
+
+This minimal interface provides basic identification and capability discovery for exchange implementations.
+
+## Market Data APIs
+
+### Spot API
+
+```go
+// SpotAPI exposes canonicalized spot REST endpoints.
+type SpotAPI interface {
+    ServerTime(ctx context.Context) (time.Time, error)
+    Instruments(ctx context.Context) ([]Instrument, error)
+    Ticker(ctx context.Context, symbol string) (Ticker, error)
+    Balances(ctx context.Context) ([]Balance, error)
+    Trades(ctx context.Context, symbol string, since int64) ([]Trade, error)
+    PlaceOrder(ctx context.Context, req OrderRequest) (Order, error)
+    GetOrder(ctx context.Context, symbol, id, clientID string) (Order, error)
+    CancelOrder(ctx context.Context, symbol, id, clientID string) error
+    // SpotNativeSymbol converts canonical spot symbols to exchange-native format.
+    SpotNativeSymbol(spotCanonical string) (string, error)
+    // SpotCanonicalSymbol converts native spot symbols to canonical format.
+    SpotCanonicalSymbol(spotNative string) (string, error)
+}
+```
+
+### Futures API
+
+```go
+// FuturesAPI exposes canonicalized linear or inverse futures REST endpoints.
+type FuturesAPI interface {
+    Instruments(ctx context.Context) ([]Instrument, error)
+    Ticker(ctx context.Context, symbol string) (Ticker, error)
+    PlaceOrder(ctx context.Context, req OrderRequest) (Order, error)
+    Positions(ctx context.Context, symbols ...string) ([]Position, error)
+    // FutureNativeSymbol converts canonical futures symbols to exchange-native format.
+    FutureNativeSymbol(futureCanonical string) (string, error)
+    // FutureCanonicalSymbol converts native futures symbols to canonical format.
+    FutureCanonicalSymbol(futureNative string) (string, error)
+}
+```
+
+## WebSocket Interface
+
+```go
+// WS exposes public and private websocket subscriptions.
+type WS interface {
+    SubscribePublic(ctx context.Context, topics ...string) (Subscription, error)
+    SubscribePrivate(ctx context.Context, topics ...string) (Subscription, error)
+    // WSNativeSymbol converts canonical websocket symbols to exchange-native format.
+    WSNativeSymbol(wsCanonical string) (string, error)
+    // WSCanonicalSymbol converts native websocket symbols to canonical format.
+    WSCanonicalSymbol(wsNative string) (string, error)
+}
+
+// Subscription delivers normalized websocket messages for a topic set.
+type Subscription interface {
+    C() <-chan Message
+    Err() <-chan error
     Close() error
 }
-```
 
-Implementations may lazily establish transport state; `Connect` exists so callers can perform readiness checks or warm connection pools when required.
-
-## RESTClient contract
-
-```go
-type RESTClient interface {
-    Connection
-    DoRequest(ctx context.Context, req RESTRequest) (*RESTResponse, error)
-    HandleResponse(ctx context.Context, req RESTRequest, resp *RESTResponse, out any) error
-    HandleError(ctx context.Context, req RESTRequest, err error) error
+// Message is the canonical websocket envelope emitted by subscriptions.
+type Message struct {
+    Topic  string
+    Raw    []byte
+    At     time.Time
+    Event  string
+    Parsed any
 }
 ```
 
-- **DoRequest** executes a single HTTP call and returns the raw status, headers, and payload bytes.
-- **HandleResponse** performs protocol-specific decoding (JSON unmarshalling, envelope flattening) into `out` when present.
-- **HandleError** maps transport failures into canonical `error` values (`*errs.E`) so upper layers can reason about rate limits, auth failures, or invalid input.
+## Capability System
 
-`RESTRequest` carries the normalised method, path, query/body parameters, and the exchange specific surface identifier (`API`).
+The capability system uses a bitmask approach to describe exchange features:
 
-### Example usage
+```go
+// Capability describes a discrete feature of an exchange.
+type Capability uint64
+
+const (
+    CapabilitySpotPublicREST Capability = 1 << iota
+    CapabilitySpotTradingREST
+    CapabilityLinearPublicREST
+    CapabilityLinearTradingREST
+    CapabilityInversePublicREST
+    CapabilityInverseTradingREST
+    CapabilityWebsocketPublic
+    CapabilityWebsocketPrivate
+)
+
+// ExchangeCapabilities is a bitset describing the features available from an exchange implementation.
+type ExchangeCapabilities uint64
+
+// Capabilities builds a ExchangeCapabilities bitset from the provided features.
+func Capabilities(caps ...Capability) ExchangeCapabilities
+
+// Has reports whether the capability bit is present.
+func (pc ExchangeCapabilities) Has(cap Capability) bool
+```
+
+## Example Usage
 
 ```go
 import exchangesrouting "github.com/coachpo/meltica/exchanges/shared/routing"
@@ -48,53 +128,13 @@ if err := router.Dispatch(ctx, msg, &resp); err != nil {
 }
 ```
 
-The router converts the `RESTMessage` into a `coreexchange.RESTRequest`, calls `DoRequest`, then delegates to `HandleResponse` or `HandleError`. Consumers (such as `cmd/main.go`) receive exchange-agnostic models without needing access to Binance internals.
+The router converts the `RESTMessage` into exchange-specific requests and handles response parsing. Consumers receive exchange-agnostic models without needing access to exchange internals.
 
-## StreamClient contract
+## Testing Support
 
-```go
-type StreamClient interface {
-    Connection
-    Subscribe(ctx context.Context, topics ...StreamTopic) (StreamSubscription, error)
-    Unsubscribe(ctx context.Context, sub StreamSubscription, topics ...StreamTopic) error
-    Publish(ctx context.Context, message StreamMessage) error
-    HandleError(ctx context.Context, err error) error
-}
-```
-
-- **Subscribe** establishes one or more websocket streams and returns a `StreamSubscription` exposing raw frames and error channels.
-- **Unsubscribe** detaches topics or closes the connection; the default behaviour may simply call `sub.Close()`.
-- **Publish** is optional—exchanges without outbound commands can return a `NotSupported` error.
-- **HandleError** converts network/protocol failures into canonical errors for routing layers.
-
-`StreamTopic` identifies the scope (public or private) and the exchange-native stream name. `StreamSubscription` mirrors the Level 1 contract used by routers and higher layers.
-
-### Example usage
-
-```go
-router := routing.NewWSRouter(streamClient, deps)
-sub, err := router.SubscribePublic(ctx, corews.BookTopic("BTC-USDT"))
-if err != nil {
-    log.Fatalf("stream subscribe failed: %v", err)
-}
-go func() {
-    defer sub.Close()
-    for msg := range sub.C() {
-        switch evt := msg.Parsed.(type) {
-        case *coreexchange.BookEvent:
-            render(evt)
-        }
-    }
-}()
-```
-
-The router converts protocol topics to Binance stream names (`btcusdt@depth@100ms`), invokes `StreamClient.Subscribe`, and translates raw frames into `coreexchange.RoutedMessage` instances for business handlers.
-
-## Testing support
-
-The `core/exchange/mocks` package provides lightweight doubles for both interfaces:
+The `core/exchange/mocks` package provides lightweight doubles for testing:
 
 - `mocks.RESTClient` exposes function hooks for each method, making it easy to validate routing behaviour.
-- `mocks.StreamClient` and `mocks.StreamSubscription` help simulate websocket streams in unit tests without touching concrete Binance infrastructure.
+- `mocks.StreamClient` and `mocks.StreamSubscription` help simulate websocket streams in unit tests.
 
-The Binance module includes interface-focused tests (`exchanges/binance/routing/rest_router_test.go`, `exchanges/binance/routing/ws_router_test.go`) that demonstrate how these mocks validate interactions. Future exchanges (e.g., OKX) can reuse the same mocks to assert compliance with the shared contracts before wiring in their own transport layers.
+The Binance module includes interface-focused tests (`exchanges/binance/routing/rest_router_test.go`, `exchanges/binance/routing/ws_router_test.go`) that demonstrate how these mocks validate interactions.
