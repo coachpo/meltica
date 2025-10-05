@@ -59,6 +59,7 @@ type MarketManager struct {
 	wg         sync.WaitGroup
 	mu         sync.RWMutex
 	cancel     context.CancelFunc
+	ctx        context.Context
 
 	// Active subscriptions
 	sub        core.Subscription
@@ -79,18 +80,21 @@ func NewMarketManager(exchange core.Exchange) *MarketManager {
 }
 
 func (m *MarketManager) Start(ctx context.Context) {
-	ctx, cancel := context.WithCancel(ctx)
-	m.cancel = cancel
+	m.ctx, m.cancel = context.WithCancel(ctx)
 
 	// Start the event router
 	m.wg.Add(1)
-	go m.eventRouter(ctx)
+	go m.eventRouter(m.ctx)
 }
 
 func (m *MarketManager) Stop() {
+	m.mu.Lock()
 	if m.cancel != nil {
 		m.cancel()
+		m.cancel = nil
 	}
+	m.cleanupSubscriptions()
+	m.mu.Unlock()
 	m.wg.Wait()
 	close(m.events)
 }
@@ -143,7 +147,10 @@ func (m *MarketManager) cleanupSubscriptions() {
 }
 
 func (m *MarketManager) startWebSocketSubscription(topics []string) {
-	ctx := context.Background() // Will be managed by the manager's context
+	ctx := m.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
 	sub, err := m.exchange.WS().SubscribePublic(ctx, topics...)
 	if err != nil {
@@ -159,7 +166,7 @@ func (m *MarketManager) startWebSocketSubscription(topics []string) {
 
 	// Start goroutine to handle websocket messages
 	m.wg.Add(1)
-	go m.handleWebSocketMessages(sub.C(), sub.Err())
+	go m.handleWebSocketMessages(ctx, sub.C(), sub.Err())
 }
 
 func (m *MarketManager) startOrderBookSubscription(symbol string) {
@@ -170,7 +177,11 @@ func (m *MarketManager) startOrderBookSubscription(symbol string) {
 		})
 		return
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	baseCtx := m.ctx
+	if baseCtx == nil {
+		baseCtx = context.Background()
+	}
+	ctx, cancel := context.WithCancel(baseCtx)
 	m.bookCancel = cancel
 
 	snapshots, errs, err := m.orderBooks.OrderBookSnapshots(ctx, symbol)
@@ -186,14 +197,16 @@ func (m *MarketManager) startOrderBookSubscription(symbol string) {
 
 	// Start goroutine to handle order book snapshots
 	m.wg.Add(1)
-	go m.handleOrderBookSnapshots(snapshots, errs)
+	go m.handleOrderBookSnapshots(ctx, snapshots, errs)
 }
 
-func (m *MarketManager) handleWebSocketMessages(msgCh <-chan core.Message, errCh <-chan error) {
+func (m *MarketManager) handleWebSocketMessages(ctx context.Context, msgCh <-chan core.Message, errCh <-chan error) {
 	defer m.wg.Done()
 
 	for {
 		select {
+		case <-ctx.Done():
+			return
 		case msg, ok := <-msgCh:
 			if !ok {
 				return
@@ -214,11 +227,13 @@ func (m *MarketManager) handleWebSocketMessages(msgCh <-chan core.Message, errCh
 	}
 }
 
-func (m *MarketManager) handleOrderBookSnapshots(snapshots <-chan corestreams.BookEvent, errs <-chan error) {
+func (m *MarketManager) handleOrderBookSnapshots(ctx context.Context, snapshots <-chan corestreams.BookEvent, errs <-chan error) {
 	defer m.wg.Done()
 
 	for {
 		select {
+		case <-ctx.Done():
+			return
 		case book, ok := <-snapshots:
 			if !ok {
 				return
@@ -287,9 +302,23 @@ func (m *MarketManager) eventRouter(ctx context.Context) {
 }
 
 func (m *MarketManager) emit(evt marketEvent) {
+	if m.ctx != nil {
+		select {
+		case <-m.ctx.Done():
+			return
+		default:
+		}
+	}
 	select {
 	case m.events <- evt:
 	default:
+		if m.ctx != nil {
+			select {
+			case <-m.ctx.Done():
+				return
+			default:
+			}
+		}
 		// Drop event if channel is full to prevent blocking
 		log.Printf("event channel full, dropping event: %v", evt.Kind)
 	}
