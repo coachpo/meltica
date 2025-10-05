@@ -7,7 +7,7 @@ This document defines the standards and expectations for implementing exchange p
 All exchange providers must follow the three-layer architecture:
 
 ### Level 1: Transport Layer
-- Implement `RESTClient` interface from `core/exchange/transport_contracts.go`
+- Implement `RESTClient` interface from `core/transport/transport_contracts.go`
 - Implement `StreamClient` interface for WebSocket connections
 - Use shared infrastructure from `exchanges/shared/`
 - Handle rate limiting, connection pooling, and error recovery

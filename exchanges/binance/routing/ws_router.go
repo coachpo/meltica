@@ -6,8 +6,9 @@ import (
 	"strings"
 	"time"
 
-	coreexchange "github.com/coachpo/meltica/core/exchange"
+	corestreams "github.com/coachpo/meltica/core/streams"
 	coretopics "github.com/coachpo/meltica/core/topics"
+	coretransport "github.com/coachpo/meltica/core/transport"
 	"github.com/coachpo/meltica/exchanges/binance/internal"
 )
 
@@ -18,16 +19,16 @@ type WSDependencies interface {
 	CreateListenKey(ctx context.Context) (string, error)
 	KeepAliveListenKey(ctx context.Context, key string) error
 	CloseListenKey(ctx context.Context, key string) error
-	DepthSnapshot(ctx context.Context, symbol string, limit int) (coreexchange.BookEvent, int64, error)
+	DepthSnapshot(ctx context.Context, symbol string, limit int) (corestreams.BookEvent, int64, error)
 }
 
-type RoutedMessage = coreexchange.RoutedMessage
+type RoutedMessage = corestreams.RoutedMessage
 
-type Subscription = coreexchange.Subscription
+type Subscription = corestreams.Subscription
 
 // WSRouter manages websocket subscriptions, routing raw frames from Level 1 to Level 3.
 type WSRouter struct {
-	infra         coreexchange.StreamClient
+	infra         coretransport.StreamClient
 	deps          WSDependencies
 	orderBooks    *OrderBookManager
 	monitorCtx    context.Context
@@ -35,7 +36,7 @@ type WSRouter struct {
 }
 
 // NewWSRouter creates a websocket routing layer bound to the infrastructure client.
-func NewWSRouter(infra coreexchange.StreamClient, deps WSDependencies) *WSRouter {
+func NewWSRouter(infra coretransport.StreamClient, deps WSDependencies) *WSRouter {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &WSRouter{
 		infra:         infra,
@@ -47,12 +48,12 @@ func NewWSRouter(infra coreexchange.StreamClient, deps WSDependencies) *WSRouter
 }
 
 type wsSub struct {
-	raw coreexchange.StreamSubscription
+	raw coretransport.StreamSubscription
 	c   chan RoutedMessage
 	err chan error
 }
 
-func newWSSub(raw coreexchange.StreamSubscription) *wsSub {
+func newWSSub(raw coretransport.StreamSubscription) *wsSub {
 	return &wsSub{
 		raw: raw,
 		c:   make(chan RoutedMessage, 1024),
@@ -82,9 +83,9 @@ func (w *WSRouter) SubscribePublic(ctx context.Context, topics ...string) (Subsc
 	if len(streams) == 0 {
 		return nil, internal.Invalid("wsrouter: no streams derived from topics")
 	}
-	topicsForInfra := make([]coreexchange.StreamTopic, len(streams))
+	topicsForInfra := make([]coretransport.StreamTopic, len(streams))
 	for i, stream := range streams {
-		topicsForInfra[i] = coreexchange.StreamTopic{Scope: coreexchange.StreamScopePublic, Name: stream}
+		topicsForInfra[i] = coretransport.StreamTopic{Scope: coretransport.StreamScopePublic, Name: stream}
 	}
 	rawSub, err := w.infra.Subscribe(ctx, topicsForInfra...)
 	if err != nil {
@@ -107,7 +108,7 @@ func (w *WSRouter) SubscribePrivate(ctx context.Context) (Subscription, error) {
 	if err != nil {
 		return nil, err
 	}
-	topic := coreexchange.StreamTopic{Scope: coreexchange.StreamScopePrivate, Name: listenKey}
+	topic := coretransport.StreamTopic{Scope: coretransport.StreamScopePrivate, Name: listenKey}
 	rawSub, err := w.infra.Subscribe(ctx, topic)
 	if err != nil {
 		return nil, err
@@ -131,7 +132,7 @@ func (w *WSRouter) readLoop(sub *wsSub) {
 			if !ok {
 				return
 			}
-			msg := RoutedMessage{Raw: raw.Data, At: raw.At, Route: coreexchange.RouteUnknown}
+			msg := RoutedMessage{Raw: raw.Data, At: raw.At, Route: corestreams.RouteUnknown}
 			if err := w.parsePublicMessage(&msg, raw.Data); err != nil {
 				select {
 				case sub.err <- err:
@@ -184,7 +185,7 @@ func (w *WSRouter) readPrivateLoop(ctx context.Context, sub *wsSub, listenKey st
 			if !ok {
 				return
 			}
-			msg := RoutedMessage{Raw: raw.Data, At: raw.At, Route: coreexchange.RouteUnknown}
+			msg := RoutedMessage{Raw: raw.Data, At: raw.At, Route: corestreams.RouteUnknown}
 			if err := w.parsePrivateMessage(&msg, raw.Data); err != nil {
 				select {
 				case sub.err <- err:
@@ -250,10 +251,10 @@ func (w *WSRouter) buildStreams(topics []string) ([]string, error) {
 }
 
 // OrderBookSnapshot returns the current snapshot for a symbol if it has been initialized.
-func (w *WSRouter) OrderBookSnapshot(symbol string) (coreexchange.BookEvent, bool) {
+func (w *WSRouter) OrderBookSnapshot(symbol string) (corestreams.BookEvent, bool) {
 	orderBook := w.orderBooks.GetOrCreateOrderBook(symbol)
 	if !orderBook.IsInitialized() {
-		return coreexchange.BookEvent{}, false
+		return corestreams.BookEvent{}, false
 	}
 	return orderBook.GetSnapshot(), true
 }

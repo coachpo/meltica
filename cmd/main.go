@@ -12,9 +12,9 @@ import (
 	"time"
 
 	"github.com/coachpo/meltica/core"
-	coreexchange "github.com/coachpo/meltica/core/exchange"
-	coreexchanges "github.com/coachpo/meltica/core/exchanges"
-	corebinance "github.com/coachpo/meltica/core/exchanges/binance"
+	registry "github.com/coachpo/meltica/core/registry"
+	registrybinance "github.com/coachpo/meltica/core/registry/binance"
+	corestreams "github.com/coachpo/meltica/core/streams"
 	coretopics "github.com/coachpo/meltica/core/topics"
 )
 
@@ -66,7 +66,7 @@ type MarketManager struct {
 }
 
 type orderBookProvider interface {
-	OrderBookSnapshots(ctx context.Context, symbol string) (<-chan coreexchange.BookEvent, <-chan error, error)
+	OrderBookSnapshots(ctx context.Context, symbol string) (<-chan corestreams.BookEvent, <-chan error, error)
 }
 
 func NewMarketManager(exchange core.Exchange) *MarketManager {
@@ -214,7 +214,7 @@ func (m *MarketManager) handleWebSocketMessages(msgCh <-chan core.Message, errCh
 	}
 }
 
-func (m *MarketManager) handleOrderBookSnapshots(snapshots <-chan coreexchange.BookEvent, errs <-chan error) {
+func (m *MarketManager) handleOrderBookSnapshots(snapshots <-chan corestreams.BookEvent, errs <-chan error) {
 	defer m.wg.Done()
 
 	for {
@@ -247,21 +247,21 @@ func (m *MarketManager) handleOrderBookSnapshots(snapshots <-chan coreexchange.B
 
 func (m *MarketManager) handleWSMessage(msg core.Message) {
 	switch evt := msg.Parsed.(type) {
-	case *coreexchange.TradeEvent:
+	case *corestreams.TradeEvent:
 		m.emit(marketEvent{
 			Kind:    marketEventTrade,
 			Topic:   msg.Topic,
 			Payload: evt,
 			Time:    evt.Time,
 		})
-	case *coreexchange.TickerEvent:
+	case *corestreams.TickerEvent:
 		m.emit(marketEvent{
 			Kind:    marketEventTicker,
 			Topic:   msg.Topic,
 			Payload: evt,
 			Time:    evt.Time,
 		})
-	case *coreexchange.BookEvent:
+	case *corestreams.BookEvent:
 		m.emit(marketEvent{
 			Kind:    marketEventBook,
 			Topic:   msg.Topic,
@@ -301,14 +301,14 @@ func main() {
 
 	fmt.Println("Starting Binance Order Book Management Validation...")
 
-	exchange, err := coreexchanges.Resolve(corebinance.Name)
+	exchange, err := registry.Resolve(registrybinance.Name)
 	if err != nil {
 		log.Fatalf("failed to create Binance exchange: %v", err)
 	}
 	defer exchange.Close()
 
 	canonicalSymbol := core.CanonicalSymbol(defaultBase, defaultQuote)
-	nativeSymbol, err := core.NativeSymbol(corebinance.Name, canonicalSymbol)
+	nativeSymbol, err := core.NativeSymbol(registrybinance.Name, canonicalSymbol)
 	if err != nil {
 		log.Printf("failed to resolve native symbol for %s: %v", canonicalSymbol, err)
 		nativeSymbol = canonicalSymbol
@@ -350,7 +350,7 @@ func main() {
 func handleEvent(evt marketEvent, lastBookLog *time.Time) {
 	switch evt.Kind {
 	case marketEventTrade:
-		trade, ok := evt.Payload.(*coreexchange.TradeEvent)
+		trade, ok := evt.Payload.(*corestreams.TradeEvent)
 		if !ok || trade == nil {
 			log.Printf("trade event payload mismatch: %#v", evt.Payload)
 			return
@@ -362,7 +362,7 @@ func handleEvent(evt marketEvent, lastBookLog *time.Time) {
 			trade.Time.Format(time.RFC3339Nano),
 		)
 	case marketEventTicker:
-		ticker, ok := evt.Payload.(*coreexchange.TickerEvent)
+		ticker, ok := evt.Payload.(*corestreams.TickerEvent)
 		if !ok || ticker == nil {
 			log.Printf("ticker event payload mismatch: %#v", evt.Payload)
 			return
@@ -374,7 +374,7 @@ func handleEvent(evt marketEvent, lastBookLog *time.Time) {
 			ticker.Time.Format(time.RFC3339Nano),
 		)
 	case marketEventBook:
-		book, ok := evt.Payload.(*coreexchange.BookEvent)
+		book, ok := evt.Payload.(*corestreams.BookEvent)
 		if !ok || book == nil {
 			log.Printf("book event payload mismatch: %#v", evt.Payload)
 			return

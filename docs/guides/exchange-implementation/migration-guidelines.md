@@ -24,7 +24,7 @@ Meltica follows a three-layer architecture:
 
 If you have an existing exchange implementation that needs to be updated:
 
-1. **Review Current Interfaces**: Compare with the current `core/exchange` interfaces
+1. **Review Current Interfaces**: Compare with the current `core/streams` interfaces
 2. **Update Transport Layer**: Ensure REST and WebSocket clients match current contracts
 3. **Modernize Routing**: Use the shared routing patterns from `exchanges/shared/`
 4. **Standardize Error Handling**: Use the `errs` package for consistent error reporting
@@ -40,7 +40,7 @@ If you have an existing exchange implementation that needs to be updated:
 
 ### Interface Updates
 
-- **REST Client**: Updated to use `RESTClient` interface from `core/exchange/transport_contracts.go`
+- **REST Client**: Updated to use `RESTClient` interface from `core/transport/transport_contracts.go`
 - **WebSocket Client**: Updated to use `StreamClient` interface
 - **Provider Pattern**: Standardized provider structure across all exchanges
 
@@ -124,7 +124,7 @@ See the Binance implementation in `exchanges/binance/` for a complete example of
 If you encounter issues during migration:
 
 1. Review the Binance implementation as a reference
-2. Check the interface contracts in `core/exchange/`
+2. Check the interface contracts in `core/streams/`
 3. Look at shared infrastructure in `exchanges/shared/`
 4. Review the testing patterns in existing implementations
 

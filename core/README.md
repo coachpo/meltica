@@ -1,6 +1,6 @@
 # Core Package
 
-The `core` package defines the canonical provider abstraction and shared domain models for the Meltica SDK. The types exported here form the stable protocol surface that all concrete exchange adapters must implement. The abstractions cover REST (spot + futures), WebSocket events, canonical topic helpers and utility primitives shared across adapters.
+The `core` package defines the canonical exchange abstraction and shared domain models for the Meltica SDK. The types exported here form the stable protocol surface that all concrete exchange adapters must implement. The abstractions cover REST (spot + futures), WebSocket events, canonical topic helpers, and utility primitives shared across adapters.
 
 ## Overview
 
@@ -11,7 +11,7 @@ This package provides a unified interface for cryptocurrency exchange operations
 - **Type-safe decimal handling**: All prices, quantities, and amounts use `*big.Rat` to avoid floating-point precision issues
 - **Unified API**: Single interface for spot trading, futures trading, and WebSocket subscriptions
 - **Exchange agnostic**: Canonical symbol format and normalized data structures
-- **Capability-based**: Providers declare their supported features via capability bitsets
+- **Capability-based**: Exchanges declare their supported features via capability bitsets
 - **Event-driven**: Structured WebSocket events for real-time market data
 
 ## Subpackages
@@ -121,12 +121,12 @@ type DepthLevel struct {
 }
 ```
 
-### WebSocket Events (`core/exchange`)
+### WebSocket Events (`core/streams`)
 
-The `core/exchange` package defines normalized WebSocket events for real-time data:
+The `core/streams` package defines normalized WebSocket events for real-time data:
 
 ```go
-// core/exchange/exchange.go
+// core/streams/routing.go
 type TradeEvent struct {
     Symbol   string
     Price    *big.Rat
@@ -236,7 +236,7 @@ type WS interface {
 
 ## Capabilities System
 
-Providers declare their supported features using capability bitsets:
+Exchanges declare their supported features using capability bitsets:
 
 ```go
 const (
@@ -250,7 +250,7 @@ const (
     CapabilityWebsocketPrivate
 )
 
-type ProviderCapabilities uint64
+type ExchangeCapabilities uint64
 
 // Usage
 caps := Capabilities(
@@ -260,7 +260,7 @@ caps := Capabilities(
 )
 
 if caps.Has(CapabilityWebsocketPublic) {
-    // Provider supports public WebSocket
+    // Exchange supports public WebSocket
 }
 ```
 
@@ -280,19 +280,19 @@ if err != nil {
 }
 ```
 
-## Provider Registry
+## Exchange Registry
 
-Providers can be registered and instantiated through the global registry:
+Exchanges can be registered and instantiated through the global registry:
 
 ```go
-// Register a provider (typically done in an init function)
+// Register an exchange (typically done in an init function)
 binanceName := ExchangeNameFrom("binance")
-exchanges.Register(binanceName, func(cfg exchanges.Config) (Provider, error) {
-    // Return configured provider
+exchanges.Register(binanceName, func(cfg exchanges.Config) (Exchange, error) {
+    // Return configured exchange instance
 })
 
-// Create a provider instance
-provider, err := exchanges.Resolve(binanceName)
+// Create an exchange instance
+exchange, err := exchanges.Resolve(binanceName)
 ```
 
 ## Decimal Precision
@@ -311,17 +311,17 @@ jsonData := numeric.Format(price, 2)  // Returns "50000.00"
 ## Usage Example
 
 ```go
-// Create a provider
-provider, err := exchanges.Resolve(ExchangeNameFrom("binance"))
+// Create an exchange
+exchange, err := exchanges.Resolve(ExchangeNameFrom("binance"))
 if err != nil {
     log.Fatal(err)
 }
-defer provider.Close()
+defer exchange.Close()
 
 // Check capabilities
-if provider.Capabilities().Has(core.CapabilitySpotPublicREST) {
+if exchange.Capabilities().Has(core.CapabilitySpotPublicREST) {
     // Get spot API
-    spot := provider.Spot(ctx)
+    spot := exchange.Spot(ctx)
     
     // Get ticker data
     ticker, err := spot.Ticker(ctx, "BTC-USDT")
@@ -335,7 +335,7 @@ if provider.Capabilities().Has(core.CapabilitySpotPublicREST) {
 }
 
 // Subscribe to WebSocket events
-ws := provider.WS()
+ws := exchange.WS()
 sub, err := ws.SubscribePublic(ctx, "ticker:BTC-USDT")
 if err != nil {
     log.Fatal(err)
@@ -378,13 +378,13 @@ go run ./cmd/market-stream -exchange okx -symbol ETH-USDT -channel trades
 ```
 
 ### barista
-Generate new exchange provider scaffolds:
+Generate new exchange adapter scaffolds:
 ```bash
-# Generate a new provider scaffold
+# Generate a new exchange scaffold
 go run ./cmd/barista -name bybit
 
 # Generate with custom output directory
-go run ./cmd/barista -name ftx -out custom-providers/ftx
+go run ./cmd/barista -name ftx -out custom-exchanges/ftx
 ```
 
 ### validate-schemas
@@ -395,7 +395,7 @@ go run ./cmd/validate-schemas
 
 ## Related Packages
 
-- `providers/` - Concrete exchange adapter implementations
+- `providers/` - Concrete exchange adapter implementations (legacy; new adapters live under `exchanges/`)
 - `protocol/` - JSON schemas and golden vectors
 - `conformance/` - Validation and testing harness
 - `cmd/` - Command-line tools for development and testing

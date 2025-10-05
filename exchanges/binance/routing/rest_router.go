@@ -3,13 +3,13 @@ package routing
 import (
 	"strings"
 
-	coreexchange "github.com/coachpo/meltica/core/exchange"
+	coretransport "github.com/coachpo/meltica/core/transport"
 	"github.com/coachpo/meltica/exchanges/binance/infra/rest"
 	genericrouting "github.com/coachpo/meltica/exchanges/shared/routing"
 )
 
 // NewRESTRouter constructs a router backed by the Level 1 REST infrastructure client.
-func NewRESTRouter(client coreexchange.RESTClient) genericrouting.RESTDispatcher {
+func NewRESTRouter(client coretransport.RESTClient) genericrouting.RESTDispatcher {
 	resolver := genericrouting.RESTAPIResolverFunc(func(msg genericrouting.RESTMessage) string {
 		return inferAPI(msg.Path)
 	})

@@ -61,7 +61,7 @@ exchanges/your-exchange/
 ### 2. Implement Level 1: Transport Layer
 
 #### REST Client
-Implement the `RESTClient` interface from `core/exchange/transport_contracts.go`:
+Implement the `RESTClient` interface from `core/transport/transport_contracts.go`:
 
 ```go
 type RESTClient interface {
@@ -98,7 +98,7 @@ func (r *Router) MapRequest(req core.Request) (*exchange.RESTRequest, error) {
 ```
 
 #### WebSocket Router
-Implement the `Router` interface from `core/exchange/exchange.go`:
+Implement the `Router` interface from `core/streams/routing.go`:
 
 ```go
 type Router interface {

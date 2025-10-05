@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/coachpo/meltica/core"
-	coreexchange "github.com/coachpo/meltica/core/exchange"
+	corestreams "github.com/coachpo/meltica/core/streams"
 	coretopics "github.com/coachpo/meltica/core/topics"
 	"github.com/coachpo/meltica/exchanges/binance/internal"
 	numeric "github.com/coachpo/meltica/exchanges/shared/infra/numeric"
@@ -48,9 +48,9 @@ func (w *WSRouter) parseOrderUpdate(msg *RoutedMessage, payload []byte) error {
 
 	filled, _ := numeric.Parse(ou.Order.FilledQty.String())
 	avg, _ := numeric.Parse(ou.Order.AvgPrice.String())
-	msg.Route = coreexchange.RouteOrderUpdate
+	msg.Route = corestreams.RouteOrderUpdate
 	msg.Topic = topicFromChannel(BNXOrderChannel, ou.Order.Symbol)
-	msg.Parsed = &coreexchange.OrderEvent{
+	msg.Parsed = &corestreams.OrderEvent{
 		Symbol:    ou.Order.Symbol,
 		OrderID:   fmt.Sprintf("%d", ou.Order.ID),
 		Status:    internal.MapOrderStatus(ou.Order.Status),
@@ -62,7 +62,7 @@ func (w *WSRouter) parseOrderUpdate(msg *RoutedMessage, payload []byte) error {
 }
 
 func (w *WSRouter) parseBalanceUpdate(msg *RoutedMessage, payload []byte, event string) error {
-	msg.Route = coreexchange.RouteBalanceSnapshot
+	msg.Route = corestreams.RouteBalanceSnapshot
 
 	switch event {
 	case "outboundAccountPosition":
@@ -76,13 +76,13 @@ func (w *WSRouter) parseBalanceUpdate(msg *RoutedMessage, payload []byte, event 
 		if err := json.Unmarshal(payload, &oap); err != nil {
 			return err
 		}
-		var be coreexchange.BalanceEvent
+		var be corestreams.BalanceEvent
 		for _, b := range oap.Balances {
 			amt, _ := numeric.Parse(b.Free.String())
 			be.Balances = append(be.Balances, core.Balance{Asset: b.Asset, Available: amt, Time: time.UnixMilli(oap.EventTime)})
 		}
 		msg.Topic = coretopics.UserBalance()
-		msg.Route = coreexchange.RouteBalanceSnapshot
+		msg.Route = corestreams.RouteBalanceSnapshot
 		msg.Parsed = &be
 		return nil
 	case "balanceUpdate":
@@ -96,8 +96,8 @@ func (w *WSRouter) parseBalanceUpdate(msg *RoutedMessage, payload []byte, event 
 		}
 		amt, _ := numeric.Parse(bu.Delta.String())
 		msg.Topic = coretopics.UserBalance()
-		msg.Route = coreexchange.RouteBalanceSnapshot
-		msg.Parsed = &coreexchange.BalanceEvent{
+		msg.Route = corestreams.RouteBalanceSnapshot
+		msg.Parsed = &corestreams.BalanceEvent{
 			Balances: []core.Balance{
 				{Asset: bu.Asset, Available: amt, Time: time.UnixMilli(bu.EventTime)},
 			},

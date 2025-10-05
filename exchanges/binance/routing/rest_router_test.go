@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"testing"
 
-	coreexchange "github.com/coachpo/meltica/core/exchange"
-	"github.com/coachpo/meltica/core/exchange/mocks"
+	"github.com/coachpo/meltica/core/streams/mocks"
+	coretransport "github.com/coachpo/meltica/core/transport"
 	"github.com/coachpo/meltica/exchanges/binance/infra/rest"
 	routingrest "github.com/coachpo/meltica/exchanges/shared/routing"
 )
@@ -15,13 +15,13 @@ import (
 func TestRESTRouterDispatchSuccess(t *testing.T) {
 	ctx := context.Background()
 	client := &mocks.RESTClient{}
-	var capturedReq coreexchange.RESTRequest
+	var capturedReq coretransport.RESTRequest
 	var handleCalled bool
-	client.DoRequestFunc = func(_ context.Context, req coreexchange.RESTRequest) (*coreexchange.RESTResponse, error) {
+	client.DoRequestFunc = func(_ context.Context, req coretransport.RESTRequest) (*coretransport.RESTResponse, error) {
 		capturedReq = req
-		return &coreexchange.RESTResponse{Status: http.StatusOK}, nil
+		return &coretransport.RESTResponse{Status: http.StatusOK}, nil
 	}
-	client.HandleResponseFunc = func(_ context.Context, req coreexchange.RESTRequest, resp *coreexchange.RESTResponse, out any) error {
+	client.HandleResponseFunc = func(_ context.Context, req coretransport.RESTRequest, resp *coretransport.RESTResponse, out any) error {
 		handleCalled = true
 		if resp.Status != http.StatusOK {
 			t.Fatalf("unexpected status: %d", resp.Status)
@@ -46,11 +46,11 @@ func TestRESTRouterDispatchError(t *testing.T) {
 	expectedErr := errors.New("boom")
 	returnedErr := errors.New("handled")
 	client := &mocks.RESTClient{}
-	client.DoRequestFunc = func(_ context.Context, req coreexchange.RESTRequest) (*coreexchange.RESTResponse, error) {
+	client.DoRequestFunc = func(_ context.Context, req coretransport.RESTRequest) (*coretransport.RESTResponse, error) {
 		return nil, expectedErr
 	}
 	var handleErrorCalled bool
-	client.HandleErrorFunc = func(_ context.Context, req coreexchange.RESTRequest, err error) error {
+	client.HandleErrorFunc = func(_ context.Context, req coretransport.RESTRequest, err error) error {
 		handleErrorCalled = true
 		if !errors.Is(err, expectedErr) {
 			t.Fatalf("unexpected error passed to handler: %v", err)

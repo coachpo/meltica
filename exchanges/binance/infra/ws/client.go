@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	coreexchange "github.com/coachpo/meltica/core/exchange"
+	coretransport "github.com/coachpo/meltica/core/transport"
 	"github.com/coachpo/meltica/errs"
 	"github.com/coachpo/meltica/exchanges/binance/internal"
 	"github.com/gorilla/websocket"
@@ -42,12 +42,12 @@ func (c Config) withDefaults() Config {
 // Subscription delivers raw websocket frames for further routing in upper layers.
 type Subscription struct {
 	conn *websocket.Conn
-	raw  chan coreexchange.RawMessage
+	raw  chan coretransport.RawMessage
 	err  chan error
 }
 
 // Messages returns the channel carrying raw websocket payloads.
-func (s *Subscription) Messages() <-chan coreexchange.RawMessage { return s.raw }
+func (s *Subscription) Messages() <-chan coretransport.RawMessage { return s.raw }
 
 // Errors returns the channel carrying websocket errors.
 func (s *Subscription) Errors() <-chan error { return s.err }
@@ -87,32 +87,32 @@ func (c *Client) Connect(ctx context.Context) error {
 // Close releases resources associated with the client. Binance keeps no shared websocket pool, so this is a no-op.
 func (c *Client) Close() error { return nil }
 
-// Subscribe implements the coreexchange.StreamClient contract.
-func (c *Client) Subscribe(ctx context.Context, topics ...coreexchange.StreamTopic) (coreexchange.StreamSubscription, error) {
+// Subscribe implements the coretransport.StreamClient contract.
+func (c *Client) Subscribe(ctx context.Context, topics ...coretransport.StreamTopic) (coretransport.StreamSubscription, error) {
 	if len(topics) == 0 {
 		return nil, internal.Invalid("wsinfra: no topics provided")
 	}
 	scope := topics[0].Scope
 	if scope == "" {
-		scope = coreexchange.StreamScopePublic
+		scope = coretransport.StreamScopePublic
 	}
 	for _, t := range topics {
 		currentScope := t.Scope
 		if currentScope == "" {
-			currentScope = coreexchange.StreamScopePublic
+			currentScope = coretransport.StreamScopePublic
 		}
 		if currentScope != scope {
 			return nil, internal.Invalid("wsinfra: mixed stream scopes not supported")
 		}
 	}
 	switch scope {
-	case coreexchange.StreamScopePublic:
+	case coretransport.StreamScopePublic:
 		streams := make([]string, len(topics))
 		for i, topic := range topics {
 			streams[i] = composeStreamName(topic)
 		}
 		return c.SubscribePublic(ctx, streams)
-	case coreexchange.StreamScopePrivate:
+	case coretransport.StreamScopePrivate:
 		if len(topics) != 1 {
 			return nil, internal.Invalid("wsinfra: private streams expect a single listen key")
 		}
@@ -127,7 +127,7 @@ func (c *Client) Subscribe(ctx context.Context, topics ...coreexchange.StreamTop
 }
 
 // Unsubscribe closes the websocket connection associated with the subscription.
-func (c *Client) Unsubscribe(ctx context.Context, sub coreexchange.StreamSubscription, topics ...coreexchange.StreamTopic) error {
+func (c *Client) Unsubscribe(ctx context.Context, sub coretransport.StreamSubscription, topics ...coretransport.StreamTopic) error {
 	if sub == nil {
 		return internal.Invalid("wsinfra: nil subscription")
 	}
@@ -135,7 +135,7 @@ func (c *Client) Unsubscribe(ctx context.Context, sub coreexchange.StreamSubscri
 }
 
 // Publish returns a standardised not-supported error because Binance websocket APIs do not accept outbound commands via this client.
-func (c *Client) Publish(ctx context.Context, message coreexchange.StreamMessage) error {
+func (c *Client) Publish(ctx context.Context, message coretransport.StreamMessage) error {
 	return errs.NotSupported("binance websocket publish not supported")
 }
 
@@ -169,7 +169,7 @@ func (c *Client) SubscribePublic(ctx context.Context, streams []string) (*Subscr
 	}
 	sub := &Subscription{
 		conn: conn,
-		raw:  make(chan coreexchange.RawMessage, 1024),
+		raw:  make(chan coretransport.RawMessage, 1024),
 		err:  make(chan error, 1),
 	}
 	go c.readLoop(ctx, conn, sub)
@@ -189,7 +189,7 @@ func (c *Client) SubscribePrivate(ctx context.Context, listenKey string) (*Subsc
 	}
 	sub := &Subscription{
 		conn: conn,
-		raw:  make(chan coreexchange.RawMessage, 1024),
+		raw:  make(chan coretransport.RawMessage, 1024),
 		err:  make(chan error, 1),
 	}
 	go c.readLoop(ctx, conn, sub)
@@ -215,7 +215,7 @@ func (c *Client) readLoop(ctx context.Context, conn *websocket.Conn, sub *Subscr
 			}
 			return
 		}
-		msg := coreexchange.RawMessage{Data: data, At: time.Now()}
+		msg := coretransport.RawMessage{Data: data, At: time.Now()}
 		select {
 		case sub.raw <- msg:
 		case <-ctx.Done():
@@ -225,7 +225,7 @@ func (c *Client) readLoop(ctx context.Context, conn *websocket.Conn, sub *Subscr
 	}
 }
 
-func composeStreamName(topic coreexchange.StreamTopic) string {
+func composeStreamName(topic coretransport.StreamTopic) string {
 	name := strings.TrimSpace(topic.Name)
 	if len(topic.Params) == 0 {
 		return name

@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/coachpo/meltica/core"
-	coreexchange "github.com/coachpo/meltica/core/exchange"
+	corestreams "github.com/coachpo/meltica/core/streams"
 	coretopics "github.com/coachpo/meltica/core/topics"
 	"github.com/coachpo/meltica/exchanges/binance/internal"
 	numeric "github.com/coachpo/meltica/exchanges/shared/infra/numeric"
@@ -71,10 +71,10 @@ func (w *WSRouter) parseTradeEvent(msg *RoutedMessage, payload []byte, symbol, s
 	}
 	topic := topicFromChannel(BNXTradeChannel, symbol)
 	msg.Topic = topic
-	msg.Route = coreexchange.RouteTradeUpdate
+	msg.Route = corestreams.RouteTradeUpdate
 	price, _ := numeric.Parse(rec.Price.String())
 	qty, _ := numeric.Parse(rec.Qty.String())
-	msg.Parsed = &coreexchange.TradeEvent{Symbol: symbol, Price: price, Quantity: qty, Time: time.UnixMilli(rec.Time)}
+	msg.Parsed = &corestreams.TradeEvent{Symbol: symbol, Price: price, Quantity: qty, Time: time.UnixMilli(rec.Time)}
 	return nil
 }
 
@@ -98,11 +98,11 @@ func (w *WSRouter) parseBookTicker(msg *RoutedMessage, payload []byte, symbol, s
 	}
 	topic := topicFromChannel(BNXTickerChannel, symbol)
 	msg.Topic = topic
-	msg.Route = coreexchange.RouteTickerUpdate
+	msg.Route = corestreams.RouteTickerUpdate
 	bid, _ := numeric.Parse(rec.BidPrice.String())
 	ask, _ := numeric.Parse(rec.AskPrice.String())
 	eventTime := time.UnixMilli(rec.EventTime)
-	msg.Parsed = &coreexchange.TickerEvent{Symbol: symbol, Bid: bid, Ask: ask, Time: eventTime}
+	msg.Parsed = &corestreams.TickerEvent{Symbol: symbol, Bid: bid, Ask: ask, Time: eventTime}
 	return nil
 }
 
@@ -142,8 +142,8 @@ func (w *WSRouter) parseBookStream(msg *RoutedMessage, payload []byte, symbol, s
 	}
 
 	msg.Topic = coretopics.Book(symbol)
-	msg.Route = coreexchange.RouteBookSnapshot
-	msg.Parsed = &coreexchange.BookEvent{
+	msg.Route = corestreams.RouteBookSnapshot
+	msg.Parsed = &corestreams.BookEvent{
 		Symbol: symbol,
 		Bids:   bids,
 		Asks:   asks,

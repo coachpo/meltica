@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	coreexchange "github.com/coachpo/meltica/core/exchange"
+	coretransport "github.com/coachpo/meltica/core/transport"
 	"github.com/coachpo/meltica/errs"
 	"github.com/coachpo/meltica/exchanges/binance/internal"
 	"github.com/coachpo/meltica/exchanges/shared/infra/transport"
@@ -120,7 +120,7 @@ func (c *Client) Connect(ctx context.Context) error {
 func (c *Client) Close() error { return nil }
 
 // DoRequest issues a REST call and returns the raw response payload for upper layers.
-func (c *Client) DoRequest(ctx context.Context, req coreexchange.RESTRequest) (*coreexchange.RESTResponse, error) {
+func (c *Client) DoRequest(ctx context.Context, req coretransport.RESTRequest) (*coretransport.RESTResponse, error) {
 	client, err := c.clientForAPI(API(req.API))
 	if err != nil {
 		return nil, err
@@ -135,7 +135,7 @@ func (c *Client) DoRequest(ctx context.Context, req coreexchange.RESTRequest) (*
 		headerCopy = hdr.Clone()
 	}
 	body := append([]byte(nil), raw...)
-	return &coreexchange.RESTResponse{
+	return &coretransport.RESTResponse{
 		Status:     status,
 		Header:     headerCopy,
 		Body:       body,
@@ -144,7 +144,7 @@ func (c *Client) DoRequest(ctx context.Context, req coreexchange.RESTRequest) (*
 }
 
 // HandleResponse decodes the raw RESTResponse into the provided output structure when required.
-func (c *Client) HandleResponse(ctx context.Context, req coreexchange.RESTRequest, resp *coreexchange.RESTResponse, out any) error {
+func (c *Client) HandleResponse(ctx context.Context, req coretransport.RESTRequest, resp *coretransport.RESTResponse, out any) error {
 	if out == nil || resp == nil {
 		return nil
 	}
@@ -158,7 +158,7 @@ func (c *Client) HandleResponse(ctx context.Context, req coreexchange.RESTReques
 }
 
 // HandleError normalises transport failures into canonical error types.
-func (c *Client) HandleError(ctx context.Context, req coreexchange.RESTRequest, err error) error {
+func (c *Client) HandleError(ctx context.Context, req coretransport.RESTRequest, err error) error {
 	if err == nil {
 		return nil
 	}
@@ -173,7 +173,7 @@ func (c *Client) HandleError(ctx context.Context, req coreexchange.RESTRequest, 
 }
 
 // Do executes a REST request against the appropriate Binance surface and unmarshals the response into out.
-func (c *Client) Do(ctx context.Context, req coreexchange.RESTRequest, out any) error {
+func (c *Client) Do(ctx context.Context, req coretransport.RESTRequest, out any) error {
 	resp, err := c.DoRequest(ctx, req)
 	if err != nil {
 		return c.HandleError(ctx, req, err)

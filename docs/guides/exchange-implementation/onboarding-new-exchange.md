@@ -41,7 +41,7 @@ Follow these tiny steps to add a brand-new exchange to Meltica. Each step has a 
 **Goal:** Actually talk to the exchange.
 1. Map REST endpoints (tickers, balances, orders) using the shared REST router.
 2. Map WebSocket streams using the shared WS router patterns.
-3. Normalize data into Meltica core types (`core/exchange` structs, topics from `core/topics`).
+3. Normalize data into Meltica core types (`core/streams` structs, topics from `core/topics`).
 4. Reuse numeric helpers from `exchanges/shared/infra/numeric`.
 
 ## Step 8 – Update Docs And Tests

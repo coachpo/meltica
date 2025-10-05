@@ -83,7 +83,7 @@ import (
     "context"
     
     "github.com/coachpo/meltica/config"
-    "github.com/coachpo/meltica/core/exchange"
+    "github.com/coachpo/meltica/core/streams"
     "github.com/coachpo/meltica/exchanges/your-exchange/infra/rest"
     "github.com/coachpo/meltica/exchanges/your-exchange/infra/ws"
     "github.com/coachpo/meltica/exchanges/your-exchange/routing"
@@ -190,5 +190,5 @@ After completing this step, proceed to:
 
 - Use the Binance implementation as a reference for all patterns
 - Follow the established directory structure
-- Ensure all interfaces match the current `core/exchange` contracts
+- Ensure all interfaces match the current `core/streams` contracts
 - Use shared infrastructure from `exchanges/shared/` where possible

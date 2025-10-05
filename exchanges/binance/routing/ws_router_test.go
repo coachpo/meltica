@@ -5,9 +5,10 @@ import (
 	"strings"
 	"testing"
 
-	coreexchange "github.com/coachpo/meltica/core/exchange"
-	"github.com/coachpo/meltica/core/exchange/mocks"
+	corestreams "github.com/coachpo/meltica/core/streams"
+	"github.com/coachpo/meltica/core/streams/mocks"
 	coretopics "github.com/coachpo/meltica/core/topics"
+	coretransport "github.com/coachpo/meltica/core/transport"
 )
 
 type stubDeps struct {
@@ -37,17 +38,17 @@ func (d *stubDeps) CloseListenKey(ctx context.Context, key string) error {
 	return nil
 }
 
-func (d *stubDeps) DepthSnapshot(ctx context.Context, symbol string, limit int) (coreexchange.BookEvent, int64, error) {
-	return coreexchange.BookEvent{}, 0, nil
+func (d *stubDeps) DepthSnapshot(ctx context.Context, symbol string, limit int) (corestreams.BookEvent, int64, error) {
+	return corestreams.BookEvent{}, 0, nil
 }
 
 func newMockSubscription() *mocks.StreamSubscription {
-	messages := make(chan coreexchange.RawMessage)
+	messages := make(chan coretransport.RawMessage)
 	errorsCh := make(chan error)
 	close(messages)
 	close(errorsCh)
 	return &mocks.StreamSubscription{
-		MessagesFunc: func() <-chan coreexchange.RawMessage { return messages },
+		MessagesFunc: func() <-chan coretransport.RawMessage { return messages },
 		ErrorsFunc:   func() <-chan error { return errorsCh },
 		CloseFunc:    func() error { return nil },
 	}
@@ -56,10 +57,10 @@ func newMockSubscription() *mocks.StreamSubscription {
 func TestWSRouterSubscribePublicUsesStreamClient(t *testing.T) {
 	ctx := context.Background()
 	deps := &stubDeps{}
-	var captured [][]coreexchange.StreamTopic
+	var captured [][]coretransport.StreamTopic
 	streamClient := &mocks.StreamClient{}
-	streamClient.SubscribeFunc = func(_ context.Context, topics ...coreexchange.StreamTopic) (coreexchange.StreamSubscription, error) {
-		topicsCopy := make([]coreexchange.StreamTopic, len(topics))
+	streamClient.SubscribeFunc = func(_ context.Context, topics ...coretransport.StreamTopic) (coretransport.StreamSubscription, error) {
+		topicsCopy := make([]coretransport.StreamTopic, len(topics))
 		copy(topicsCopy, topics)
 		captured = append(captured, topicsCopy)
 		return newMockSubscription(), nil
@@ -84,7 +85,7 @@ func TestWSRouterSubscribePublicUsesStreamClient(t *testing.T) {
 		t.Fatalf("expected single topic, got %d", len(topics))
 	}
 	topic := topics[0]
-	if topic.Scope != coreexchange.StreamScopePublic {
+	if topic.Scope != coretransport.StreamScopePublic {
 		t.Fatalf("expected public scope, got %s", topic.Scope)
 	}
 	if topic.Name != "btcusdt@trade" {
@@ -95,10 +96,10 @@ func TestWSRouterSubscribePublicUsesStreamClient(t *testing.T) {
 func TestWSRouterSubscribePrivateUsesStreamClient(t *testing.T) {
 	ctx := context.Background()
 	deps := &stubDeps{listenKey: "private-key"}
-	var captured [][]coreexchange.StreamTopic
+	var captured [][]coretransport.StreamTopic
 	streamClient := &mocks.StreamClient{}
-	streamClient.SubscribeFunc = func(_ context.Context, topics ...coreexchange.StreamTopic) (coreexchange.StreamSubscription, error) {
-		topicsCopy := make([]coreexchange.StreamTopic, len(topics))
+	streamClient.SubscribeFunc = func(_ context.Context, topics ...coretransport.StreamTopic) (coretransport.StreamSubscription, error) {
+		topicsCopy := make([]coretransport.StreamTopic, len(topics))
 		copy(topicsCopy, topics)
 		captured = append(captured, topicsCopy)
 		return newMockSubscription(), nil
@@ -117,7 +118,7 @@ func TestWSRouterSubscribePrivateUsesStreamClient(t *testing.T) {
 		t.Fatalf("expected exactly one topic capture, got %#v", captured)
 	}
 	topic := captured[0][0]
-	if topic.Scope != coreexchange.StreamScopePrivate {
+	if topic.Scope != coretransport.StreamScopePrivate {
 		t.Fatalf("expected private scope, got %s", topic.Scope)
 	}
 	if topic.Name != deps.listenKey {

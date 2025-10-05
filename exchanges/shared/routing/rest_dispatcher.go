@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/http"
 
-	coreexchange "github.com/coachpo/meltica/core/exchange"
+	coretransport "github.com/coachpo/meltica/core/transport"
 )
 
 // RESTMessage represents a normalized REST request emitted by the business layer.
@@ -34,14 +34,14 @@ type RESTAPIResolverFunc func(msg RESTMessage) string
 // ResolveRESTAPI allows RESTAPIResolverFunc to satisfy RESTAPIResolver.
 func (f RESTAPIResolverFunc) ResolveRESTAPI(msg RESTMessage) string { return f(msg) }
 
-// DefaultRESTRouter routes REST messages via a coreexchange.RESTClient.
+// DefaultRESTRouter routes REST messages via a coretransport.RESTClient.
 type DefaultRESTRouter struct {
-	client   coreexchange.RESTClient
+	client   coretransport.RESTClient
 	resolver RESTAPIResolver
 }
 
 // NewDefaultRESTRouter constructs a reusable router backed by a REST client and optional resolver.
-func NewDefaultRESTRouter(client coreexchange.RESTClient, resolver RESTAPIResolver) *DefaultRESTRouter {
+func NewDefaultRESTRouter(client coretransport.RESTClient, resolver RESTAPIResolver) *DefaultRESTRouter {
 	return &DefaultRESTRouter{client: client, resolver: resolver}
 }
 
@@ -54,7 +54,7 @@ func (r *DefaultRESTRouter) Dispatch(ctx context.Context, msg RESTMessage, out a
 	if api == "" && r.resolver != nil {
 		api = r.resolver.ResolveRESTAPI(msg)
 	}
-	req := coreexchange.RESTRequest{
+	req := coretransport.RESTRequest{
 		API:    api,
 		Method: msg.Method,
 		Path:   msg.Path,
