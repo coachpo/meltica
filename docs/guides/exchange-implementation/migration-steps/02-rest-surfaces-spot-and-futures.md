@@ -1,4 +1,4 @@
-# 02 — REST Surfaces: Spot & Futures (Team B)
+# 02 — REST Surfaces: Spot & Futures
 
 **Goal:** Implement REST endpoints for Spot and (if supported) Futures (linear/inverse) to return canonical models with correct numerics and enums.
 
@@ -12,7 +12,7 @@
 ---
 ## How to do it (follow exactly)
 1) **Wire clients**
-   - In `<name>.go`, implement constructors for HTTP clients with timeouts, retry/backoff, and rate-limiting hooks (reuse shared transport if available).
+   - In `exchange/provider.go`, implement constructors for HTTP clients with timeouts, retry/backoff, and rate-limiting hooks (reuse shared transport if available).
    - Ensure methods on `SpotAPI` / `FuturesAPI` return **core models** (`Instrument`, `Ticker`, `Order`, `Position`, etc.).
 
 2) **Canonical symbols**
@@ -20,7 +20,7 @@
 
 3) **Numerics with `*big.Rat`**
    - All price, size, quantity, balance fields **must** be `*big.Rat`.
-   - In JSON marshaling, call `numeric.Format` instead of `fmt.Sprintf` or custom formatters.
+   - In JSON marshaling, use proper formatting for `*big.Rat` values.
 
 4) **Enum/status mapping**
    - Implement functions like `mapOrderSide`, `mapOrderType`, `mapTimeInForce`, `mapOrderStatus`.
@@ -43,4 +43,4 @@
 2) **Symbols canonical; decimals via *big.Rat:**
    - Verify all symbols use `BASE-QUOTE` format
    - Verify all numeric fields use `*big.Rat`
-   - Verify JSON marshaling uses `numeric.Format`
+   - Verify proper JSON marshaling

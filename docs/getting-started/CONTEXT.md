@@ -2,7 +2,7 @@
 
 This file provides a high‑level, always‑up‑to‑date orientation for the **meltica** repository: a provider‑agnostic cryptocurrency exchange SDK in Go with pluggable adapters and tooling.
 
-> **Purpose:** Deliver a unified trading/data SDK that normalizes REST & WebSocket flows across major exchanges, with schema‑driven validation and conformance tooling.
+> **Purpose:** Deliver a unified trading/data SDK that normalizes REST & WebSocket flows across major exchanges.
 >
 > **Primary language:** Go (1.22+; tested on 1.25+)
 
@@ -10,12 +10,12 @@ This file provides a high‑level, always‑up‑to‑date orientation for the *
 
 ## Docs quick links
 
-- Full docs index: [README.md](./README.md)
+- Full docs index: [README.md](../README.md)
 - Start here: [START-HERE.md](./START-HERE.md)
 - Project overview: [PROJECT_OVERVIEW.md](./PROJECT_OVERVIEW.md)
-- Expectations & standards: [expectations/](./expectations/)
-- How-to guides: [how-to/](./how-to/)
-- Protocol validation rules: [validation/protocol-validation-rules.md](./validation/protocol-validation-rules.md)
+- Expectations & standards: [expectations/](../standards/expectations/)
+- How-to guides: [guides/](../guides/)
+- Protocol validation rules: [validation/protocol-validation-rules.md](../validation/protocol-validation-rules.md)
 
 ## Repository Overview
 
@@ -67,25 +67,19 @@ go run ./cmd/main
 ### Core Modules
 
 * **`core/`** – Canonical domain models & interfaces (`Exchange`, markets, symbols, topics, WS events); capability bitsets.
-* **`exchanges/shared/infra/`** – Shared adapters infrastructure (numeric helpers, transport clients, rate limiters, topic mappers).
+* **`exchanges/shared/`** – Shared adapters infrastructure (numeric helpers, transport clients, rate limiters, topic mappers).
 * **`exchanges/`** – Venue adapters (REST + WS + signing + error/status mapping) per exchange.
-* **`transport/`** – HTTP client with retries, signing hooks; token‑bucket rate limiting; WS helpers.
 * **`errs/`** – Unified error envelope and standardized capability errors.
 * **`config/`** – Configuration management for exchange adapters.
 * **`cmd/`** – CLI entrypoint: `main` for market data streaming.
 
-### Provider Interface (Sketch)
+### Exchange Interface
 
 ```go
 interface Exchange {
   Name() string
   Capabilities() ExchangeCapabilities
   SupportedProtocolVersion() string
-  Spot(ctx) SpotAPI
-  LinearFutures(ctx) FuturesAPI
-  InverseFutures(ctx) FuturesAPI
-  WS() WS
-  Close() error
 }
 ```
 
@@ -99,8 +93,7 @@ interface Exchange {
 ├── core/                     # Canonical types, interfaces, symbols, topics, WS events
 ├── docs/                     # Onboarding, expectations, how‑to, validation rules
 ├── errs/                     # Unified error definitions
-├── exchanges/                # Exchange adapters (binance)
-├── transport/                # HTTP/WS transport + rate limiting
+├── exchanges/                # Exchange adapters (binance, shared)
 ├── config/                   # Configuration management
 ├── Makefile                  # build/test/lint targets
 ├── go.mod / go.sum           # module + deps
@@ -157,7 +150,7 @@ interface Exchange {
 
 ## Performance & Reliability Notes
 
-* Token‑bucket rate limiting in `exchanges/shared/infra/transport` to protect against venue throttling.
+* Rate limiting to protect against venue throttling.
 * Decimal math helpers respect instrument scales; avoid binary float for price/size.
 * Event decoding aims for zero‑allocation hot paths where possible.
 
@@ -171,12 +164,12 @@ Project rules that keep Meltica stable and shippable. These are non‑negotiable
 
 * **SDK‑first:** `core` defines the truth; adapters conform to them.
 * **Frozen surfaces:** Public interfaces, event types, and error envelopes change only with a protocol bump.
-* **Normalization:** Canonical symbols (`BASE-QUOTE`), enums (exhaustive), and decimals (`*big.Rat` + `numeric.Format`) across all APIs and events.
+* **Normalization:** Canonical symbols (`BASE-QUOTE`), enums (exhaustive), and decimals (`*big.Rat`) across all APIs and events.
 
 ### Quality gates (Definition of Done)
 
 1. `go build ./...` and `go test ./...` green (prefer `-race`).
-2. Symbols canonical; decimals via `*big.Rat` + `numeric.Format`.
+2. Symbols canonical; decimals via `*big.Rat`.
 3. Exchange minimal file set present; adapter README lists env vars for optional live tests.
 
 ### Versioning & release
@@ -186,9 +179,9 @@ Project rules that keep Meltica stable and shippable. These are non‑negotiable
 
 ### Security, observability, reliability
 
-* Secrets redacted; HMAC signing correct; SAST/dep/license scans clean.
+* Secrets redacted; HMAC signing correct; dependency/license scans clean.
 * Structured logs/metrics/traces; dashboards for WS stability and order‑flow latency.
-* HTTP retries with backoff; token‑bucket rate limiting; WS heartbeats/reconnect; sequence tracking & gap detection.
+* HTTP retries with backoff; rate limiting; WS heartbeats/reconnect; sequence tracking & gap detection.
 
 ---
 
@@ -211,7 +204,7 @@ How to contribute and the exact path for adding a new exchange adapter.
 
 * **Do:**
 
-  * Create: `exchanges/<name>/<name>.go`, `sign.go`, `errors.go`, `status.go`, `ws.go`, `ws_private.go` (if needed), `README.md`.
+  * Create: `exchanges/<name>/<name>.go`, `exchange/provider.go`, `infra/rest/client.go`, `infra/ws/client.go`, `README.md`.
   * Implement `Exchange` in `<name>.go`; `Name()` stable id; `SupportedProtocolVersion() == core.ProtocolVersion`.
   * Declare `Capabilities()` bitset conservatively; document env vars in adapter README.
 * **Validate:**
@@ -229,7 +222,7 @@ How to contribute and the exact path for adding a new exchange adapter.
 
   * Wire HTTP clients with timeouts, retry/backoff, and rate‑limiting hooks.
   * Implement Spot (server time, instruments, ticker, order lifecycle) and Futures (instruments, positions, orders) returning **core models**.
-  * Canonicalize symbols to `BASE-QUOTE`; use `*big.Rat` for all numerics; marshal via `numeric.Format`.
+  * Canonicalize symbols to `BASE-QUOTE`; use `*big.Rat` for all numerics.
   * Map enums/statuses exhaustively with `switch`; default must error.
 * **Validate:**
 
@@ -243,7 +236,7 @@ How to contribute and the exact path for adding a new exchange adapter.
 
 * **Do:**
 
-  * In `exchanges/<name>/ws.go`, implement connect logic with:
+  * In `exchanges/<name>/infra/ws/client.go`, implement connect logic with:
     - Reconnect + jittered backoff
     - Heartbeats/pings per provider spec
     - Multiplexed subscriptions (topics like `trades:BTC-USDT`)
@@ -282,7 +275,7 @@ How to contribute and the exact path for adding a new exchange adapter.
 
   * In `errors.go`, wrap to `*errs.E` with canonical codes; include raw exchange details.
   * In `status.go` (and friends), implement exhaustive `mapOrderStatus/Type/Side/TIF`.
-  * Replace any floats with `*big.Rat`; ensure (Un)MarshalJSON uses `numeric.Format`; always call `core.ToCanonicalSymbol`.
+  * Replace any floats with `*big.Rat`; ensure (Un)MarshalJSON uses proper formatting; always call `core.ToCanonicalSymbol`.
 * **Validate:**
 
   ```bash
@@ -311,7 +304,7 @@ How to contribute and the exact path for adding a new exchange adapter.
 ### Pull request checklist (copy/paste)
 
 * [ ] Unit tests (`-race`) green.
-* [ ] Symbols canonical; decimals via `*big.Rat` + `numeric.Format`.
+* [ ] Symbols canonical; decimals via `*big.Rat`.
 * [ ] If protocol touched: docs updated **and** `core.ProtocolVersion` bumped; adapters match.
 * [ ] Adapter README includes env vars and base URLs; minimal file set present.
 

@@ -1,27 +1,31 @@
 # Delivery Process & CI Standards
 
-Defines process, CI checks, and migration phases.
+Defines process, CI checks, and development phases.
 
-## Migration Phases
-Follow the 16-phase migration plan (bootstrap → release). Each phase has steps and predictable outcomes.
+## Development Phases
+Follow the development phases from bootstrap to release. Each phase has steps and predictable outcomes.
 
 Highlights:
 - Transport: timeouts, retries, backoff/jitter, idempotency, bounded retries. Validate with 429/5xx tests.
-- Error normalization: unified error type, golden tests.
-- WS: auto-reconnect, heartbeats, soak tests (<0.1% loss). Chaos test validation.
-- Security: redact secrets, HMAC signing, SAST/dep/license scans clean.
-- Observability: structured logs, metrics, traces, dashboards, spans for order flow.
+- Error normalization: unified error type, unit tests.
+- WS: auto-reconnect, heartbeats, reliable message delivery. Integration test validation.
+- Security: redact secrets, HMAC signing, dependency scanning.
+- Observability: structured logs, metrics, traces for debugging.
 
 ## DX & Abstractions
 - Must freeze: interfaces, models, events, errors, symbol/decimal/enums, capability bitset.
-- Validate: Abstraction guideline checklist.
+- Validate: Code review and testing
 
 ## CI Definition of Done
 1. `make test` passes with race detector.
 2. `go build ./...` passes.
-3. `./meltilint ./core ./providers/...` passes.
-4. `go run ./cmd/validate-schemas` passes, vectors validate.
-5. `go test ./conformance/...` passes offline suites.
-6. Protocol changes bump `protocol/version.go` (semver).
-7. Provider `SupportedProtocolVersion()` matches `protocol.ProtocolVersion`.
-8. Provider file set complete, README updated.
+3. `go test ./... -race -count=1` passes.
+4. Exchange adapters compile and pass unit tests.
+5. Documentation is up to date.
+
+## Quality Gates
+- Core interfaces stable and well-documented
+- Exchange adapters functional and tested
+- Consistent behavior across different exchanges
+- Proper error handling and status mapping
+- Comprehensive test coverage

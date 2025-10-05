@@ -1,4 +1,4 @@
-# 04 — WebSocket Private Streams (Team D)
+# 04 — WebSocket Private Streams
 
 **Goal:** Implement authenticated/private WS (orders, balances, positions) with sequencing and recovery.
 
@@ -11,7 +11,7 @@
 ---
 ## How to do it (follow exactly)
 1) **Session & auth**
-   - In `ws_private.go`, implement session creation per provider (listen key endpoints, signed subscribe frames, or cookies).
+   - In `infra/ws/client.go`, implement session creation per provider (listen key endpoints, signed subscribe frames, or cookies).
    - Keep-alive/refresh tokens or listen keys on schedule.
 
 2) **Decoders**

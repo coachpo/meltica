@@ -1,10 +1,10 @@
-# 01 — New Exchange Scaffold & Capabilities (Team A)
+# 01 — New Exchange Scaffold & Capabilities
 
 **Goal:** Create the adapter skeleton for a new exchange (codename: `<name>`) and wire up basic metadata and capability bits.
 
 ---
 ## What needs to be done
-1) Generate the provider folder with all required files.
+1) Generate the exchange folder with all required files.
 2) Implement the adapter's constructor and registration.
 3) Declare capabilities and supported protocol version.
 4) Add the adapter README with credential/env requirements.
@@ -15,8 +15,13 @@
    ```bash
    # Create the exchange directory structure manually
    mkdir -p exchanges/<name>
+   mkdir -p exchanges/<name>/exchange
+   mkdir -p exchanges/<name>/infra/rest
+   mkdir -p exchanges/<name>/infra/ws
+   mkdir -p exchanges/<name>/routing
+   mkdir -p exchanges/<name>/internal
    ```
-   Expected files: `<name>.go`, `sign.go`, `errors.go`, `status.go`, `ws.go`, `ws_private.go` (if supported), `README.md`.
+   Expected files: `<name>.go`, `exchange/provider.go`, `infra/rest/client.go`, `infra/ws/client.go`, `routing/rest_router.go`, `routing/ws_router.go`, `README.md`.
 
 2) **Implement Exchange interface in `exchanges/<name>/<name>.go`**
    - Implement methods exactly as in the current repository's Exchange interface (see README for shape):
@@ -25,19 +30,13 @@
          Name() string
          Capabilities() ExchangeCapabilities
          SupportedProtocolVersion() string
-         Spot(ctx context.Context) SpotAPI
-         LinearFutures(ctx context.Context) FuturesAPI
-         InverseFutures(ctx context.Context) FuturesAPI
-         WS() WS
-         Close() error
      }
      ```
-   - `Name()` returns a stable lowercase identifier (e.g., `"bybit"`).
+   - `Name()` returns a stable lowercase identifier (e.g., `"binance"`).
    - `SupportedProtocolVersion()` returns `core.ProtocolVersion`.
-   - Return concrete Spot/Futures clients (can be lightweight stubs initially that compile).
 
 3) **Declare capabilities**
-   - In `<name>.go`, implement `Capabilities()` returning a bitset consistent with what you will implement in Teams B–D (Spot/Linear/Inverse/WS public/WS private etc.).
+   - In `<name>.go`, implement `Capabilities()` returning a bitset consistent with what you will implement.
    - Keep bits **off** for features you won't implement in this sprint.
 
 4) **Add adapter README**
@@ -48,7 +47,7 @@
 ## How to validate that it is complete
 1) Files exist:
    ```bash
-   test -f exchanges/<name>/<name>.go &&    test -f exchanges/<name>/errors.go &&    test -f exchanges/<name>/status.go &&    test -f exchanges/<name>/ws.go &&    test -f exchanges/<name>/README.md
+   test -f exchanges/<name>/<name>.go &&    test -f exchanges/<name>/exchange/provider.go &&    test -f exchanges/<name>/infra/rest/client.go &&    test -f exchanges/<name>/infra/ws/client.go &&    test -f exchanges/<name>/README.md
    ```
 2) Build + basic tests:
    ```bash

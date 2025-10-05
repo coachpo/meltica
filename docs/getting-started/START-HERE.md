@@ -1,15 +1,15 @@
 ## Start Here
 
-Use this index to implement or migrate a provider in the right order. Links are relative to this folder.
+Use this index to implement or migrate an exchange adapter in the right order. Links are relative to this folder.
 
 ### TL;DR sequence
 1. Expectations (read first)
    - [Abstractions guidelines](../standards/expectations/abstractions-guidelines.md)
    - [Protocol and code standards](../standards/expectations/baseline-expectations/protocol-and-code-standards.md)
-   - [Provider adapter standards](../standards/expectations/baseline-expectations/provider-adapter-standards.md)
+   - [Exchange adapter standards](../standards/expectations/baseline-expectations/provider-adapter-standards.md)
    - [Delivery and CI standards](../standards/expectations/baseline-expectations/delivery-and-ci-standards.md)
 2. Choose your path
-   - New exchange: [Implementing a provider](../guides/exchange-implementation/implementing-a-provider.md)
+   - New exchange: [Implementing an exchange adapter](../guides/exchange-implementation/implementing-a-provider.md)
    - Migrating existing exchange: [Migration guidelines](../guides/exchange-implementation/migration-guidelines.md)
 3. Implement in steps (do in order)
    - Step 01: [New exchange scaffold and capabilities](../guides/exchange-implementation/migration-steps/01-new-exchange-scaffold-and-capabilities.md)
@@ -23,7 +23,7 @@ Use this index to implement or migrate a provider in the right order. Links are 
    - Run `go test ./... -race -count=1`
 
 ### When to use what
-- New exchange from scratch: start with [Implementing a provider](../guides/exchange-implementation/implementing-a-provider.md), then Steps 01 → 06.
+- New exchange from scratch: start with [Implementing an exchange adapter](../guides/exchange-implementation/implementing-a-provider.md), then Steps 01 → 06.
 - Migrating an existing exchange: read [Migration guidelines](../guides/exchange-implementation/migration-guidelines.md), then Steps 01 → 06.
 - Only building REST endpoints right now: focus on Step 02.
 - Adding public market data via WebSocket: do Step 03.
@@ -32,7 +32,7 @@ Use this index to implement or migrate a provider in the right order. Links are 
 - Pre-merge gates (integration/CI/release): do Step 06 and then run through [Protocol validation rules](../validation/protocol-validation-rules.md).
 - Confused about modeling or entities: check [Abstractions guidelines](../standards/expectations/abstractions-guidelines.md).
 - Unsure about code/protocol style: see [Protocol and code standards](../standards/expectations/baseline-expectations/protocol-and-code-standards.md).
-- Unsure what the adapter must implement: see [Provider adapter standards](../standards/expectations/baseline-expectations/provider-adapter-standards.md).
+- Unsure what the adapter must implement: see [Exchange adapter standards](../standards/expectations/baseline-expectations/provider-adapter-standards.md).
 - Unsure about delivery/branching/CI: see [Delivery and CI standards](../standards/expectations/baseline-expectations/delivery-and-ci-standards.md).
 
 
