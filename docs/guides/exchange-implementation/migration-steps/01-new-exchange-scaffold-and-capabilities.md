@@ -11,37 +11,36 @@ Meltica uses a three-layer architecture:
 
 ## Step 1.1: Create Directory Structure
 
-Create the following directory structure under `exchanges/`:
+Create the following directory structure under `exchanges/` following the Binance pattern:
 
 ```
 exchanges/your-exchange/
-├── exchange/
-│   ├── provider.go      # Main provider implementation
-│   ├── spot.go          # Spot market implementation
-│   ├── linear_futures.go # Linear futures implementation
-│   ├── inverse_futures.go # Inverse futures implementation
-│   ├── symbol_loader.go # Symbol loading logic
-│   ├── symbol_registry.go # Symbol registry
-│   ├── orderbook_stream.go # Order book streaming
-│   └── ws_service.go    # WebSocket service
+├── your-exchange.go         # Package entry point and main Exchange implementation
+├── spot.go                  # Spot market implementation
+├── linear_futures.go        # Linear futures implementation
+├── inverse_futures.go       # Inverse futures implementation
+├── depth.go                 # Depth/order book handling
+├── orderbook_snapshot.go    # Order book snapshot logic
+├── symbol_loader.go         # Symbol loading logic
+├── symbol_registry.go       # Symbol registry
+├── ws_service.go            # WebSocket service
 ├── infra/
 │   ├── rest/
-│   │   ├── client.go    # REST client
-│   │   ├── errors.go    # REST error handling
-│   │   └── sign.go      # Request signing
+│   │   ├── client.go        # REST client
+│   │   ├── errors.go        # REST error handling
+│   │   └── sign.go          # Request signing
 │   └── ws/
-│       └── client.go    # WebSocket client
+│       └── client.go        # WebSocket client
 ├── internal/
-│   ├── errors.go        # Internal error types
-│   └── status.go        # Status mapping
-├── routing/
-│   ├── rest_router.go   # REST routing
-│   ├── ws_router.go     # WebSocket routing
-│   ├── parse_public.go  # Public data parsing
-│   ├── parse_private.go # Private data parsing
-│   ├── orderbook.go     # Order book handling
-│   └── topics.go        # Topic mapping
-└── your-exchange.go     # Package entry point
+│   ├── errors.go            # Internal error types
+│   └── status.go            # Status mapping
+└── routing/
+    ├── rest_router.go       # REST routing using shared dispatcher
+    ├── ws_router.go         # WebSocket routing
+    ├── parse_public.go      # Public data parsing
+    ├── parse_private.go     # Private data parsing
+    ├── orderbook_state.go   # Order book state management
+    └── topics.go            # Topic mapping
 ```
 
 ## Step 1.2: Define Exchange Configuration
@@ -72,75 +71,127 @@ func Default() *Config {
 }
 ```
 
-## Step 1.3: Create Basic Provider Structure
+## Step 1.3: Create Basic Exchange Structure
 
-Create the main provider file `exchanges/your-exchange/exchange/provider.go`:
-
-```go
-package exchange
-
-import (
-    "context"
-    
-    "github.com/coachpo/meltica/config"
-    "github.com/coachpo/meltica/core/streams"
-    "github.com/coachpo/meltica/exchanges/your-exchange/infra/rest"
-    "github.com/coachpo/meltica/exchanges/your-exchange/infra/ws"
-    "github.com/coachpo/meltica/exchanges/your-exchange/routing"
-)
-
-type Provider struct {
-    restClient   exchange.RESTClient
-    wsClient     exchange.StreamClient
-    restRouter   *routing.RESTRouter
-    wsRouter     *routing.WSRouter
-    symbolLoader *SymbolLoader
-}
-
-func NewProvider(cfg *config.Config) *Provider {
-    settings := cfg.Exchange(config.ExchangeYourExchange)
-    
-    restClient := rest.NewClient(settings)
-    wsClient := ws.NewClient(settings)
-    
-    return &Provider{
-        restClient: restClient,
-        wsClient:   wsClient,
-        restRouter: routing.NewRESTRouter(restClient),
-        wsRouter:   routing.NewWSRouter(wsClient),
-        symbolLoader: NewSymbolLoader(restClient),
-    }
-}
-
-// Implement market interfaces
-func (p *Provider) Spot() *Spot {
-    return &Spot{provider: p}
-}
-
-func (p *Provider) LinearFutures() *LinearFutures {
-    return &LinearFutures{provider: p}
-}
-
-func (p *Provider) InverseFutures() *InverseFutures {
-    return &InverseFutures{provider: p}
-}
-```
-
-## Step 1.4: Create Package Entry Point
-
-Create `exchanges/your-exchange/your-exchange.go`:
+Create the main exchange file `exchanges/your-exchange/your-exchange.go` following the Binance pattern:
 
 ```go
 package your_exchange
 
 import (
+    "context"
+    "sync"
+    
     "github.com/coachpo/meltica/config"
-    "github.com/coachpo/meltica/exchanges/your-exchange/exchange"
+    "github.com/coachpo/meltica/core"
+    "github.com/coachpo/meltica/exchanges/your-exchange/infra/rest"
+    "github.com/coachpo/meltica/exchanges/your-exchange/infra/ws"
+    "github.com/coachpo/meltica/exchanges/your-exchange/routing"
+    routingrest "github.com/coachpo/meltica/exchanges/shared/routing"
 )
 
-func NewProvider(cfg *config.Config) *exchange.Provider {
-    return exchange.NewProvider(cfg)
+type Exchange struct {
+    name string
+
+    restClient *rest.Client
+    restRouter routingrest.RESTDispatcher
+
+    wsInfra  *ws.Client
+    wsRouter *routing.WSRouter
+
+    instCache map[core.Market]map[string]core.Instrument
+    symbols   *symbolRegistry
+    symbolsMu sync.RWMutex
+    cfg       config.Settings
+    cfgMu     sync.Mutex
 }
+
+var capabilities = core.Capabilities(
+    // Define your exchange's capabilities here
+    core.CapabilitySpotPublicREST,
+    core.CapabilitySpotTradingREST,
+    core.CapabilityWebsocketPublic,
+)
+
+func NewWithSettings(settings config.Settings) (*Exchange, error) {
+    // Resolve exchange-specific settings
+    yourCfg := resolveYourExchangeSettings(settings)
+    
+    restClient := rest.NewClient(rest.Config{
+        APIKey:      yourCfg.Credentials.APIKey,
+        Secret:      yourCfg.Credentials.APISecret,
+        SpotBaseURL: yourCfg.REST["spot"],
+        Timeout:     yourCfg.HTTPTimeout,
+    })
+    
+    restRouter := routing.NewRESTRouter(restClient)
+    wsInfra := ws.NewClient(ws.Config{
+        PublicURL:        yourCfg.Websocket.PublicURL,
+        PrivateURL:       yourCfg.Websocket.PrivateURL,
+        HandshakeTimeout: yourCfg.HandshakeTimeout,
+    })
+
+    x := &Exchange{
+        name:       "your-exchange",
+        restClient: restClient,
+        restRouter: restRouter,
+        wsInfra:    wsInfra,
+        instCache:  make(map[core.Market]map[string]core.Instrument),
+        symbols:    newSymbolRegistry(),
+        cfg:        settings,
+    }
+    x.wsRouter = routing.NewWSRouter(wsInfra, x)
+    return x, nil
+}
+
+func (x *Exchange) Name() string { return x.name }
+
+func (x *Exchange) Capabilities() core.ExchangeCapabilities { return capabilities }
+
+func (x *Exchange) SupportedProtocolVersion() string { return core.ProtocolVersion }
+
+func (x *Exchange) Spot(ctx context.Context) core.SpotAPI { return spotAPI{x} }
+
+func (x *Exchange) WS() core.WS { return newWSService(x.wsRouter) }
+
+func (x *Exchange) Close() error {
+    if x.wsRouter != nil {
+        _ = x.wsRouter.Close()
+    }
+    return nil
+}
+```
+
+## Step 1.4: Create Market Implementations
+
+Create market-specific implementations following the Binance pattern:
+
+```go
+// exchanges/your-exchange/spot.go
+package your_exchange
+
+import (
+    "context"
+    "github.com/coachpo/meltica/core"
+)
+
+type spotAPI struct {
+    exchange *Exchange
+}
+
+func (s spotAPI) ServerTime(ctx context.Context) (time.Time, error) {
+    // Implementation
+}
+
+func (s spotAPI) Instruments(ctx context.Context) ([]core.Instrument, error) {
+    // Implementation
+}
+
+func (s spotAPI) Ticker(ctx context.Context, symbol string) (core.Ticker, error) {
+    // Implementation
+}
+
+// ... other spot methods
 ```
 
 ## Step 1.5: Define Supported Capabilities
@@ -188,7 +239,8 @@ After completing this step, proceed to:
 
 ## Notes
 
-- Use the Binance implementation as a reference for all patterns
-- Follow the established directory structure
-- Ensure all interfaces match the current `core/streams` contracts
-- Use shared infrastructure from `exchanges/shared/` where possible
+- Use the Binance implementation in `exchanges/binance/` as a reference for all patterns
+- Follow the established directory structure without nested `exchange/` subdirectory
+- Use shared routing infrastructure from `exchanges/shared/routing/`
+- Ensure all interfaces match the current `core` contracts
+- Implement symbol conversion and caching similar to Binance pattern

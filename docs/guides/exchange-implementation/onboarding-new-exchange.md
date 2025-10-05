@@ -28,20 +28,56 @@ Follow these tiny steps to add a brand-new exchange to Meltica. Each step has a 
 
 ## Step 5 – Make a New Package Folder
 **Goal:** Start the real adapter code.
-1. Copy the folder structure from `exchanges/binance` into a new folder like `exchanges/okx` (no extra `exchange/` subdirectory).
+1. Copy the folder structure from `exchanges/binance` into a new folder like `exchanges/okx`.
 2. Keep only the files you plan to implement; stubs are fine while you wire things up.
 
-## Step 6 – Register The Exchange
-**Goal:** Let core resolve your implementation.
-1. Create a file such as `core/registry/okx/okx.go`.
-2. In its `init`, call `registry.Register` with your exchange name and a constructor.
-3. Inside the constructor, instantiate your `exchanges/okx` package and call `core.RegisterSymbolMapper` just like Binance does.
+## Step 6 – Configure The Exchange
+**Goal:** Add exchange configuration to the config system.
+1. Add exchange constant in `config/config.go`:
+   ```go
+   const ExchangeOKX Exchange = "okx"
+   ```
+2. Add default settings to `config.Default()` function.
+3. Add environment variable support in `config.FromEnv()`.
 
 ## Step 7 – Wire Up Construction In `exchanges/okx`
 **Goal:** Build the concrete `Exchange` type.
 1. Follow `exchanges/binance/binance.go` as the template for your `Exchange` struct.
 2. Use `config.DefaultExchangeSettings` plus overrides from `cfg.Exchange(...)` to obtain runtime settings.
 3. Create REST/WS infrastructure with helpers from `exchanges/shared/infra` and routers from `exchanges/shared/routing`.
+
+Example construction pattern:
+```go
+func NewWithSettings(settings config.Settings) (*Exchange, error) {
+    okxCfg := resolveOKXSettings(settings)
+    
+    restClient := rest.NewClient(rest.Config{
+        APIKey:      okxCfg.Credentials.APIKey,
+        Secret:      okxCfg.Credentials.APISecret,
+        SpotBaseURL: okxCfg.REST["spot"],
+        Timeout:     okxCfg.HTTPTimeout,
+    })
+    
+    restRouter := routing.NewRESTRouter(restClient)
+    wsInfra := ws.NewClient(ws.Config{
+        PublicURL:        okxCfg.Websocket.PublicURL,
+        PrivateURL:       okxCfg.Websocket.PrivateURL,
+        HandshakeTimeout: okxCfg.HandshakeTimeout,
+    })
+
+    x := &Exchange{
+        name:       "okx",
+        restClient: restClient,
+        restRouter: restRouter,
+        wsInfra:    wsInfra,
+        instCache:  make(map[core.Market]map[string]core.Instrument),
+        symbols:    newSymbolRegistry(),
+        cfg:        settings,
+    }
+    x.wsRouter = routing.NewWSRouter(wsInfra, x)
+    return x, nil
+}
+```
 
 ## Step 8 – Implement REST And WebSocket Logic
 **Goal:** Actually talk to the exchange.
@@ -68,4 +104,4 @@ Follow these tiny steps to add a brand-new exchange to Meltica. Each step has a 
 2. Mention any missing pieces or future TODOs.
 3. Ask for reviews from folks who own similar adapters.
 
-That’s it! You now have a friendly roadmap to bring a new exchange into Meltica. Go slow, check each goal, and celebrate when you finish.
+That's it! You now have a friendly roadmap to bring a new exchange into Meltica. Go slow, check each goal, and celebrate when you finish.

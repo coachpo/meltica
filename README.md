@@ -7,11 +7,8 @@ A high-performance cryptocurrency exchange adapter framework written in Go.
 | Exchange | Spot | Linear Futures | Inverse Futures | WebSocket Public | WebSocket Private |
 |----------|------|----------------|-----------------|------------------|-------------------|
 | Binance  | ✅   | ✅             | ✅              | ✅               | ✅                |
-| OKX      | 🔄   | 🔄             | 🔄              | 🔄               | 🔄                |
-| Coinbase | 🔄   | 🔄             | 🔄              | 🔄               | 🔄                |
-| Kraken   | 🔄   | 🔄             | 🔄              | 🔄               | 🔄                |
 
-**Legend:** ✅ = Fully Supported, 🔄 = Planned/In Development
+**Legend:** ✅ = Fully Supported
 
 ## Architecture
 
@@ -39,17 +36,17 @@ Meltica follows a layered architecture with clear separation of concerns:
 import "github.com/coachpo/meltica/exchanges/binance"
 
 // Create a Binance provider
-provider := binance.NewProvider()
+provider := binance.NewWithSettings(config.Default())
 
 // Use the provider for market data or trading operations
 ```
 
 ## Features
 
-- **Unified API**: Single interface for multiple exchanges
+- **Unified API**: Single interface for multiple exchanges (currently Binance)
 - **High Performance**: Optimized for low-latency trading
 - **Type Safety**: Strongly typed Go interfaces
-- **Extensible**: Easy to add new exchanges
+- **Extensible**: Easy to add new exchanges following the Binance pattern
 - **Production Ready**: Comprehensive error handling and logging
 
 ## Development

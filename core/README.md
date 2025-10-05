@@ -379,39 +379,34 @@ This package follows the Meltica protocol standards:
 - **STD-13**: Enums are frozen and exhaustive
 - **STD-15**: WebSocket decoders return typed events
 
-## Command Line Tools
+## Development Tools
 
-The project provides several command-line tools for development and testing:
+The project provides command-line tools for development and testing:
 
-### market-stream
-Stream real-time market data from cryptocurrency exchanges:
+### Main CLI
+
+The main CLI in `cmd/main.go` provides basic exchange operations:
+
 ```bash
-# Stream BTC-USDT ticker data from Binance
-go run ./cmd/market-stream -exchange binance -symbol BTC-USDT -channel ticker
-
-# Stream ETH-USDT trade data from OKX
-go run ./cmd/market-stream -exchange okx -symbol ETH-USDT -channel trades
+# Build and run the main CLI
+make build
+go run ./cmd/main
 ```
 
-### barista
-Generate new exchange adapter scaffolds:
-```bash
-# Generate a new exchange scaffold
-go run ./cmd/barista -name bybit
+### Testing
 
-# Generate with custom output directory
-go run ./cmd/barista -name ftx -out custom-exchanges/ftx
-```
+Run comprehensive tests to validate exchange implementations:
 
-### validate-schemas
-Validate JSON schemas against golden vectors:
 ```bash
-go run ./cmd/validate-schemas
+# Run all tests
+make test
+
+# Run tests with race detector
+go test ./... -race -count=1
 ```
 
 ## Related Packages
 
-- `providers/` - Concrete exchange adapter implementations (legacy; new adapters live under `exchanges/`)
-- `protocol/` - JSON schemas and golden vectors
-- `conformance/` - Validation and testing harness
-- `cmd/` - Command-line tools for development and testing
+- `exchanges/` - Concrete exchange adapter implementations (Binance)
+- `config/` - Configuration management for exchange adapters
+- `errs/` - Unified error definitions and handling

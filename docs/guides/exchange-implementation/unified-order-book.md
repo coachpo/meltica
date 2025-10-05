@@ -37,20 +37,13 @@ type OrderBook struct {
   - Ignores updates with `u < LastUpdateID`
   - Resets order book if `U > LastUpdateID + 1` (indicates missing updates)
 
-#### **Coinbase** - Delta Updates and Snapshots
-- **Input**: `l2update` (incremental) and `snapshot` (full) events
-- **Processing**: Following [Coinbase documentation](https://docs.cdp.coinbase.com/exchange/websocket-feed/channels#level2-channel)
-  - `snapshot`: Replaces entire order book state
-  - `l2update`: Applies incremental changes to existing state
-- **Change Format**: `["side", "price", "quantity"]` where `quantity = "0"` removes the level
+#### **Future Exchange Implementations**
 
-#### **OKX** - Snapshots and Incremental Updates
-- **Input**: `books` channel provides both snapshots and incremental updates
-- **Processing**: Following [OKX documentation](https://www.okx.com/docs-v5/en/#websocket-api-order-book)
-  - `action: "snapshot"`: Replaces entire order book state
-  - `action: "update"`: Applies incremental changes to existing state
-- **Sequence Management**: Uses `prevSeqId` and `seqId` for sequence tracking
-- **Data Format**: `["价格", "数量", "0", "订单数"]` - only uses price and quantity
+When implementing additional exchanges, follow these patterns:
+
+- **Coinbase**: Use `l2update` (incremental) and `snapshot` (full) events
+- **OKX**: Use `books` channel with `action: "snapshot"` and `action: "update"`
+- **Kraken**: Use `book` channel for full snapshots
 
 ### 3. Topic Structure
 
@@ -82,10 +75,8 @@ type DepthEvent struct {
 || Provider | Input Type | Processing Method | Output |
 ||----------|------------|-------------------|---------|
 || **Binance** | `depthUpdate` (incremental) | Delta merge with sequence tracking | Complete snapshot |
-|| **Coinbase** | `l2update` (incremental) | Delta merge | Complete snapshot |
-|| **Coinbase** | `snapshot` (full) | Direct replacement | Complete snapshot |
-|| **OKX** | `books` (snapshot + incremental) | Snapshot replacement + delta merge | Complete snapshot |
-|| **Kraken** | `book` (full) | Direct replacement | Complete snapshot |
+
+**Note**: Additional exchange implementations will follow similar patterns when added.
 
 ## Usage
 

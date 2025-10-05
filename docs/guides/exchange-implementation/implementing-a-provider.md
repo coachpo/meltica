@@ -29,7 +29,7 @@ Create a new directory under `exchanges/` following the Binance structure:
 
 ```
 exchanges/your-exchange/
-├── your-exchange.go         # Package entry point
+├── your-exchange.go         # Package entry point and main Exchange implementation
 ├── spot.go                  # Spot market implementation
 ├── linear_futures.go        # Linear futures implementation
 ├── inverse_futures.go       # Inverse futures implementation
@@ -49,7 +49,7 @@ exchanges/your-exchange/
 │   ├── errors.go            # Internal error types
 │   └── status.go            # Status mapping
 └── routing/
-    ├── rest_router.go       # REST routing
+    ├── rest_router.go       # REST routing using shared dispatcher
     ├── ws_router.go         # WebSocket routing
     ├── parse_public.go      # Public data parsing
     ├── parse_private.go     # Private data parsing
@@ -110,68 +110,93 @@ type Router interface {
 ### 4. Implement Level 3: Exchange Layer
 
 #### Provider Implementation
-Create the main provider that implements the Exchange interface and relevant participant interfaces:
+Create the main exchange that implements the Exchange interface and relevant participant interfaces following the Binance pattern:
 
 ```go
-type Provider struct {
-    restClient   exchange.RESTClient
-    wsClient     exchange.StreamClient
-    restRouter   *routing.RESTRouter
-    wsRouter     *routing.WSRouter
-    symbolLoader *SymbolLoader
+package your_exchange
+
+import (
+    "context"
+    "sync"
+    
+    "github.com/coachpo/meltica/config"
+    "github.com/coachpo/meltica/core"
+    "github.com/coachpo/meltica/exchanges/your-exchange/infra/rest"
+    "github.com/coachpo/meltica/exchanges/your-exchange/infra/ws"
+    "github.com/coachpo/meltica/exchanges/your-exchange/routing"
+    routingrest "github.com/coachpo/meltica/exchanges/shared/routing"
+)
+
+type Exchange struct {
+    name string
+
+    restClient *rest.Client
+    restRouter routingrest.RESTDispatcher
+
+    wsInfra  *ws.Client
+    wsRouter *routing.WSRouter
+
+    instCache map[core.Market]map[string]core.Instrument
+    symbols   *symbolRegistry
+    symbolsMu sync.RWMutex
+    cfg       config.Settings
+    cfgMu     sync.Mutex
 }
 
 // Implement Exchange interface
-func (p *Provider) Name() string {
+func (x *Exchange) Name() string {
     return "your-exchange"
 }
 
-func (p *Provider) Capabilities() core.ExchangeCapabilities {
-    return core.ExchangeCapabilities{
-        Spot:          true,
-        LinearFutures: true,
-        InverseFutures: true,
-    }
+func (x *Exchange) Capabilities() core.ExchangeCapabilities {
+    return core.Capabilities(
+        core.CapabilitySpotPublicREST,
+        core.CapabilitySpotTradingREST,
+        core.CapabilityLinearFutures: true,
+        core.CapabilityInverseFutures: true,
+    )
 }
 
-func (p *Provider) SupportedProtocolVersion() string {
+func (x *Exchange) SupportedProtocolVersion() string {
     return core.ProtocolVersion
 }
 
-func (p *Provider) Close() error {
-    // Cleanup logic
+func (x *Exchange) Close() error {
+    if x.wsRouter != nil {
+        _ = x.wsRouter.Close()
+    }
     return nil
 }
 
 // Implement participant interfaces
-func (p *Provider) Spot(ctx context.Context) core.SpotAPI {
-    return &Spot{provider: p}
+func (x *Exchange) Spot(ctx context.Context) core.SpotAPI {
+    return &spotAPI{exchange: x}
 }
 
-func (p *Provider) LinearFutures(ctx context.Context) core.FuturesAPI {
-    return &LinearFutures{provider: p}
+func (x *Exchange) LinearFutures(ctx context.Context) core.FuturesAPI {
+    return &linearAPI{exchange: x}
 }
 
-func (p *Provider) InverseFutures(ctx context.Context) core.FuturesAPI {
-    return &InverseFutures{provider: p}
+func (x *Exchange) InverseFutures(ctx context.Context) core.FuturesAPI {
+    return &inverseAPI{exchange: x}
 }
 
-func (p *Provider) WS() core.WS {
-    return p.wsRouter
+func (x *Exchange) WS() core.WS {
+    return newWSService(x.wsRouter)
 }
 ```
 
 #### Market Data Implementation
-Implement spot, linear futures, and inverse futures interfaces:
+Implement spot, linear futures, and inverse futures interfaces following the Binance pattern:
 
 ```go
 // Spot market implementation
-type Spot struct {
-    provider *Provider
+type spotAPI struct {
+    exchange *Exchange
 }
 
-func (s *Spot) Ticker(ctx context.Context, symbol string) (*core.Ticker, error) {
-    // Implementation
+func (s *spotAPI) Ticker(ctx context.Context, symbol string) (*core.Ticker, error) {
+    // Implementation using shared REST dispatcher
 }
 ```
 
@@ -213,11 +238,11 @@ Follow the testing patterns from the Binance implementation:
 
 ## Best Practices
 
-1. **Reuse Shared Infrastructure**: Use numeric helpers, rate limiting, and topic mapping from `exchanges/shared/`
-2. **Follow Error Handling Patterns**: Use the standardized error types and status mapping
-3. **Implement Comprehensive Testing**: Cover all market types and data flows
+1. **Reuse Shared Infrastructure**: Use routing patterns from `exchanges/shared/routing/` and numeric helpers from `exchanges/shared/infra/numeric/`
+2. **Follow Error Handling Patterns**: Use the standardized error types and status mapping from the `errs` package
+3. **Implement Comprehensive Testing**: Cover all market types and data flows using the Binance testing patterns
 4. **Document Edge Cases**: Note any exchange-specific quirks or limitations
 
 ## Example Implementation
 
-See the Binance implementation in `exchanges/binance/` for a complete reference implementation.
+See the Binance implementation in `exchanges/binance/` for a complete reference implementation that follows all current patterns.

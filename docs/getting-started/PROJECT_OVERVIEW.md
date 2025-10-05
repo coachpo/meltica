@@ -27,17 +27,15 @@ Meltica follows a layered architecture with clear separation of concerns:
 ### Supported Exchanges
 - **Binance**: Full implementation with spot, linear futures, and inverse futures support
 
-### Planned Exchanges
-- OKX
-- Coinbase  
-- Kraken
+### Future Exchange Development
+Additional exchanges can be implemented following the established Binance patterns and architecture.
 
 ## Key Design Principles
 
 1. **Unified Interface**: Single API for all exchanges
 2. **Type Safety**: Strongly typed interfaces prevent runtime errors
 3. **Performance**: Optimized for low-latency trading operations
-4. **Extensibility**: Easy to add new exchanges and features
+4. **Extensibility**: Easy to add new exchanges following established patterns
 5. **Reliability**: Comprehensive error handling and recovery mechanisms
 
 ## Getting Started

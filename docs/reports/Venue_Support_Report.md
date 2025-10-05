@@ -14,7 +14,7 @@ The table below lists **all supported venues** with their category classificatio
 
 | Venue                 | Category                 | Status | **Integration Quality** | Notes                     |
 | --------------------- | ------------------------ | :----: | :---------------------: | ------------------------- |
-| **Binance**           | CEX                      |   ✓    |            ✅            |                           |
+| **Binance**           | CEX                      |   ✓    |            ✅            | Full implementation with spot, linear futures, inverse futures |
 | **Coinbase**          | CEX                      |   —    |            —            | Not implemented           |
 | **Kraken**            | CEX                      |   —    |            —            | Not implemented           |
 | **OKX / OKEx**        | CEX                      |   —    |            —            | Not implemented           |
