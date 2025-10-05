@@ -2,6 +2,7 @@ package core
 
 import (
 	"math/big"
+	"strconv"
 	"strings"
 )
 
@@ -26,10 +27,43 @@ func ScaleFromStep(step string) int {
 	if step == "" {
 		return 0
 	}
-	idx := strings.IndexByte(step, '.')
-	if idx < 0 {
+
+	mantissa := step
+	exponent := 0
+	if idx := strings.IndexAny(mantissa, "eE"); idx >= 0 {
+		mantissaPart := strings.TrimSpace(mantissa[:idx])
+		exponentPart := strings.TrimSpace(mantissa[idx+1:])
+		if mantissaPart == "" {
+			return 0
+		}
+		if exp, err := strconv.Atoi(exponentPart); err == nil {
+			exponent = exp
+			mantissa = mantissaPart
+		} else {
+			// If the exponent is malformed we fall back to using the raw string.
+			mantissa = mantissaPart
+		}
+	}
+
+	if mantissa == "" {
 		return 0
 	}
-	frac := strings.TrimRight(step[idx+1:], "0")
-	return len(frac)
+	if mantissa[0] == '+' || mantissa[0] == '-' {
+		mantissa = mantissa[1:]
+	}
+	if mantissa == "" {
+		return 0
+	}
+
+	decimals := 0
+	if idx := strings.IndexByte(mantissa, '.'); idx >= 0 {
+		frac := strings.TrimRight(mantissa[idx+1:], "0")
+		decimals = len(frac)
+	}
+
+	scale := decimals - exponent
+	if scale < 0 {
+		scale = 0
+	}
+	return scale
 }
