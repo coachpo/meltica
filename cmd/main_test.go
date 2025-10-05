@@ -3,7 +3,6 @@ package main
 import (
 	"math/big"
 	"testing"
-	"time"
 
 	"github.com/coachpo/meltica/core"
 	numeric "github.com/coachpo/meltica/exchanges/shared/infra/numeric"
@@ -58,7 +57,7 @@ func TestBuildDefaultSubscriptionsIncludesAvailableSymbols(t *testing.T) {
 		"BTC-USDT": {},
 		"ETH-USDT": {},
 	}
-	reqs := buildDefaultSubscriptions("BTC-USDT", instruments)
+	reqs := buildDefaultSubscriptions("BTC-USDT", nil, instruments)
 	if len(reqs) == 0 {
 		t.Fatalf("expected at least one subscription request")
 	}
@@ -76,7 +75,7 @@ func TestBuildDefaultSubscriptionsIncludesAvailableSymbols(t *testing.T) {
 				t.Fatalf("expected default book interval, got %s", req.Config.UpdateInterval)
 			}
 		} else if req.Symbol == "ETH-USDT" {
-			if req.Config.UpdateInterval != 500*time.Millisecond {
+			if req.Config.UpdateInterval != defaultTickerInterval {
 				t.Fatalf("expected throttled interval, got %s", req.Config.UpdateInterval)
 			}
 		}
@@ -114,5 +113,76 @@ func TestFormatBookLevels(t *testing.T) {
 	}
 	if got := formatBookLevels("BTC-USDT", nil, formatter); got != "-" {
 		t.Fatalf("expected '-' for empty levels, got %s", got)
+	}
+}
+
+func TestParseSymbolList(t *testing.T) {
+	got := parseSymbolList("btc-usdt, ETH-USDT, btc-usdt , ")
+	if len(got) != 2 {
+		t.Fatalf("expected 2 symbols, got %v", got)
+	}
+	if got[0] != "BTC-USDT" || got[1] != "ETH-USDT" {
+		t.Fatalf("unexpected ordering: %v", got)
+	}
+	if parseSymbolList("   ") != nil {
+		t.Fatalf("expected nil for empty input")
+	}
+}
+
+func TestParseControlCommand(t *testing.T) {
+	cases := []struct {
+		input   string
+		kind    userCommandKind
+		symbols []string
+	}{
+		{input: "pause btc-usdt eth-usdt", kind: commandPause, symbols: []string{"BTC-USDT", "ETH-USDT"}},
+		{input: "resume btc-usdt", kind: commandResume, symbols: []string{"BTC-USDT"}},
+		{input: "help", kind: commandHelp},
+		{input: "quit", kind: commandQuit},
+		{input: "subscribe btc-usdt btc-usdt", kind: commandSubscribe, symbols: []string{"BTC-USDT"}},
+		{input: "subscribe 1 2", kind: commandSubscribe, symbols: []string{"1", "2"}},
+	}
+	for _, tc := range cases {
+		cmd := parseControlCommand(tc.input)
+		if cmd.kind != tc.kind {
+			t.Fatalf("input %q: expected kind %v got %v", tc.input, tc.kind, cmd.kind)
+		}
+		if len(tc.symbols) != len(cmd.symbols) {
+			t.Fatalf("input %q: expected symbols %v got %v", tc.input, tc.symbols, cmd.symbols)
+		}
+		for i := range tc.symbols {
+			if tc.symbols[i] != cmd.symbols[i] {
+				t.Fatalf("input %q: expected symbol %s got %s", tc.input, tc.symbols[i], cmd.symbols[i])
+			}
+		}
+	}
+	unknown := parseControlCommand("nonsense")
+	if unknown.kind != commandUnknown {
+		t.Fatalf("expected unknown command for invalid input")
+	}
+}
+
+func TestResolveCommandSymbolsWithMenu(t *testing.T) {
+	state := &controlState{}
+	options := []string{"BTC-USDT", "ETH-USDT"}
+	state.setMenu(commandSubscribe, options)
+	allowed := makeSymbolSet(options)
+	inputs := []string{"1", "eth-usdt"}
+	got := resolveCommandSymbols(inputs, commandSubscribe, state, allowed)
+	if len(got) != 2 || got[0] != "BTC-USDT" || got[1] != "ETH-USDT" {
+		t.Fatalf("unexpected resolution: %v", got)
+	}
+	state.setMenu(commandPause, options)
+	if resolved := resolveCommandSymbols([]string{"1"}, commandSubscribe, state, allowed); len(resolved) != 0 {
+		t.Fatalf("expected no resolution when menu kind mismatched")
+	}
+}
+
+func TestFilterAvailableSymbols(t *testing.T) {
+	catalog := []string{"BTC-USDT", "ETH-USDT", "SOL-USDT"}
+	active := []symbolSubscription{{Symbol: "BTC-USDT"}}
+	got := filterAvailableSymbols(catalog, active)
+	if len(got) != 2 || got[0] != "ETH-USDT" || got[1] != "SOL-USDT" {
+		t.Fatalf("unexpected available symbols: %v", got)
 	}
 }
