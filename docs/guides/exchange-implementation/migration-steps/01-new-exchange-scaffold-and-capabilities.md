@@ -91,20 +91,15 @@ import (
 )
 
 type Exchange struct {
-    name string
-
-    restClient *rest.Client
-    restRouter routingrest.RESTDispatcher
-
-    wsInfra  *ws.Client
-    wsRouter *routing.WSRouter
-
-    instCache map[core.Market]map[string]core.Instrument
-    symbols   *symbolRegistry
-    symbolsMu sync.RWMutex
-    cfg       config.Settings
-    cfgMu     sync.Mutex
+    name       string
+    transports *transportBundle
+    symbols    *symbolService
+    cfg        config.Settings
+    cfgMu      sync.Mutex
 }
+
+// transportBundle and symbolService mirror the Binance adapter helpers for managing
+// transport lifecycles and symbol caches. Implement equivalents for your exchange.
 
 var capabilities = core.Capabilities(
     // Define your exchange's capabilities here
@@ -131,16 +126,16 @@ func NewWithSettings(settings config.Settings) (*Exchange, error) {
         HandshakeTimeout: yourCfg.HandshakeTimeout,
     })
 
+    transports := newTransportBundle(restClient, restRouter, wsInfra, nil)
+    symbols := newSymbolService(restRouter)
+
     x := &Exchange{
         name:       "your-exchange",
-        restClient: restClient,
-        restRouter: restRouter,
-        wsInfra:    wsInfra,
-        instCache:  make(map[core.Market]map[string]core.Instrument),
-        symbols:    newSymbolRegistry(),
+        transports: transports,
+        symbols:    symbols,
         cfg:        settings,
     }
-    x.wsRouter = routing.NewWSRouter(wsInfra, x)
+    transports.ws = routing.NewWSRouter(wsInfra, x)
     return x, nil
 }
 

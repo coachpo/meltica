@@ -108,15 +108,11 @@ func TestFetchMarketSymbolsUsesTradingStatusAndPrecision(t *testing.T) {
 		},
 	})
 
-	exch := &Exchange{
-		restRouter: stub,
-		symbols:    newSymbolRegistry(),
-		instCache:  make(map[core.Market]map[string]core.Instrument),
-	}
+	svc := newSymbolService(stub)
 
 	spec := marketSpec{api: rest.SpotAPI, path: "/api/v3/exchangeInfo", market: core.MarketSpot}
 
-	payload, err := exch.fetchMarketSymbols(context.Background(), spec)
+	payload, err := svc.fetchMarketSymbols(context.Background(), spec, stub)
 	if err != nil {
 		t.Fatalf("fetchMarketSymbols returned error: %v", err)
 	}

@@ -94,10 +94,6 @@ func (r *mockWSRouter) Close() error {
 	return nil
 }
 
-func (r *mockWSRouter) WSNativeSymbol(string) (string, error) { return "", nil }
-
-func (r *mockWSRouter) WSCanonicalSymbol(string) (string, error) { return "", nil }
-
 func (r *mockWSRouter) OrderBookSnapshot(string) (corestreams.BookEvent, bool) {
 	return corestreams.BookEvent{}, false
 }

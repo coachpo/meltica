@@ -10,6 +10,7 @@ const (
 	RouteTradeUpdate     = "trade_update"
 	RouteTickerUpdate    = "ticker_update"
 	RouteBookSnapshot    = "book_snapshot"
+	RouteDepthDelta      = "depth_delta"
 	RouteOrderUpdate     = "order_update"
 	RouteBalanceSnapshot = "balance_snapshot"
 )

@@ -2,7 +2,6 @@ package routing
 
 import (
 	"context"
-	"log"
 	"strings"
 	"time"
 
@@ -28,22 +27,15 @@ type Subscription = corestreams.Subscription
 
 // WSRouter manages websocket subscriptions, routing raw frames from Level 1 to Level 3.
 type WSRouter struct {
-	infra         coretransport.StreamClient
-	deps          WSDependencies
-	orderBooks    *OrderBookManager
-	monitorCtx    context.Context
-	monitorCancel context.CancelFunc
+	infra coretransport.StreamClient
+	deps  WSDependencies
 }
 
 // NewWSRouter creates a websocket routing layer bound to the infrastructure client.
 func NewWSRouter(infra coretransport.StreamClient, deps WSDependencies) *WSRouter {
-	ctx, cancel := context.WithCancel(context.Background())
 	return &WSRouter{
-		infra:         infra,
-		deps:          deps,
-		orderBooks:    NewOrderBookManager(),
-		monitorCtx:    ctx,
-		monitorCancel: cancel,
+		infra: infra,
+		deps:  deps,
 	}
 }
 
@@ -92,11 +84,6 @@ func (w *WSRouter) SubscribePublic(ctx context.Context, topics ...string) (Subsc
 		return nil, err
 	}
 	sub := newWSSub(rawSub)
-
-	bookSymbols := w.extractBookSymbols(topics)
-	if len(bookSymbols) > 0 {
-		w.startMonitoring(bookSymbols)
-	}
 
 	go w.readLoop(sub)
 	return sub, nil
@@ -209,24 +196,12 @@ func (w *WSRouter) readPrivateLoop(ctx context.Context, sub *wsSub, listenKey st
 	}
 }
 
-// Close terminates background monitoring goroutines.
+// Close terminates the infrastructure client.
 func (w *WSRouter) Close() error {
-	if w.monitorCancel != nil {
-		w.monitorCancel()
-	}
 	if w.infra != nil {
 		return w.infra.Close()
 	}
 	return nil
-}
-
-// Symbol conversion helpers consult the exchange-provided registry.
-func (w *WSRouter) WSNativeSymbol(canonical string) (string, error) {
-	return w.deps.NativeSymbol(canonical)
-}
-
-func (w *WSRouter) WSCanonicalSymbol(native string) (string, error) {
-	return w.deps.CanonicalSymbol(native)
 }
 
 func (w *WSRouter) buildStreams(topics []string) ([]string, error) {
@@ -251,124 +226,6 @@ func (w *WSRouter) buildStreams(topics []string) ([]string, error) {
 		streams = append(streams, strings.ToLower(native)+"@"+exchangeChannel)
 	}
 	return streams, nil
-}
-
-// OrderBookSnapshot returns the current snapshot for a symbol if it has been initialized.
-func (w *WSRouter) OrderBookSnapshot(symbol string) (corestreams.BookEvent, bool) {
-	orderBook := w.orderBooks.GetOrCreateOrderBook(symbol)
-	if !orderBook.IsInitialized() {
-		return corestreams.BookEvent{}, false
-	}
-	return orderBook.GetSnapshot(), true
-}
-
-// InitializeOrderBook demonstrates the complete Binance order book initialization flow.
-func (w *WSRouter) InitializeOrderBook(ctx context.Context, symbol string) error {
-	orderBook := w.orderBooks.GetOrCreateOrderBook(symbol)
-	if orderBook.IsInitialized() {
-		return nil
-	}
-	snapshot, lastUpdateID, err := w.deps.DepthSnapshot(ctx, symbol, 5000)
-	if err != nil {
-		return internal.WrapExchange(err, "failed to get depth snapshot")
-	}
-	if err := orderBook.InitializeFromSnapshot(snapshot, lastUpdateID); err != nil {
-		return internal.WrapExchange(err, "failed to initialize order book")
-	}
-	return nil
-}
-
-func (w *WSRouter) initializeAndRecover(symbol string, firstUpdateID, lastUpdateID int64) {
-	log.Printf("Starting automatic order book recovery for %s (gap detected: first=%d, last=%d)", symbol, firstUpdateID, lastUpdateID)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	firstEventU := firstUpdateID
-	if firstEventU == 0 {
-		firstEventU = -1
-	}
-
-	const maxRetries = 5
-	var retryCount int
-
-	for retryCount < maxRetries {
-		retryCount++
-
-		if err := w.InitializeOrderBook(ctx, symbol); err != nil {
-			log.Printf("Failed to initialize order book for %s (attempt %d/%d): %v", symbol, retryCount, maxRetries, err)
-			if retryCount < maxRetries {
-				time.Sleep(time.Duration(retryCount) * time.Second)
-				continue
-			}
-			log.Printf("Giving up on order book recovery for %s after %d attempts", symbol, maxRetries)
-			return
-		}
-
-		orderBook := w.orderBooks.GetOrCreateOrderBook(symbol)
-		if firstEventU > 0 && orderBook.GetLastUpdateID() < firstEventU {
-			log.Printf("Snapshot too old for %s (snapshot=%d < firstEvent=%d), retrying...", symbol, orderBook.GetLastUpdateID(), firstEventU)
-			if retryCount < maxRetries {
-				time.Sleep(time.Duration(retryCount) * time.Second)
-				continue
-			}
-			log.Printf("Giving up on order book recovery for %s - cannot get recent enough snapshot", symbol)
-			return
-		}
-
-		log.Printf("Successfully recovered order book for %s (snapshot update ID: %d)", symbol, orderBook.GetLastUpdateID())
-		return
-	}
-}
-
-func (w *WSRouter) validateOrderBookState(symbol string) {
-	orderBook := w.orderBooks.GetOrCreateOrderBook(symbol)
-	if !orderBook.IsInitialized() {
-		log.Printf("Order book for %s is not initialized, triggering recovery", symbol)
-		go w.initializeAndRecover(symbol, 0, 0)
-		return
-	}
-
-	if time.Since(orderBook.LastUpdate) > 2*time.Minute {
-		log.Printf("Order book for %s is stale (last update: %v), reinitializing", symbol, orderBook.LastUpdate)
-		go w.initializeAndRecover(symbol, 0, 0)
-	}
-}
-
-func (w *WSRouter) startMonitoring(symbols []string) {
-	if len(symbols) == 0 {
-		return
-	}
-
-	go func() {
-		ticker := time.NewTicker(time.Minute)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-w.monitorCtx.Done():
-				return
-			case <-ticker.C:
-				for _, symbol := range symbols {
-					w.validateOrderBookState(symbol)
-				}
-			}
-		}
-	}()
-}
-
-func (w *WSRouter) extractBookSymbols(topics []string) []string {
-	var symbols []string
-	for _, topic := range topics {
-		channel, symbol, err := coretopics.Parse(topic)
-		if err != nil {
-			continue
-		}
-		if channel == coretopics.TopicBook && symbol != "" {
-			symbols = append(symbols, symbol)
-		}
-	}
-	return symbols
 }
 
 type wsPrivateWrapper struct {

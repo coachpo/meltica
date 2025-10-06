@@ -21,17 +21,18 @@ func (s spotAPI) ServerTime(ctx context.Context) (time.Time, error) {
 		ServerTime int64 `json:"serverTime"`
 	}
 	msg := routingrest.RESTMessage{API: string(rest.SpotAPI), Method: http.MethodGet, Path: "/api/v3/time"}
-	if err := s.x.restRouter.Dispatch(ctx, msg, &resp); err != nil {
+	router := s.x.restRouter()
+	if router == nil {
+		return time.Time{}, internal.Invalid("rest router unavailable")
+	}
+	if err := router.Dispatch(ctx, msg, &resp); err != nil {
 		return time.Time{}, err
 	}
 	return time.UnixMilli(resp.ServerTime), nil
 }
 
 func (s spotAPI) Instruments(ctx context.Context) ([]core.Instrument, error) {
-	if err := s.x.ensureMarketSymbols(ctx, core.MarketSpot); err != nil {
-		return nil, err
-	}
-	return s.x.instrumentsForMarket(core.MarketSpot), nil
+	return s.x.instrumentsForMarket(ctx, core.MarketSpot)
 }
 
 func (s spotAPI) Ticker(ctx context.Context, symbol string) (core.Ticker, error) {
@@ -42,7 +43,11 @@ func (s spotAPI) Ticker(ctx context.Context, symbol string) (core.Ticker, error)
 	}
 	params := map[string]string{"symbol": native}
 	msg := routingrest.RESTMessage{API: string(rest.SpotAPI), Method: http.MethodGet, Path: "/api/v3/ticker/bookTicker", Query: params}
-	if err := s.x.restRouter.Dispatch(ctx, msg, &resp); err != nil {
+	router := s.x.restRouter()
+	if router == nil {
+		return core.Ticker{}, internal.Invalid("rest router unavailable")
+	}
+	if err := router.Dispatch(ctx, msg, &resp); err != nil {
 		return core.Ticker{}, err
 	}
 	return buildTicker(symbol, resp.BidPrice, resp.AskPrice), nil
@@ -55,7 +60,11 @@ func (s spotAPI) Balances(ctx context.Context) ([]core.Balance, error) {
 		Locked string `json:"locked"`
 	}
 	msg := routingrest.RESTMessage{API: string(rest.SpotAPI), Method: http.MethodGet, Path: "/api/v3/account", Signed: true}
-	if err := s.x.restRouter.Dispatch(ctx, msg, &resp); err != nil {
+	router := s.x.restRouter()
+	if router == nil {
+		return nil, internal.Invalid("rest router unavailable")
+	}
+	if err := router.Dispatch(ctx, msg, &resp); err != nil {
 		return nil, err
 	}
 	out := make([]core.Balance, 0, len(resp))
@@ -83,7 +92,11 @@ func (s spotAPI) Trades(ctx context.Context, symbol string, since int64) ([]core
 		Time    int64  `json:"time"`
 	}
 	msg := routingrest.RESTMessage{API: string(rest.SpotAPI), Method: http.MethodGet, Path: "/api/v3/myTrades", Query: params, Signed: true}
-	if err := s.x.restRouter.Dispatch(ctx, msg, &resp); err != nil {
+	router := s.x.restRouter()
+	if router == nil {
+		return nil, internal.Invalid("rest router unavailable")
+	}
+	if err := router.Dispatch(ctx, msg, &resp); err != nil {
 		return nil, err
 	}
 
@@ -132,7 +145,11 @@ func (s spotAPI) PlaceOrder(ctx context.Context, req core.OrderRequest) (core.Or
 		Status  string `json:"status"`
 	}
 	msg := routingrest.RESTMessage{API: string(rest.SpotAPI), Method: http.MethodPost, Path: "/api/v3/order", Query: q, Signed: true}
-	if err := s.x.restRouter.Dispatch(ctx, msg, &resp); err != nil {
+	router := s.x.restRouter()
+	if router == nil {
+		return core.Order{}, internal.Invalid("rest router unavailable")
+	}
+	if err := router.Dispatch(ctx, msg, &resp); err != nil {
 		return core.Order{}, err
 	}
 	return core.Order{ID: fmt.Sprintf("%d", resp.OrderID), Symbol: req.Symbol, Status: internal.MapOrderStatus(resp.Status)}, nil
@@ -155,7 +172,11 @@ func (s spotAPI) GetOrder(ctx context.Context, symbol, id, clientID string) (cor
 		Status  string `json:"status"`
 	}
 	msg := routingrest.RESTMessage{API: string(rest.SpotAPI), Method: http.MethodGet, Path: "/api/v3/order", Query: q, Signed: true}
-	if err := s.x.restRouter.Dispatch(ctx, msg, &resp); err != nil {
+	router := s.x.restRouter()
+	if router == nil {
+		return core.Order{}, internal.Invalid("rest router unavailable")
+	}
+	if err := router.Dispatch(ctx, msg, &resp); err != nil {
 		return core.Order{}, err
 	}
 	return core.Order{ID: fmt.Sprintf("%d", resp.OrderID), Symbol: symbol, Status: internal.MapOrderStatus(resp.Status)}, nil
@@ -174,7 +195,11 @@ func (s spotAPI) CancelOrder(ctx context.Context, symbol, id, clientID string) e
 		q["origClientOrderId"] = clientID
 	}
 	msg := routingrest.RESTMessage{API: string(rest.SpotAPI), Method: http.MethodDelete, Path: "/api/v3/order", Query: q, Signed: true}
-	return s.x.restRouter.Dispatch(ctx, msg, nil)
+	router := s.x.restRouter()
+	if router == nil {
+		return internal.Invalid("rest router unavailable")
+	}
+	return router.Dispatch(ctx, msg, nil)
 }
 
 func (s spotAPI) DepthSnapshot(ctx context.Context, symbol string, limit int) (corestreams.BookEvent, int64, error) {
@@ -182,10 +207,10 @@ func (s spotAPI) DepthSnapshot(ctx context.Context, symbol string, limit int) (c
 }
 
 func (s spotAPI) lookupInstrument(ctx context.Context, symbol string) core.Instrument {
-	if err := s.x.ensureMarketSymbols(ctx, core.MarketSpot); err != nil {
+	inst, ok, err := s.x.instrument(ctx, core.MarketSpot, symbol)
+	if err != nil || !ok {
 		return core.Instrument{}
 	}
-	inst, _ := s.x.instrument(core.MarketSpot, symbol)
 	return inst
 }
 

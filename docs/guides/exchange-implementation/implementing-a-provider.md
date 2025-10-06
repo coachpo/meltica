@@ -59,6 +59,21 @@ exchanges/your-exchange/
 
 ### 2. Implement Level 1: Transport Layer
 
+#### Transport Factories
+Create factory functions for transport clients:
+
+```go
+type transportFactories struct {
+    newRESTClient func(rest.Config) coretransport.RESTClient
+    newWSClient   func(ws.Config) coretransport.StreamClient
+}
+
+type routerFactories struct {
+    newRESTRouter func(coretransport.RESTClient) routingrest.RESTDispatcher
+    newWSRouter   func(coretransport.StreamClient, routing.WSDependencies) *routing.WSRouter
+}
+```
+
 #### REST Client
 Implement the `RESTClient` interface from `core/transport/transport_contracts.go`:
 
@@ -109,6 +124,65 @@ type Router interface {
 
 ### 4. Implement Level 3: Exchange Layer
 
+#### Service Layer
+Create Level-3 services that consume Level-2 data:
+
+```go
+// Symbol Service - manages symbol mappings
+type symbolService struct {
+    router   routingrest.RESTDispatcher
+    registry *symbolRegistry
+    cache    map[core.Market]map[string]core.Instrument
+    mu       sync.RWMutex
+}
+
+// Listen Key Service - manages user stream keys
+type listenKeyService struct {
+    router routingrest.RESTDispatcher
+}
+
+// Depth Snapshot Service - fetches order book snapshots
+type depthSnapshotService struct {
+    router  routingrest.RESTDispatcher
+    symbols *symbolService
+}
+
+// Order Book Service - maintains order book state (Level 3)
+type OrderBookService struct {
+    router  wsRouter
+    depths  *depthSnapshotService
+    books   map[string]*OrderBook
+    symbols *symbolService
+}
+```
+
+#### WS Dependencies Adapter
+Create an adapter that implements the routing WSDependencies interface:
+
+```go
+type wsDependencies struct {
+    symbols    *symbolService
+    listenKeys *listenKeyService
+    depths     *depthSnapshotService
+}
+
+func (d *wsDependencies) CanonicalSymbol(nativeSymbol string) (string, error) {
+    return d.symbols.canonicalForMarkets(context.Background(), nativeSymbol)
+}
+
+func (d *wsDependencies) NativeSymbol(canonical string) (string, error) {
+    return d.symbols.nativeForMarkets(context.Background(), canonical)
+}
+
+func (d *wsDependencies) CreateListenKey(ctx context.Context) (string, error) {
+    return d.listenKeys.Create(ctx)
+}
+
+func (d *wsDependencies) DepthSnapshot(ctx context.Context, symbol string, limit int) (corestreams.BookEvent, int64, error) {
+    return d.depths.Snapshot(ctx, symbol, limit)
+}
+```
+
 #### Provider Implementation
 Create the main exchange that implements the Exchange interface and relevant participant interfaces following the Binance pattern:
 
@@ -128,20 +202,15 @@ import (
 )
 
 type Exchange struct {
-    name string
-
-    restClient *rest.Client
-    restRouter routingrest.RESTDispatcher
-
-    wsInfra  *ws.Client
-    wsRouter *routing.WSRouter
-
-    instCache map[core.Market]map[string]core.Instrument
-    symbols   *symbolRegistry
-    symbolsMu sync.RWMutex
-    cfg       config.Settings
-    cfgMu     sync.Mutex
+    name       string
+    transports *transportBundle
+    symbols    *symbolService
+    cfg        config.Settings
+    cfgMu      sync.Mutex
 }
+
+// transportBundle collects REST/WS clients so they can be swapped or closed together.
+// symbolService owns symbol loading/caching logic.
 
 // Implement Exchange interface
 func (x *Exchange) Name() string {
@@ -162,8 +231,8 @@ func (x *Exchange) SupportedProtocolVersion() string {
 }
 
 func (x *Exchange) Close() error {
-    if x.wsRouter != nil {
-        _ = x.wsRouter.Close()
+    if x.transports != nil {
+        return x.transports.Close()
     }
     return nil
 }
@@ -182,7 +251,7 @@ func (x *Exchange) InverseFutures(ctx context.Context) core.FuturesAPI {
 }
 
 func (x *Exchange) WS() core.WS {
-    return newWSService(x.wsRouter)
+    return newWSService(x.transports.WS())
 }
 ```
 
@@ -197,6 +266,37 @@ type spotAPI struct {
 
 func (s *spotAPI) Ticker(ctx context.Context, symbol string) (*core.Ticker, error) {
     // Implementation using shared REST dispatcher
+}
+```
+
+#### Order Book Management
+**Important**: Order book management should be at Level 3, not Level 2:
+
+- **Level 2 routers** emit raw `DepthDelta` events with `RouteDepthDelta` route
+- **Level 3 service** (OrderBookService) maintains order book state by:
+  1. Subscribing to DepthDelta events from the router
+  2. Fetching snapshots via `depthSnapshotService`
+  3. Applying deltas and detecting gaps
+  4. Performing automatic recovery on gaps
+  5. Emitting BookEvent snapshots to consumers
+
+```go
+// In routing/parse_public.go (Level 2)
+msg.Route = corestreams.RouteDepthDelta
+msg.Parsed = &DepthDelta{
+    Symbol:        symbol,
+    FirstUpdateID: rec.FirstUpdateID,
+    LastUpdateID:  rec.LastUpdateID,
+    Bids:          bids,
+    Asks:          asks,
+    EventTime:     eventTime,
+}
+
+// In orderbook_service.go (Level 3)
+func (s *OrderBookService) processDepthDeltas(...) {
+    // Buffer events until snapshot is fetched
+    // Apply deltas with gap detection
+    // Emit BookEvent snapshots
 }
 ```
 

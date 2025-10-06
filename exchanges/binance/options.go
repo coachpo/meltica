@@ -12,25 +12,31 @@ import (
 type Option func(*constructionParams)
 
 type constructionParams struct {
-	cfgOpts   []config.Option
-	factories transportFactories
+	cfgOpts    []config.Option
+	transports transportFactories
+	routers    routerFactories
 }
 
 type transportFactories struct {
 	newRESTClient func(rest.Config) coretransport.RESTClient
-	newRESTRouter func(coretransport.RESTClient) routingrest.RESTDispatcher
 	newWSClient   func(ws.Config) coretransport.StreamClient
+}
+
+type routerFactories struct {
+	newRESTRouter func(coretransport.RESTClient) routingrest.RESTDispatcher
 	newWSRouter   func(coretransport.StreamClient, bnrouting.WSDependencies) wsRouter
 }
 
 func defaultConstructionParams() constructionParams {
 	return constructionParams{
-		factories: transportFactories{
+		transports: transportFactories{
 			newRESTClient: func(cfg rest.Config) coretransport.RESTClient { return rest.NewClient(cfg) },
+			newWSClient:   func(cfg ws.Config) coretransport.StreamClient { return ws.NewClient(cfg) },
+		},
+		routers: routerFactories{
 			newRESTRouter: func(client coretransport.RESTClient) routingrest.RESTDispatcher {
 				return bnrouting.NewRESTRouter(client)
 			},
-			newWSClient: func(cfg ws.Config) coretransport.StreamClient { return ws.NewClient(cfg) },
 			newWSRouter: func(client coretransport.StreamClient, deps bnrouting.WSDependencies) wsRouter {
 				return bnrouting.NewWSRouter(client, deps)
 			},
@@ -47,7 +53,7 @@ func WithConfig(options ...config.Option) Option {
 func WithRESTClientFactory(factory func(rest.Config) coretransport.RESTClient) Option {
 	return func(params *constructionParams) {
 		if factory != nil {
-			params.factories.newRESTClient = factory
+			params.transports.newRESTClient = factory
 		}
 	}
 }
@@ -59,7 +65,7 @@ func WithRESTClient(client coretransport.RESTClient) Option {
 func WithRESTRouterFactory(factory func(coretransport.RESTClient) routingrest.RESTDispatcher) Option {
 	return func(params *constructionParams) {
 		if factory != nil {
-			params.factories.newRESTRouter = factory
+			params.routers.newRESTRouter = factory
 		}
 	}
 }
@@ -71,7 +77,7 @@ func WithRESTRouter(router routingrest.RESTDispatcher) Option {
 func WithWSClientFactory(factory func(ws.Config) coretransport.StreamClient) Option {
 	return func(params *constructionParams) {
 		if factory != nil {
-			params.factories.newWSClient = factory
+			params.transports.newWSClient = factory
 		}
 	}
 }
@@ -83,7 +89,7 @@ func WithWSClient(client coretransport.StreamClient) Option {
 func WithWSRouterFactory(factory func(coretransport.StreamClient, bnrouting.WSDependencies) wsRouter) Option {
 	return func(params *constructionParams) {
 		if factory != nil {
-			params.factories.newWSRouter = factory
+			params.routers.newWSRouter = factory
 		}
 	}
 }

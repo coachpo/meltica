@@ -31,10 +31,7 @@ func newFuturesAPI(x *Exchange, market core.Market, endpoints futuresEndpoints) 
 }
 
 func (f *futuresAPI) Instruments(ctx context.Context) ([]core.Instrument, error) {
-	if err := f.x.ensureMarketSymbols(ctx, f.market); err != nil {
-		return nil, err
-	}
-	return f.x.instrumentsForMarket(f.market), nil
+	return f.x.instrumentsForMarket(ctx, f.market)
 }
 
 func (f *futuresAPI) Ticker(ctx context.Context, symbol string) (core.Ticker, error) {
@@ -45,7 +42,11 @@ func (f *futuresAPI) Ticker(ctx context.Context, symbol string) (core.Ticker, er
 	}
 	params := map[string]string{"symbol": native}
 	msg := routingrest.RESTMessage{API: f.endpoints.api, Method: http.MethodGet, Path: f.endpoints.tickerPath, Query: params}
-	if err := f.x.restRouter.Dispatch(ctx, msg, &resp); err != nil {
+	router := f.x.restRouter()
+	if router == nil {
+		return core.Ticker{}, internal.Invalid("rest router unavailable")
+	}
+	if err := router.Dispatch(ctx, msg, &resp); err != nil {
 		return core.Ticker{}, err
 	}
 	return buildTicker(symbol, resp.BidPrice, resp.AskPrice), nil
@@ -76,7 +77,11 @@ func (f *futuresAPI) PlaceOrder(ctx context.Context, req core.OrderRequest) (cor
 		Status  string `json:"status"`
 	}
 	msg := routingrest.RESTMessage{API: f.endpoints.api, Method: http.MethodPost, Path: f.endpoints.orderPath, Query: q, Signed: true}
-	if err := f.x.restRouter.Dispatch(ctx, msg, &resp); err != nil {
+	router := f.x.restRouter()
+	if router == nil {
+		return core.Order{}, internal.Invalid("rest router unavailable")
+	}
+	if err := router.Dispatch(ctx, msg, &resp); err != nil {
 		return core.Order{}, err
 	}
 	return core.Order{ID: fmt.Sprintf("%d", resp.OrderID), Symbol: req.Symbol, Status: internal.MapOrderStatus(resp.Status)}, nil
@@ -93,7 +98,11 @@ func (f *futuresAPI) Positions(ctx context.Context, symbols ...string) ([]core.P
 	}
 	var raw []map[string]any
 	msg := routingrest.RESTMessage{API: f.endpoints.api, Method: http.MethodGet, Path: f.endpoints.positionPath, Query: q, Signed: true}
-	if err := f.x.restRouter.Dispatch(ctx, msg, &raw); err != nil {
+	router := f.x.restRouter()
+	if router == nil {
+		return nil, internal.Invalid("rest router unavailable")
+	}
+	if err := router.Dispatch(ctx, msg, &raw); err != nil {
 		return nil, err
 	}
 	out := make([]core.Position, 0, len(raw))
@@ -127,10 +136,10 @@ func (f *futuresAPI) Positions(ctx context.Context, symbols ...string) ([]core.P
 }
 
 func (f *futuresAPI) lookupInstrument(ctx context.Context, symbol string) core.Instrument {
-	if err := f.x.ensureMarketSymbols(ctx, f.market); err != nil {
+	inst, ok, err := f.x.instrument(ctx, f.market, symbol)
+	if err != nil || !ok {
 		return core.Instrument{}
 	}
-	inst, _ := f.x.instrument(f.market, symbol)
 	return inst
 }
 

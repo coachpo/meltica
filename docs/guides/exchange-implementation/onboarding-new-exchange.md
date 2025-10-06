@@ -65,16 +65,16 @@ func NewWithSettings(settings config.Settings) (*Exchange, error) {
         HandshakeTimeout: okxCfg.HandshakeTimeout,
     })
 
+    transports := newTransportBundle(restClient, restRouter, wsInfra, nil)
+    symbols := newSymbolService(restRouter)
+
     x := &Exchange{
         name:       "okx",
-        restClient: restClient,
-        restRouter: restRouter,
-        wsInfra:    wsInfra,
-        instCache:  make(map[core.Market]map[string]core.Instrument),
-        symbols:    newSymbolRegistry(),
+        transports: transports,
+        symbols:    symbols,
         cfg:        settings,
     }
-    x.wsRouter = routing.NewWSRouter(wsInfra, x)
+    transports.ws = routing.NewWSRouter(wsInfra, x)
     return x, nil
 }
 ```

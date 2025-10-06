@@ -34,7 +34,7 @@ func (w *WSRouter) parsePublicMessage(msg *RoutedMessage, raw []byte) error {
 	if meta.Symbol == "" {
 		return internal.Exchange("ws: missing symbol in event=%s stream=%s", meta.Event, stream)
 	}
-	symbol, err := w.WSCanonicalSymbol(meta.Symbol)
+	symbol, err := w.deps.CanonicalSymbol(meta.Symbol)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "ERROR: binance ws: symbol resolution failed; stream=%s, event=%s, meta.Symbol=%s, err=%v\n", stream, meta.Event, meta.Symbol, err)
 		return err
@@ -128,26 +128,18 @@ func (w *WSRouter) parseBookStream(msg *RoutedMessage, payload []byte, symbol, s
 
 	bids := depthLevelsFromPairs(rec.Bids)
 	asks := depthLevelsFromPairs(rec.Asks)
-	orderBook := w.orderBooks.GetOrCreateOrderBook(symbol)
 	eventTime := time.UnixMilli(rec.EventTime)
 
-	orderBook.BufferEvent(rec.FirstUpdateID, rec.LastUpdateID, bids, asks, eventTime)
-
-	if orderBook.IsInitialized() {
-		success := UpdateFromBinanceDelta(orderBook, bids, asks, rec.FirstUpdateID, rec.LastUpdateID, eventTime)
-		if !success {
-			go w.initializeAndRecover(symbol, rec.FirstUpdateID, rec.LastUpdateID)
-			return internal.Exchange("order book out of sync for %s, restarting initialization", symbol)
-		}
-	}
-
+	// Expose raw DepthDelta event for Level 3 to consume
 	msg.Topic = coretopics.Book(symbol)
-	msg.Route = corestreams.RouteBookSnapshot
-	msg.Parsed = &corestreams.BookEvent{
-		Symbol: symbol,
-		Bids:   bids,
-		Asks:   asks,
-		Time:   eventTime,
+	msg.Route = corestreams.RouteDepthDelta
+	msg.Parsed = &DepthDelta{
+		Symbol:        symbol,
+		FirstUpdateID: rec.FirstUpdateID,
+		LastUpdateID:  rec.LastUpdateID,
+		Bids:          bids,
+		Asks:          asks,
+		EventTime:     eventTime,
 	}
 	return nil
 }

@@ -43,8 +43,6 @@ func (r *testRouter) SubscribePrivate(context.Context) (bnrouting.Subscription, 
 	return r.sub, nil
 }
 func (r *testRouter) Close() error                             { return nil }
-func (r *testRouter) WSNativeSymbol(string) (string, error)    { return "", nil }
-func (r *testRouter) WSCanonicalSymbol(string) (string, error) { return "", nil }
 func (r *testRouter) OrderBookSnapshot(string) (corestreams.BookEvent, bool) {
 	return corestreams.BookEvent{}, false
 }

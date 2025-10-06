@@ -92,21 +92,26 @@ func (t *lazySymbolTranslator) Canonical(native string) (string, error) {
 
 // NewSymbolTranslator returns a lazily-initialised translator backed by the exchange symbol registry.
 func NewSymbolTranslator(x *Exchange) core.SymbolTranslator {
+	translator := &lazySymbolTranslator{}
 	exchangeRef := x
-	return &lazySymbolTranslator{
-		loader: func() (registrySnapshot, error) {
-			ex := exchangeRef
-			if ex == nil {
-				return registrySnapshot{}, fmt.Errorf("translator: exchange unavailable")
+	translator.loader = func() (registrySnapshot, error) {
+		ex := exchangeRef
+		if ex == nil {
+			return registrySnapshot{}, fmt.Errorf("translator: exchange unavailable")
+		}
+		for _, market := range marketsOrAll() {
+			if err := ex.ensureMarketSymbols(context.Background(), market); err != nil {
+				translator.loadErr = err
+				return registrySnapshot{}, err
 			}
-			for _, market := range marketsOrAll() {
-				if err := ex.ensureMarketSymbols(context.Background(), market); err != nil {
-					return registrySnapshot{}, err
-				}
-			}
-			snapshot := ex.symbols.snapshot()
-			exchangeRef = nil
-			return snapshot, nil
-		},
+		}
+		snapshot, err := ex.symbols.snapshot(context.Background())
+		if err != nil {
+			translator.loadErr = err
+			return registrySnapshot{}, err
+		}
+		exchangeRef = nil
+		return snapshot, nil
 	}
+	return translator
 }

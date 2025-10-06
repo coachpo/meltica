@@ -2,17 +2,12 @@ package binance
 
 import (
 	"context"
-	"errors"
-	"fmt"
-	"net/http"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/coachpo/meltica/config"
 	"github.com/coachpo/meltica/core"
 	corestreams "github.com/coachpo/meltica/core/streams"
-	coretransport "github.com/coachpo/meltica/core/transport"
 	"github.com/coachpo/meltica/exchanges/binance/infra/rest"
 	"github.com/coachpo/meltica/exchanges/binance/infra/ws"
 	"github.com/coachpo/meltica/exchanges/binance/internal"
@@ -23,19 +18,15 @@ import (
 type Exchange struct {
 	name string
 
-	restClient coretransport.RESTClient
-	restRouter routingrest.RESTDispatcher
-
-	wsInfra  coretransport.StreamClient
-	wsRouter wsRouter
-
-	factories transportFactories
-
-	instCache map[core.Market]map[string]core.Instrument
-	symbols   *symbolRegistry
-	symbolsMu sync.RWMutex
-	cfg       config.Settings
-	cfgMu     sync.Mutex
+	transports         *transportBundle
+	symbols            *symbolService
+	listenKeys         *listenKeyService
+	depths             *depthSnapshotService
+	orderBooks         *OrderBookService
+	transportFactories transportFactories
+	routerFactories    routerFactories
+	cfg                config.Settings
+	cfgMu              sync.Mutex
 }
 
 var capabilities = core.Capabilities(
@@ -53,10 +44,6 @@ type wsRouter interface {
 	SubscribePublic(ctx context.Context, topics ...string) (bnrouting.Subscription, error)
 	SubscribePrivate(ctx context.Context) (bnrouting.Subscription, error)
 	Close() error
-	WSNativeSymbol(canonical string) (string, error)
-	WSCanonicalSymbol(native string) (string, error)
-	OrderBookSnapshot(symbol string) (corestreams.BookEvent, bool)
-	InitializeOrderBook(ctx context.Context, symbol string) error
 }
 
 func New(apiKey, secret string, opts ...Option) (*Exchange, error) {
@@ -71,7 +58,7 @@ func New(apiKey, secret string, opts ...Option) (*Exchange, error) {
 	if len(params.cfgOpts) > 0 {
 		settings = config.Apply(settings, params.cfgOpts...)
 	}
-	return newExchangeWithFactories(settings, params.factories)
+	return newExchangeWithFactories(settings, params.transports, params.routers)
 }
 
 func NewWithSettings(settings config.Settings, opts ...Option) (*Exchange, error) {
@@ -84,10 +71,10 @@ func NewWithSettings(settings config.Settings, opts ...Option) (*Exchange, error
 	if len(params.cfgOpts) > 0 {
 		settings = config.Apply(settings, params.cfgOpts...)
 	}
-	return newExchangeWithFactories(settings, params.factories)
+	return newExchangeWithFactories(settings, params.transports, params.routers)
 }
 
-func newExchangeWithFactories(settings config.Settings, factories transportFactories) (*Exchange, error) {
+func newExchangeWithFactories(settings config.Settings, transports transportFactories, routers routerFactories) (*Exchange, error) {
 	binCfg := resolveBinanceSettings(settings)
 	restCfg := rest.Config{
 		APIKey:         binCfg.Credentials.APIKey,
@@ -97,37 +84,32 @@ func newExchangeWithFactories(settings config.Settings, factories transportFacto
 		InverseBaseURL: binCfg.REST[config.BinanceRESTSurfaceInverse],
 		Timeout:        binCfg.HTTPTimeout,
 	}
-	restClient := factories.newRESTClient(restCfg)
-	if restClient == nil {
-		restClient = rest.NewClient(restCfg)
-	}
-	restRouter := factories.newRESTRouter(restClient)
-	if restRouter == nil {
-		restRouter = bnrouting.NewRESTRouter(restClient)
-	}
 	wsCfg := ws.Config{
 		PublicURL:        binCfg.Websocket.PublicURL,
 		PrivateURL:       binCfg.Websocket.PrivateURL,
 		HandshakeTimeout: binCfg.HandshakeTimeout,
 	}
-	wsInfra := factories.newWSClient(wsCfg)
-	if wsInfra == nil {
-		wsInfra = ws.NewClient(wsCfg)
-	}
+	bundle := buildTransportBundle(transports, routers, restCfg, wsCfg)
+	symbols := newSymbolService(bundle.Router())
+	listenKeys := newListenKeyService(bundle.Router())
+	depths := newDepthSnapshotService(bundle.Router(), symbols)
+	wsDeps := newWSDependencies(symbols, listenKeys, depths)
+	bundle.SetWS(routers.newWSRouter(bundle.WSInfra(), wsDeps))
+
+	orderBooks := newOrderBookService(bundle.WS(), depths, symbols)
+
 	x := &Exchange{
-		name:       "binance",
-		restClient: restClient,
-		restRouter: restRouter,
-		wsInfra:    wsInfra,
-		factories:  factories,
-		instCache:  make(map[core.Market]map[string]core.Instrument),
-		symbols:    newSymbolRegistry(),
-		cfg:        config.Apply(settings),
+		name:               "binance",
+		transports:         bundle,
+		symbols:            symbols,
+		listenKeys:         listenKeys,
+		depths:             depths,
+		orderBooks:         orderBooks,
+		transportFactories: transports,
+		routerFactories:    routers,
+		cfg:                config.Apply(settings),
 	}
-	x.wsRouter = factories.newWSRouter(wsInfra, x)
-	if x.wsRouter == nil {
-		x.wsRouter = bnrouting.NewWSRouter(wsInfra, x)
-	}
+
 	return x, nil
 }
 
@@ -151,46 +133,31 @@ func (x *Exchange) UpdateConfig(opts ...config.Option) error {
 		InverseBaseURL: binCfg.REST[config.BinanceRESTSurfaceInverse],
 		Timeout:        binCfg.HTTPTimeout,
 	}
-	restClient := x.factories.newRESTClient(restCfg)
-	if restClient == nil {
-		restClient = rest.NewClient(restCfg)
-	}
-	restRouter := x.factories.newRESTRouter(restClient)
-	if restRouter == nil {
-		restRouter = bnrouting.NewRESTRouter(restClient)
-	}
 	wsCfg := ws.Config{
 		PublicURL:        binCfg.Websocket.PublicURL,
 		PrivateURL:       binCfg.Websocket.PrivateURL,
 		HandshakeTimeout: binCfg.HandshakeTimeout,
 	}
-	wsInfra := x.factories.newWSClient(wsCfg)
-	if wsInfra == nil {
-		wsInfra = ws.NewClient(wsCfg)
-	}
-	wsRouter := x.factories.newWSRouter(wsInfra, x)
-	if wsRouter == nil {
-		wsRouter = bnrouting.NewWSRouter(wsInfra, x)
-	}
+
+	newBundle := buildTransportBundle(x.transportFactories, x.routerFactories, restCfg, wsCfg)
+	newSymbols := newSymbolService(newBundle.Router())
+	newListenKeys := newListenKeyService(newBundle.Router())
+	newDepths := newDepthSnapshotService(newBundle.Router(), newSymbols)
+	wsDeps := newWSDependencies(newSymbols, newListenKeys, newDepths)
+	newBundle.SetWS(x.routerFactories.newWSRouter(newBundle.WSInfra(), wsDeps))
 
 	x.cfgMu.Lock()
-	oldREST := x.restClient
-	oldWSRouter := x.wsRouter
-	oldWSInfra := x.wsInfra
-	x.restClient = restClient
-	x.restRouter = restRouter
-	x.wsInfra = wsInfra
-	x.wsRouter = wsRouter
+	oldBundle := x.transports
+	x.transports = newBundle
+	x.symbols = newSymbols
+	x.listenKeys = newListenKeys
+	x.depths = newDepths
 	x.cfg = newCfg
 	x.cfgMu.Unlock()
 
-	closeRESTClient(oldREST, restClient)
-	closeStreamResources(oldWSRouter, wsRouter, oldWSInfra, wsInfra)
-
-	x.symbolsMu.Lock()
-	x.symbols = newSymbolRegistry()
-	x.instCache = make(map[core.Market]map[string]core.Instrument)
-	x.symbolsMu.Unlock()
+	if oldBundle != nil {
+		_ = oldBundle.Close()
+	}
 
 	return nil
 }
@@ -209,20 +176,13 @@ func (x *Exchange) InverseFutures(ctx context.Context) core.FuturesAPI {
 	return newInverseFuturesAPI(x)
 }
 
-func (x *Exchange) WS() core.WS { return newWSService(x.wsRouter) }
+func (x *Exchange) WS() core.WS { return newWSService(x.wsRouter()) }
 
 func (x *Exchange) Close() error {
-	var err error
-	if x.wsRouter != nil {
-		err = errors.Join(err, x.wsRouter.Close())
+	if x.transports != nil {
+		return x.transports.Close()
 	}
-	if x.wsInfra != nil {
-		err = errors.Join(err, x.wsInfra.Close())
-	}
-	if x.restClient != nil {
-		err = errors.Join(err, x.restClient.Close())
-	}
-	return err
+	return nil
 }
 
 func resolveBinanceSettings(cfg config.Settings) config.ExchangeSettings {
@@ -269,52 +229,31 @@ func (x *Exchange) NativeSymbol(canonical string) (string, error) {
 }
 
 func (x *Exchange) CreateListenKey(ctx context.Context) (string, error) {
-	var resp struct {
-		ListenKey string `json:"listenKey"`
+	if x.listenKeys == nil {
+		return "", internal.Exchange("listen key service unavailable")
 	}
-	msg := routingrest.RESTMessage{API: string(rest.SpotAPI), Method: http.MethodPost, Path: "/api/v3/userDataStream"}
-	if err := x.restRouter.Dispatch(ctx, msg, &resp); err != nil {
-		return "", err
-	}
-	return resp.ListenKey, nil
+	return x.listenKeys.Create(ctx)
 }
 
 func (x *Exchange) KeepAliveListenKey(ctx context.Context, key string) error {
-	msg := routingrest.RESTMessage{API: string(rest.SpotAPI), Method: http.MethodPut, Path: "/api/v3/userDataStream", Query: map[string]string{"listenKey": key}}
-	return x.restRouter.Dispatch(ctx, msg, nil)
+	if x.listenKeys == nil {
+		return internal.Exchange("listen key service unavailable")
+	}
+	return x.listenKeys.KeepAlive(ctx, key)
 }
 
 func (x *Exchange) CloseListenKey(ctx context.Context, key string) error {
-	msg := routingrest.RESTMessage{API: string(rest.SpotAPI), Method: http.MethodDelete, Path: "/api/v3/userDataStream", Query: map[string]string{"listenKey": key}}
-	return x.restRouter.Dispatch(ctx, msg, nil)
+	if x.listenKeys == nil {
+		return internal.Exchange("listen key service unavailable")
+	}
+	return x.listenKeys.Close(ctx, key)
 }
 
 func (x *Exchange) DepthSnapshot(ctx context.Context, symbol string, limit int) (corestreams.BookEvent, int64, error) {
-	if err := x.ensureMarketSymbols(ctx, core.MarketSpot); err != nil {
-		return corestreams.BookEvent{}, 0, err
+	if x.depths == nil {
+		return corestreams.BookEvent{}, 0, internal.Exchange("depth snapshot service unavailable")
 	}
-	native, ok := x.symbols.native(core.MarketSpot, symbol)
-	if !ok {
-		if fallback, found := x.symbols.nativeAny(symbol); found {
-			native = fallback
-		} else {
-			return corestreams.BookEvent{}, 0, internal.Invalid("depth snapshot: unsupported symbol %s", symbol)
-		}
-	}
-	params := map[string]string{"symbol": native, "limit": fmt.Sprintf("%d", limit)}
-	var resp struct {
-		LastUpdateID int64           `json:"lastUpdateId"`
-		Bids         [][]interface{} `json:"bids"`
-		Asks         [][]interface{} `json:"asks"`
-	}
-	msg := routingrest.RESTMessage{API: string(rest.SpotAPI), Method: http.MethodGet, Path: "/api/v3/depth", Query: params}
-	if err := x.restRouter.Dispatch(ctx, msg, &resp); err != nil {
-		return corestreams.BookEvent{}, 0, err
-	}
-	bids := parseDepthLevels(resp.Bids)
-	asks := parseDepthLevels(resp.Asks)
-	event := corestreams.BookEvent{Symbol: symbol, Bids: bids, Asks: asks, Time: time.Now()}
-	return event, resp.LastUpdateID, nil
+	return x.depths.Snapshot(ctx, symbol, limit)
 }
 
 func (x *Exchange) timeInForceCode(t core.TimeInForce) string {
@@ -322,77 +261,52 @@ func (x *Exchange) timeInForceCode(t core.TimeInForce) string {
 }
 
 func (x *Exchange) nativeSymbolForMarkets(ctx context.Context, canonical string, markets ...core.Market) (string, error) {
-	trimmed := strings.ToUpper(strings.TrimSpace(canonical))
-	if trimmed == "" {
-		return "", internal.Invalid("unsupported symbol %s", canonical)
+	if x.symbols == nil {
+		return "", internal.Exchange("symbol service unavailable")
 	}
-	targetMarkets := marketsOrAll(markets...)
-	for _, market := range targetMarkets {
-		if native, ok := x.symbols.native(market, trimmed); ok {
-			return native, nil
-		}
-	}
-	for _, market := range targetMarkets {
-		if err := x.ensureMarketSymbols(ctx, market); err != nil {
-			return "", err
-		}
-		if native, ok := x.symbols.native(market, trimmed); ok {
-			return native, nil
-		}
-	}
-	if len(markets) == 0 {
-		if native, ok := x.symbols.nativeAny(trimmed); ok {
-			return native, nil
-		}
-	}
-	return "", internal.Invalid("unsupported symbol %s", trimmed)
+	return x.symbols.nativeForMarkets(ctx, canonical, markets...)
 }
 
 func (x *Exchange) canonicalSymbolForMarkets(ctx context.Context, binanceSymbol string, markets ...core.Market) (string, error) {
-	trimmed := strings.ToUpper(strings.TrimSpace(binanceSymbol))
-	if trimmed == "" {
-		return "", internal.Invalid("unsupported symbol %s", binanceSymbol)
+	if x.symbols == nil {
+		return "", internal.Exchange("symbol service unavailable")
 	}
-	targetMarkets := marketsOrAll(markets...)
-	belongsToTarget := func(canonical string) bool {
-		if len(markets) == 0 {
-			return true
-		}
-		for _, market := range targetMarkets {
-			if _, ok := x.symbols.native(market, canonical); ok {
-				return true
-			}
-		}
-		return false
-	}
-	if canonical, ok := x.symbols.canonical(trimmed); ok && belongsToTarget(canonical) {
-		return canonical, nil
-	}
-	for _, market := range targetMarkets {
-		if err := x.ensureMarketSymbols(ctx, market); err != nil {
-			return "", err
-		}
-		if canonical, ok := x.symbols.canonical(trimmed); ok && belongsToTarget(canonical) {
-			return canonical, nil
-		}
-	}
-	return "", internal.Exchange("unsupported symbol %s", trimmed)
+	return x.symbols.canonicalForMarkets(ctx, binanceSymbol, markets...)
 }
 
-func closeRESTClient(oldClient, newClient coretransport.RESTClient) {
-	if oldClient == nil || oldClient == newClient {
-		return
+func (x *Exchange) ensureMarketSymbols(ctx context.Context, market core.Market) error {
+	if x.symbols == nil {
+		return internal.Exchange("symbol service unavailable")
 	}
-	_ = oldClient.Close()
+	return x.symbols.ensureMarket(ctx, market)
 }
 
-func closeStreamResources(oldRouter, newRouter wsRouter, oldInfra, newInfra coretransport.StreamClient) {
-	if oldRouter != nil && oldRouter != newRouter {
-		_ = oldRouter.Close()
+func (x *Exchange) instrumentsForMarket(ctx context.Context, market core.Market) ([]core.Instrument, error) {
+	if x.symbols == nil {
+		return nil, internal.Exchange("symbol service unavailable")
 	}
-	if oldInfra != nil && oldInfra != newInfra {
-		_ = oldInfra.Close()
+	return x.symbols.instruments(ctx, market)
+}
+
+func (x *Exchange) instrument(ctx context.Context, market core.Market, symbol string) (core.Instrument, bool, error) {
+	if x.symbols == nil {
+		return core.Instrument{}, false, internal.Exchange("symbol service unavailable")
 	}
+	return x.symbols.instrument(ctx, market, symbol)
+}
+
+func (x *Exchange) restRouter() routingrest.RESTDispatcher {
+	if x.transports == nil {
+		return nil
+	}
+	return x.transports.Router()
+}
+
+func (x *Exchange) wsRouter() wsRouter {
+	if x.transports == nil {
+		return nil
+	}
+	return x.transports.WS()
 }
 
 func marketsOrAll(markets ...core.Market) []core.Market {
