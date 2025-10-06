@@ -8,36 +8,50 @@ import (
 	"time"
 
 	"github.com/coachpo/meltica/core"
-	"github.com/coachpo/meltica/exchanges/binance/infra/rest"
 	"github.com/coachpo/meltica/exchanges/binance/internal"
 	numeric "github.com/coachpo/meltica/exchanges/shared/infra/numeric"
 	routingrest "github.com/coachpo/meltica/exchanges/shared/routing"
 )
 
-type linearAPI struct{ x *Exchange }
-
-func (f linearAPI) Instruments(ctx context.Context) ([]core.Instrument, error) {
-	if err := f.x.ensureMarketSymbols(ctx, core.MarketLinearFutures); err != nil {
-		return nil, err
-	}
-	return f.x.instrumentsForMarket(core.MarketLinearFutures), nil
+type futuresEndpoints struct {
+	api          string
+	tickerPath   string
+	orderPath    string
+	positionPath string
 }
 
-func (f linearAPI) Ticker(ctx context.Context, symbol string) (core.Ticker, error) {
-	native, err := f.FutureNativeSymbol(symbol)
+type futuresAPI struct {
+	x         *Exchange
+	market    core.Market
+	endpoints futuresEndpoints
+}
+
+func newFuturesAPI(x *Exchange, market core.Market, endpoints futuresEndpoints) *futuresAPI {
+	return &futuresAPI{x: x, market: market, endpoints: endpoints}
+}
+
+func (f *futuresAPI) Instruments(ctx context.Context) ([]core.Instrument, error) {
+	if err := f.x.ensureMarketSymbols(ctx, f.market); err != nil {
+		return nil, err
+	}
+	return f.x.instrumentsForMarket(f.market), nil
+}
+
+func (f *futuresAPI) Ticker(ctx context.Context, symbol string) (core.Ticker, error) {
+	native, err := f.resolveNativeSymbol(ctx, symbol)
 	if err != nil {
 		return core.Ticker{}, err
 	}
 	params := map[string]string{"symbol": native}
-	msg := routingrest.RESTMessage{API: string(rest.LinearAPI), Method: http.MethodGet, Path: "/fapi/v1/ticker/bookTicker", Query: params}
+	msg := routingrest.RESTMessage{API: f.endpoints.api, Method: http.MethodGet, Path: f.endpoints.tickerPath, Query: params}
 	if err := f.x.restRouter.Dispatch(ctx, msg, &struct{}{}); err != nil {
 		return core.Ticker{}, err
 	}
 	return core.Ticker{Symbol: symbol, Time: time.Now()}, nil
 }
 
-func (f linearAPI) PlaceOrder(ctx context.Context, req core.OrderRequest) (core.Order, error) {
-	nativeSymbol, err := f.FutureNativeSymbol(req.Symbol)
+func (f *futuresAPI) PlaceOrder(ctx context.Context, req core.OrderRequest) (core.Order, error) {
+	nativeSymbol, err := f.resolveNativeSymbol(ctx, req.Symbol)
 	if err != nil {
 		return core.Order{}, err
 	}
@@ -60,31 +74,31 @@ func (f linearAPI) PlaceOrder(ctx context.Context, req core.OrderRequest) (core.
 		OrderID int64  `json:"orderId"`
 		Status  string `json:"status"`
 	}
-	msg := routingrest.RESTMessage{API: string(rest.LinearAPI), Method: http.MethodPost, Path: "/fapi/v1/order", Query: q, Signed: true}
+	msg := routingrest.RESTMessage{API: f.endpoints.api, Method: http.MethodPost, Path: f.endpoints.orderPath, Query: q, Signed: true}
 	if err := f.x.restRouter.Dispatch(ctx, msg, &resp); err != nil {
 		return core.Order{}, err
 	}
 	return core.Order{ID: fmt.Sprintf("%d", resp.OrderID), Symbol: req.Symbol, Status: internal.MapOrderStatus(resp.Status)}, nil
 }
 
-func (f linearAPI) Positions(ctx context.Context, symbols ...string) ([]core.Position, error) {
+func (f *futuresAPI) Positions(ctx context.Context, symbols ...string) ([]core.Position, error) {
 	q := map[string]string{}
 	if len(symbols) == 1 {
-		nativeSymbol, err := f.FutureNativeSymbol(symbols[0])
+		nativeSymbol, err := f.resolveNativeSymbol(ctx, symbols[0])
 		if err != nil {
 			return nil, err
 		}
 		q["symbol"] = nativeSymbol
 	}
 	var raw []map[string]any
-	msg := routingrest.RESTMessage{API: string(rest.LinearAPI), Method: http.MethodGet, Path: "/fapi/v2/positionRisk", Query: q, Signed: true}
+	msg := routingrest.RESTMessage{API: f.endpoints.api, Method: http.MethodGet, Path: f.endpoints.positionPath, Query: q, Signed: true}
 	if err := f.x.restRouter.Dispatch(ctx, msg, &raw); err != nil {
 		return nil, err
 	}
 	out := make([]core.Position, 0, len(raw))
 	for _, d := range raw {
 		nativeSym, _ := d["symbol"].(string)
-		sym, err := f.x.CanonicalSymbol(nativeSym)
+		sym, err := f.resolveCanonicalSymbol(ctx, nativeSym)
 		if err != nil {
 			return nil, err
 		}
@@ -111,34 +125,29 @@ func (f linearAPI) Positions(ctx context.Context, symbols ...string) ([]core.Pos
 	return out, nil
 }
 
-func (f linearAPI) FutureNativeSymbol(canonical string) (string, error) {
-	if err := f.x.ensureMarketSymbols(context.Background(), core.MarketLinearFutures); err != nil {
-		return "", err
-	}
-	if native, ok := f.x.symbols.native(core.MarketLinearFutures, canonical); ok {
-		return native, nil
-	}
-	return "", internal.Invalid("linear futures: unsupported canonical symbol %s", canonical)
+func (f *futuresAPI) FutureNativeSymbol(canonical string) (string, error) {
+	return f.resolveNativeSymbol(context.Background(), canonical)
 }
 
-func (f linearAPI) FutureCanonicalSymbol(native string) (string, error) {
-	if err := f.x.ensureMarketSymbols(context.Background(), core.MarketLinearFutures); err != nil {
-		return "", err
-	}
-	canonical, ok := f.x.symbols.canonical(native)
-	if !ok {
-		return "", internal.Invalid("linear futures: unsupported native symbol %s", native)
-	}
-	if _, ok := f.x.symbols.native(core.MarketLinearFutures, canonical); !ok {
-		return "", internal.Invalid("linear futures: unsupported native symbol %s", native)
-	}
-	return canonical, nil
+func (f *futuresAPI) FutureCanonicalSymbol(native string) (string, error) {
+	return f.resolveCanonicalSymbol(context.Background(), native)
 }
 
-func (f linearAPI) lookupInstrument(ctx context.Context, symbol string) core.Instrument {
-	if err := f.x.ensureMarketSymbols(ctx, core.MarketLinearFutures); err != nil {
+func (f *futuresAPI) lookupInstrument(ctx context.Context, symbol string) core.Instrument {
+	if err := f.x.ensureMarketSymbols(ctx, f.market); err != nil {
 		return core.Instrument{}
 	}
-	inst, _ := f.x.instrument(core.MarketLinearFutures, symbol)
+	inst, _ := f.x.instrument(f.market, symbol)
 	return inst
 }
+
+func (f *futuresAPI) resolveNativeSymbol(ctx context.Context, canonical string) (string, error) {
+	return f.x.nativeSymbolForMarkets(ctx, canonical, f.market)
+}
+
+func (f *futuresAPI) resolveCanonicalSymbol(ctx context.Context, native string) (string, error) {
+	return f.x.canonicalSymbolForMarkets(ctx, native, f.market)
+}
+
+// compile-time assertions to ensure futuresAPI satisfies the contract.
+var _ core.FuturesAPI = (*futuresAPI)(nil)

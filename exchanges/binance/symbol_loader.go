@@ -66,15 +66,6 @@ func (x *Exchange) ensureMarketSymbols(ctx context.Context, market core.Market) 
 	return nil
 }
 
-func (x *Exchange) ensureAllSymbols(ctx context.Context) error {
-	for _, market := range []core.Market{core.MarketSpot, core.MarketLinearFutures, core.MarketInverseFutures} {
-		if err := x.ensureMarketSymbols(ctx, market); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func (x *Exchange) fetchMarketSymbols(ctx context.Context, spec marketSpec) ([]symbolPayload, error) {
 	var resp struct {
 		Symbols []struct {

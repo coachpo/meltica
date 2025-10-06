@@ -4,18 +4,22 @@ import (
 	"context"
 
 	"github.com/coachpo/meltica/core"
+	"github.com/coachpo/meltica/exchanges/binance/internal"
 	"github.com/coachpo/meltica/exchanges/binance/routing"
 )
 
 type wsService struct {
-	router *routing.WSRouter
+	router wsRouter
 }
 
-func newWSService(router *routing.WSRouter) core.WS {
+func newWSService(router wsRouter) core.WS {
 	return &wsService{router: router}
 }
 
 func (w *wsService) SubscribePublic(ctx context.Context, topics ...string) (core.Subscription, error) {
+	if w.router == nil {
+		return nil, internal.Invalid("ws router not configured")
+	}
 	sub, err := w.router.SubscribePublic(ctx, topics...)
 	if err != nil {
 		return nil, err
@@ -25,6 +29,9 @@ func (w *wsService) SubscribePublic(ctx context.Context, topics ...string) (core
 
 func (w *wsService) SubscribePrivate(ctx context.Context, topics ...string) (core.Subscription, error) {
 	// Binance private stream does not respect topics; router handles listen key creation internally.
+	if w.router == nil {
+		return nil, internal.Invalid("ws router not configured")
+	}
 	sub, err := w.router.SubscribePrivate(ctx)
 	if err != nil {
 		return nil, err
@@ -33,10 +40,16 @@ func (w *wsService) SubscribePrivate(ctx context.Context, topics ...string) (cor
 }
 
 func (w *wsService) WSNativeSymbol(canonical string) (string, error) {
+	if w.router == nil {
+		return "", internal.Invalid("ws router not configured")
+	}
 	return w.router.WSNativeSymbol(canonical)
 }
 
 func (w *wsService) WSCanonicalSymbol(native string) (string, error) {
+	if w.router == nil {
+		return "", internal.Invalid("ws router not configured")
+	}
 	return w.router.WSCanonicalSymbol(native)
 }
 

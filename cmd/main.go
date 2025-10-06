@@ -17,9 +17,9 @@ import (
 
 	"github.com/coachpo/meltica/core"
 	registry "github.com/coachpo/meltica/core/registry"
-	registrybinance "github.com/coachpo/meltica/core/registry/binance"
 	corestreams "github.com/coachpo/meltica/core/streams"
 	coretopics "github.com/coachpo/meltica/core/topics"
+	binanceplugin "github.com/coachpo/meltica/exchanges/binance/plugin"
 	numeric "github.com/coachpo/meltica/exchanges/shared/infra/numeric"
 )
 
@@ -746,14 +746,14 @@ func main() {
 
 	fmt.Println("Starting Binance Order Book Management Validation...")
 
-	exchange, err := registry.Resolve(registrybinance.Name)
+	exchange, err := registry.Resolve(binanceplugin.Name)
 	if err != nil {
 		log.Fatalf("failed to create Binance exchange: %v", err)
 	}
 	defer exchange.Close()
 
 	canonicalSymbol := core.CanonicalSymbol(defaultBase, defaultQuote)
-	nativeSymbol, err := core.NativeSymbol(registrybinance.Name, canonicalSymbol)
+	nativeSymbol, err := core.NativeSymbol(binanceplugin.Name, canonicalSymbol)
 	if err != nil {
 		log.Printf("failed to resolve native symbol for %s: %v", canonicalSymbol, err)
 		nativeSymbol = canonicalSymbol

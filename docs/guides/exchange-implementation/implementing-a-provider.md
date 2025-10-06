@@ -174,11 +174,11 @@ func (x *Exchange) Spot(ctx context.Context) core.SpotAPI {
 }
 
 func (x *Exchange) LinearFutures(ctx context.Context) core.FuturesAPI {
-    return &linearAPI{exchange: x}
+    return newLinearFuturesAPI(x)
 }
 
 func (x *Exchange) InverseFutures(ctx context.Context) core.FuturesAPI {
-    return &inverseAPI{exchange: x}
+    return newInverseFuturesAPI(x)
 }
 
 func (x *Exchange) WS() core.WS {

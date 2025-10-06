@@ -11,6 +11,7 @@ import (
 	"github.com/coachpo/meltica/config"
 	"github.com/coachpo/meltica/core"
 	corestreams "github.com/coachpo/meltica/core/streams"
+	coretransport "github.com/coachpo/meltica/core/transport"
 	"github.com/coachpo/meltica/exchanges/binance/infra/rest"
 	"github.com/coachpo/meltica/exchanges/binance/infra/ws"
 	"github.com/coachpo/meltica/exchanges/binance/internal"
@@ -21,11 +22,13 @@ import (
 type Exchange struct {
 	name string
 
-	restClient *rest.Client
+	restClient coretransport.RESTClient
 	restRouter routingrest.RESTDispatcher
 
-	wsInfra  *ws.Client
-	wsRouter *bnrouting.WSRouter
+	wsInfra  coretransport.StreamClient
+	wsRouter wsRouter
+
+	factories transportFactories
 
 	instCache map[core.Market]map[string]core.Instrument
 	symbols   *symbolRegistry
@@ -45,40 +48,85 @@ var capabilities = core.Capabilities(
 	core.CapabilityWebsocketPrivate,
 )
 
-func New(apiKey, secret string, opts ...config.Option) (*Exchange, error) {
-	settings := config.FromEnv()
-	options := append(opts, config.WithBinanceAPI(apiKey, secret))
-	settings = config.Apply(settings, options...)
-	return NewWithSettings(settings)
+type wsRouter interface {
+	SubscribePublic(ctx context.Context, topics ...string) (bnrouting.Subscription, error)
+	SubscribePrivate(ctx context.Context) (bnrouting.Subscription, error)
+	Close() error
+	WSNativeSymbol(canonical string) (string, error)
+	WSCanonicalSymbol(native string) (string, error)
+	OrderBookSnapshot(symbol string) (corestreams.BookEvent, bool)
+	InitializeOrderBook(ctx context.Context, symbol string) error
 }
 
-func NewWithSettings(settings config.Settings) (*Exchange, error) {
+func New(apiKey, secret string, opts ...Option) (*Exchange, error) {
+	params := defaultConstructionParams()
+	params.cfgOpts = append(params.cfgOpts, config.WithBinanceAPI(apiKey, secret))
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&params)
+		}
+	}
+	settings := config.FromEnv()
+	if len(params.cfgOpts) > 0 {
+		settings = config.Apply(settings, params.cfgOpts...)
+	}
+	return newExchangeWithFactories(settings, params.factories)
+}
+
+func NewWithSettings(settings config.Settings, opts ...Option) (*Exchange, error) {
+	params := defaultConstructionParams()
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&params)
+		}
+	}
+	if len(params.cfgOpts) > 0 {
+		settings = config.Apply(settings, params.cfgOpts...)
+	}
+	return newExchangeWithFactories(settings, params.factories)
+}
+
+func newExchangeWithFactories(settings config.Settings, factories transportFactories) (*Exchange, error) {
 	binCfg := resolveBinanceSettings(settings)
-	restClient := rest.NewClient(rest.Config{
+	restCfg := rest.Config{
 		APIKey:         binCfg.Credentials.APIKey,
 		Secret:         binCfg.Credentials.APISecret,
 		SpotBaseURL:    binCfg.REST[config.BinanceRESTSurfaceSpot],
 		LinearBaseURL:  binCfg.REST[config.BinanceRESTSurfaceLinear],
 		InverseBaseURL: binCfg.REST[config.BinanceRESTSurfaceInverse],
 		Timeout:        binCfg.HTTPTimeout,
-	})
-	restRouter := bnrouting.NewRESTRouter(restClient)
-	wsInfra := ws.NewClient(ws.Config{
+	}
+	restClient := factories.newRESTClient(restCfg)
+	if restClient == nil {
+		restClient = rest.NewClient(restCfg)
+	}
+	restRouter := factories.newRESTRouter(restClient)
+	if restRouter == nil {
+		restRouter = bnrouting.NewRESTRouter(restClient)
+	}
+	wsCfg := ws.Config{
 		PublicURL:        binCfg.Websocket.PublicURL,
 		PrivateURL:       binCfg.Websocket.PrivateURL,
 		HandshakeTimeout: binCfg.HandshakeTimeout,
-	})
-
+	}
+	wsInfra := factories.newWSClient(wsCfg)
+	if wsInfra == nil {
+		wsInfra = ws.NewClient(wsCfg)
+	}
 	x := &Exchange{
 		name:       "binance",
 		restClient: restClient,
 		restRouter: restRouter,
 		wsInfra:    wsInfra,
+		factories:  factories,
 		instCache:  make(map[core.Market]map[string]core.Instrument),
 		symbols:    newSymbolRegistry(),
 		cfg:        config.Apply(settings),
 	}
-	x.wsRouter = bnrouting.NewWSRouter(wsInfra, x)
+	x.wsRouter = factories.newWSRouter(wsInfra, x)
+	if x.wsRouter == nil {
+		x.wsRouter = bnrouting.NewWSRouter(wsInfra, x)
+	}
 	return x, nil
 }
 
@@ -94,20 +142,35 @@ func (x *Exchange) UpdateConfig(opts ...config.Option) error {
 	base := x.Config()
 	newCfg := config.Apply(base, opts...)
 	binCfg := resolveBinanceSettings(newCfg)
-	restClient := rest.NewClient(rest.Config{
+	restCfg := rest.Config{
 		APIKey:         binCfg.Credentials.APIKey,
 		Secret:         binCfg.Credentials.APISecret,
 		SpotBaseURL:    binCfg.REST[config.BinanceRESTSurfaceSpot],
 		LinearBaseURL:  binCfg.REST[config.BinanceRESTSurfaceLinear],
 		InverseBaseURL: binCfg.REST[config.BinanceRESTSurfaceInverse],
 		Timeout:        binCfg.HTTPTimeout,
-	})
-	restRouter := bnrouting.NewRESTRouter(restClient)
-	wsInfra := ws.NewClient(ws.Config{
+	}
+	restClient := x.factories.newRESTClient(restCfg)
+	if restClient == nil {
+		restClient = rest.NewClient(restCfg)
+	}
+	restRouter := x.factories.newRESTRouter(restClient)
+	if restRouter == nil {
+		restRouter = bnrouting.NewRESTRouter(restClient)
+	}
+	wsCfg := ws.Config{
 		PublicURL:        binCfg.Websocket.PublicURL,
 		PrivateURL:       binCfg.Websocket.PrivateURL,
 		HandshakeTimeout: binCfg.HandshakeTimeout,
-	})
+	}
+	wsInfra := x.factories.newWSClient(wsCfg)
+	if wsInfra == nil {
+		wsInfra = ws.NewClient(wsCfg)
+	}
+	wsRouter := x.factories.newWSRouter(wsInfra, x)
+	if wsRouter == nil {
+		wsRouter = bnrouting.NewWSRouter(wsInfra, x)
+	}
 
 	x.cfgMu.Lock()
 	if x.wsRouter != nil {
@@ -116,7 +179,7 @@ func (x *Exchange) UpdateConfig(opts ...config.Option) error {
 	x.restClient = restClient
 	x.restRouter = restRouter
 	x.wsInfra = wsInfra
-	x.wsRouter = bnrouting.NewWSRouter(wsInfra, x)
+	x.wsRouter = wsRouter
 	x.cfg = newCfg
 	x.cfgMu.Unlock()
 
@@ -134,10 +197,12 @@ func (x *Exchange) Capabilities() core.ExchangeCapabilities { return capabilitie
 
 func (x *Exchange) SupportedProtocolVersion() string { return core.ProtocolVersion }
 
-func (x *Exchange) Spot(ctx context.Context) core.SpotAPI             { return spotAPI{x} }
-func (x *Exchange) LinearFutures(ctx context.Context) core.FuturesAPI { return linearAPI{x} }
+func (x *Exchange) Spot(ctx context.Context) core.SpotAPI { return spotAPI{x} }
+func (x *Exchange) LinearFutures(ctx context.Context) core.FuturesAPI {
+	return newLinearFuturesAPI(x)
+}
 func (x *Exchange) InverseFutures(ctx context.Context) core.FuturesAPI {
-	return inverseAPI{x}
+	return newInverseFuturesAPI(x)
 }
 
 func (x *Exchange) WS() core.WS { return newWSService(x.wsRouter) }
@@ -185,27 +250,11 @@ func resolveBinanceSettings(cfg config.Settings) config.ExchangeSettings {
 
 // CanonicalSymbol converts Binance native symbols to canonical form with caching support.
 func (x *Exchange) CanonicalSymbol(binanceSymbol string) (string, error) {
-	trimmed := strings.ToUpper(strings.TrimSpace(binanceSymbol))
-	if trimmed == "" {
-		return "", internal.Invalid("unsupported symbol %s", binanceSymbol)
-	}
-	if err := x.ensureAllSymbols(context.Background()); err != nil {
-		return "", err
-	}
-	if canonical, ok := x.symbols.canonical(trimmed); ok {
-		return canonical, nil
-	}
-	return "", internal.Exchange("unsupported symbol %s", trimmed)
+	return x.canonicalSymbolForMarkets(context.Background(), binanceSymbol)
 }
 
 func (x *Exchange) NativeSymbol(canonical string) (string, error) {
-	if err := x.ensureAllSymbols(context.Background()); err != nil {
-		return "", err
-	}
-	if native, ok := x.symbols.nativeAny(canonical); ok {
-		return native, nil
-	}
-	return "", internal.Invalid("unsupported symbol %s", canonical)
+	return x.nativeSymbolForMarkets(context.Background(), canonical)
 }
 
 func (x *Exchange) CreateListenKey(ctx context.Context) (string, error) {
@@ -259,4 +308,84 @@ func (x *Exchange) DepthSnapshot(ctx context.Context, symbol string, limit int) 
 
 func (x *Exchange) timeInForceCode(t core.TimeInForce) string {
 	return internal.MapTimeInForce(t)
+}
+
+func (x *Exchange) nativeSymbolForMarkets(ctx context.Context, canonical string, markets ...core.Market) (string, error) {
+	trimmed := strings.ToUpper(strings.TrimSpace(canonical))
+	if trimmed == "" {
+		return "", internal.Invalid("unsupported symbol %s", canonical)
+	}
+	targetMarkets := marketsOrAll(markets...)
+	for _, market := range targetMarkets {
+		if native, ok := x.symbols.native(market, trimmed); ok {
+			return native, nil
+		}
+	}
+	for _, market := range targetMarkets {
+		if err := x.ensureMarketSymbols(ctx, market); err != nil {
+			return "", err
+		}
+		if native, ok := x.symbols.native(market, trimmed); ok {
+			return native, nil
+		}
+	}
+	if len(markets) == 0 {
+		if native, ok := x.symbols.nativeAny(trimmed); ok {
+			return native, nil
+		}
+	}
+	return "", internal.Invalid("unsupported symbol %s", trimmed)
+}
+
+func (x *Exchange) canonicalSymbolForMarkets(ctx context.Context, binanceSymbol string, markets ...core.Market) (string, error) {
+	trimmed := strings.ToUpper(strings.TrimSpace(binanceSymbol))
+	if trimmed == "" {
+		return "", internal.Invalid("unsupported symbol %s", binanceSymbol)
+	}
+	targetMarkets := marketsOrAll(markets...)
+	belongsToTarget := func(canonical string) bool {
+		if len(markets) == 0 {
+			return true
+		}
+		for _, market := range targetMarkets {
+			if _, ok := x.symbols.native(market, canonical); ok {
+				return true
+			}
+		}
+		return false
+	}
+	if canonical, ok := x.symbols.canonical(trimmed); ok && belongsToTarget(canonical) {
+		return canonical, nil
+	}
+	for _, market := range targetMarkets {
+		if err := x.ensureMarketSymbols(ctx, market); err != nil {
+			return "", err
+		}
+		if canonical, ok := x.symbols.canonical(trimmed); ok && belongsToTarget(canonical) {
+			return canonical, nil
+		}
+	}
+	return "", internal.Exchange("unsupported symbol %s", trimmed)
+}
+
+func marketsOrAll(markets ...core.Market) []core.Market {
+	if len(markets) == 0 {
+		return []core.Market{core.MarketSpot, core.MarketLinearFutures, core.MarketInverseFutures}
+	}
+	seen := make(map[core.Market]struct{}, len(markets))
+	out := make([]core.Market, 0, len(markets))
+	for _, m := range markets {
+		if m == "" {
+			continue
+		}
+		if _, ok := seen[m]; ok {
+			continue
+		}
+		seen[m] = struct{}{}
+		out = append(out, m)
+	}
+	if len(out) == 0 {
+		return []core.Market{core.MarketSpot, core.MarketLinearFutures, core.MarketInverseFutures}
+	}
+	return out
 }

@@ -8,13 +8,15 @@ import (
 	corestreams "github.com/coachpo/meltica/core/streams"
 	coretopics "github.com/coachpo/meltica/core/topics"
 	"github.com/coachpo/meltica/exchanges/binance/internal"
-	"github.com/coachpo/meltica/exchanges/binance/routing"
 )
 
 func (x *Exchange) OrderBookSnapshots(ctx context.Context, symbol string) (<-chan corestreams.BookEvent, <-chan error, error) {
 	canonicalSymbol, err := x.canonicalizeSymbol(symbol)
 	if err != nil {
 		return nil, nil, err
+	}
+	if x.wsRouter == nil {
+		return nil, nil, internal.Invalid("ws router not configured")
 	}
 
 	sub, err := x.wsRouter.SubscribePublic(ctx, coretopics.Book(canonicalSymbol))
@@ -111,7 +113,7 @@ func (x *Exchange) canonicalizeSymbol(symbol string) (string, error) {
 	return canonical, nil
 }
 
-func (x *Exchange) initializeWithRetries(ctx context.Context, handler *routing.WSRouter, symbol string) error {
+func (x *Exchange) initializeWithRetries(ctx context.Context, handler wsRouter, symbol string) error {
 	const maxRetries = 5
 	var lastErr error
 	for attempt := 0; attempt < maxRetries; attempt++ {

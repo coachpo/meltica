@@ -39,7 +39,7 @@ func (s spotAPI) Ticker(ctx context.Context, symbol string) (core.Ticker, error)
 		Bid string `json:"bidPrice"`
 		Ask string `json:"askPrice"`
 	}
-	native, err := s.SpotNativeSymbol(symbol)
+	native, err := s.resolveNativeSymbol(ctx, symbol)
 	if err != nil {
 		return core.Ticker{}, err
 	}
@@ -72,7 +72,7 @@ func (s spotAPI) Balances(ctx context.Context) ([]core.Balance, error) {
 }
 
 func (s spotAPI) Trades(ctx context.Context, symbol string, since int64) ([]core.Trade, error) {
-	native, err := s.SpotNativeSymbol(symbol)
+	native, err := s.resolveNativeSymbol(ctx, symbol)
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +106,7 @@ func (s spotAPI) Trades(ctx context.Context, symbol string, since int64) ([]core
 }
 
 func (s spotAPI) PlaceOrder(ctx context.Context, req core.OrderRequest) (core.Order, error) {
-	nativeSymbol, err := s.SpotNativeSymbol(req.Symbol)
+	nativeSymbol, err := s.resolveNativeSymbol(ctx, req.Symbol)
 	if err != nil {
 		return core.Order{}, err
 	}
@@ -144,7 +144,7 @@ func (s spotAPI) PlaceOrder(ctx context.Context, req core.OrderRequest) (core.Or
 }
 
 func (s spotAPI) GetOrder(ctx context.Context, symbol, id, clientID string) (core.Order, error) {
-	nativeSymbol, err := s.SpotNativeSymbol(symbol)
+	nativeSymbol, err := s.resolveNativeSymbol(ctx, symbol)
 	if err != nil {
 		return core.Order{}, err
 	}
@@ -167,7 +167,7 @@ func (s spotAPI) GetOrder(ctx context.Context, symbol, id, clientID string) (cor
 }
 
 func (s spotAPI) CancelOrder(ctx context.Context, symbol, id, clientID string) error {
-	nativeSymbol, err := s.SpotNativeSymbol(symbol)
+	nativeSymbol, err := s.resolveNativeSymbol(ctx, symbol)
 	if err != nil {
 		return err
 	}
@@ -183,27 +183,11 @@ func (s spotAPI) CancelOrder(ctx context.Context, symbol, id, clientID string) e
 }
 
 func (s spotAPI) SpotNativeSymbol(canonical string) (string, error) {
-	if err := s.x.ensureMarketSymbols(context.Background(), core.MarketSpot); err != nil {
-		return "", err
-	}
-	if native, ok := s.x.symbols.native(core.MarketSpot, canonical); ok {
-		return native, nil
-	}
-	return "", internal.Invalid("spot: unsupported canonical symbol %s", canonical)
+	return s.resolveNativeSymbol(context.Background(), canonical)
 }
 
 func (s spotAPI) SpotCanonicalSymbol(native string) (string, error) {
-	if err := s.x.ensureMarketSymbols(context.Background(), core.MarketSpot); err != nil {
-		return "", err
-	}
-	canonical, ok := s.x.symbols.canonical(native)
-	if !ok {
-		return "", internal.Invalid("spot: unsupported native symbol %s", native)
-	}
-	if _, ok := s.x.symbols.native(core.MarketSpot, canonical); !ok {
-		return "", internal.Invalid("spot: unsupported native symbol %s", native)
-	}
-	return canonical, nil
+	return s.resolveCanonicalSymbol(context.Background(), native)
 }
 
 func (s spotAPI) DepthSnapshot(ctx context.Context, symbol string, limit int) (corestreams.BookEvent, int64, error) {
@@ -216,4 +200,12 @@ func (s spotAPI) lookupInstrument(ctx context.Context, symbol string) core.Instr
 	}
 	inst, _ := s.x.instrument(core.MarketSpot, symbol)
 	return inst
+}
+
+func (s spotAPI) resolveNativeSymbol(ctx context.Context, canonical string) (string, error) {
+	return s.x.nativeSymbolForMarkets(ctx, canonical, core.MarketSpot)
+}
+
+func (s spotAPI) resolveCanonicalSymbol(ctx context.Context, native string) (string, error) {
+	return s.x.canonicalSymbolForMarkets(ctx, native, core.MarketSpot)
 }
