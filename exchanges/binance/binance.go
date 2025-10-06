@@ -2,6 +2,7 @@ package binance
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -173,15 +174,18 @@ func (x *Exchange) UpdateConfig(opts ...config.Option) error {
 	}
 
 	x.cfgMu.Lock()
-	if x.wsRouter != nil {
-		_ = x.wsRouter.Close()
-	}
+	oldREST := x.restClient
+	oldWSRouter := x.wsRouter
+	oldWSInfra := x.wsInfra
 	x.restClient = restClient
 	x.restRouter = restRouter
 	x.wsInfra = wsInfra
 	x.wsRouter = wsRouter
 	x.cfg = newCfg
 	x.cfgMu.Unlock()
+
+	closeRESTClient(oldREST, restClient)
+	closeStreamResources(oldWSRouter, wsRouter, oldWSInfra, wsInfra)
 
 	x.symbolsMu.Lock()
 	x.symbols = newSymbolRegistry()
@@ -208,10 +212,17 @@ func (x *Exchange) InverseFutures(ctx context.Context) core.FuturesAPI {
 func (x *Exchange) WS() core.WS { return newWSService(x.wsRouter) }
 
 func (x *Exchange) Close() error {
+	var err error
 	if x.wsRouter != nil {
-		_ = x.wsRouter.Close()
+		err = errors.Join(err, x.wsRouter.Close())
 	}
-	return nil
+	if x.wsInfra != nil {
+		err = errors.Join(err, x.wsInfra.Close())
+	}
+	if x.restClient != nil {
+		err = errors.Join(err, x.restClient.Close())
+	}
+	return err
 }
 
 func resolveBinanceSettings(cfg config.Settings) config.ExchangeSettings {
@@ -366,6 +377,22 @@ func (x *Exchange) canonicalSymbolForMarkets(ctx context.Context, binanceSymbol 
 		}
 	}
 	return "", internal.Exchange("unsupported symbol %s", trimmed)
+}
+
+func closeRESTClient(oldClient, newClient coretransport.RESTClient) {
+	if oldClient == nil || oldClient == newClient {
+		return
+	}
+	_ = oldClient.Close()
+}
+
+func closeStreamResources(oldRouter, newRouter wsRouter, oldInfra, newInfra coretransport.StreamClient) {
+	if oldRouter != nil && oldRouter != newRouter {
+		_ = oldRouter.Close()
+	}
+	if oldInfra != nil && oldInfra != newInfra {
+		_ = oldInfra.Close()
+	}
 }
 
 func marketsOrAll(markets ...core.Market) []core.Market {

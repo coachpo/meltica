@@ -38,16 +38,17 @@ func (f *futuresAPI) Instruments(ctx context.Context) ([]core.Instrument, error)
 }
 
 func (f *futuresAPI) Ticker(ctx context.Context, symbol string) (core.Ticker, error) {
+	var resp tickerResponse
 	native, err := f.resolveNativeSymbol(ctx, symbol)
 	if err != nil {
 		return core.Ticker{}, err
 	}
 	params := map[string]string{"symbol": native}
 	msg := routingrest.RESTMessage{API: f.endpoints.api, Method: http.MethodGet, Path: f.endpoints.tickerPath, Query: params}
-	if err := f.x.restRouter.Dispatch(ctx, msg, &struct{}{}); err != nil {
+	if err := f.x.restRouter.Dispatch(ctx, msg, &resp); err != nil {
 		return core.Ticker{}, err
 	}
-	return core.Ticker{Symbol: symbol, Time: time.Now()}, nil
+	return buildTicker(symbol, resp.BidPrice, resp.AskPrice), nil
 }
 
 func (f *futuresAPI) PlaceOrder(ctx context.Context, req core.OrderRequest) (core.Order, error) {
@@ -123,14 +124,6 @@ func (f *futuresAPI) Positions(ctx context.Context, symbols ...string) ([]core.P
 		out = append(out, core.Position{Symbol: sym, Side: side, Quantity: qty, EntryPrice: ep, Unrealized: up, UpdatedAt: time.Now()})
 	}
 	return out, nil
-}
-
-func (f *futuresAPI) FutureNativeSymbol(canonical string) (string, error) {
-	return f.resolveNativeSymbol(context.Background(), canonical)
-}
-
-func (f *futuresAPI) FutureCanonicalSymbol(native string) (string, error) {
-	return f.resolveCanonicalSymbol(context.Background(), native)
 }
 
 func (f *futuresAPI) lookupInstrument(ctx context.Context, symbol string) core.Instrument {

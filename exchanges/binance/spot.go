@@ -35,10 +35,7 @@ func (s spotAPI) Instruments(ctx context.Context) ([]core.Instrument, error) {
 }
 
 func (s spotAPI) Ticker(ctx context.Context, symbol string) (core.Ticker, error) {
-	var resp struct {
-		Bid string `json:"bidPrice"`
-		Ask string `json:"askPrice"`
-	}
+	var resp tickerResponse
 	native, err := s.resolveNativeSymbol(ctx, symbol)
 	if err != nil {
 		return core.Ticker{}, err
@@ -48,9 +45,7 @@ func (s spotAPI) Ticker(ctx context.Context, symbol string) (core.Ticker, error)
 	if err := s.x.restRouter.Dispatch(ctx, msg, &resp); err != nil {
 		return core.Ticker{}, err
 	}
-	bid, _ := numeric.Parse(resp.Bid)
-	ask, _ := numeric.Parse(resp.Ask)
-	return core.Ticker{Symbol: symbol, Bid: bid, Ask: ask, Time: time.Now()}, nil
+	return buildTicker(symbol, resp.BidPrice, resp.AskPrice), nil
 }
 
 func (s spotAPI) Balances(ctx context.Context) ([]core.Balance, error) {
@@ -180,14 +175,6 @@ func (s spotAPI) CancelOrder(ctx context.Context, symbol, id, clientID string) e
 	}
 	msg := routingrest.RESTMessage{API: string(rest.SpotAPI), Method: http.MethodDelete, Path: "/api/v3/order", Query: q, Signed: true}
 	return s.x.restRouter.Dispatch(ctx, msg, nil)
-}
-
-func (s spotAPI) SpotNativeSymbol(canonical string) (string, error) {
-	return s.resolveNativeSymbol(context.Background(), canonical)
-}
-
-func (s spotAPI) SpotCanonicalSymbol(native string) (string, error) {
-	return s.resolveCanonicalSymbol(context.Background(), native)
 }
 
 func (s spotAPI) DepthSnapshot(ctx context.Context, symbol string, limit int) (corestreams.BookEvent, int64, error) {

@@ -33,3 +33,7 @@ type Subscription interface {
 	Err() <-chan error
 	Close() error
 }
+
+type OrderBookSnapshotProvider interface {
+	DepthSnapshot(ctx context.Context, symbol string, limit int) (BookEvent, int64, error)
+}

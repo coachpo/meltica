@@ -29,6 +29,9 @@ func (w *wsService) SubscribePublic(ctx context.Context, topics ...string) (core
 
 func (w *wsService) SubscribePrivate(ctx context.Context, topics ...string) (core.Subscription, error) {
 	// Binance private stream does not respect topics; router handles listen key creation internally.
+	if len(topics) > 0 {
+		return nil, core.ErrNotSupported
+	}
 	if w.router == nil {
 		return nil, internal.Invalid("ws router not configured")
 	}
@@ -37,20 +40,6 @@ func (w *wsService) SubscribePrivate(ctx context.Context, topics ...string) (cor
 		return nil, err
 	}
 	return newWSServerSubscription(sub), nil
-}
-
-func (w *wsService) WSNativeSymbol(canonical string) (string, error) {
-	if w.router == nil {
-		return "", internal.Invalid("ws router not configured")
-	}
-	return w.router.WSNativeSymbol(canonical)
-}
-
-func (w *wsService) WSCanonicalSymbol(native string) (string, error) {
-	if w.router == nil {
-		return "", internal.Invalid("ws router not configured")
-	}
-	return w.router.WSCanonicalSymbol(native)
 }
 
 type wsServerSubscription struct {

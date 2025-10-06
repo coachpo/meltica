@@ -156,8 +156,6 @@ type SpotAPI interface {
     PlaceOrder(ctx context.Context, req core.OrderRequest) (core.Order, error)
     GetOrder(ctx context.Context, symbol, id, clientID string) (core.Order, error)
     CancelOrder(ctx context.Context, symbol, id, clientID string) error
-    SpotNativeSymbol(spotCanonical string) (string, error)
-    SpotCanonicalSymbol(spotNative string) (string, error)
 }
 
 // Futures market interface  
@@ -166,18 +164,16 @@ type FuturesAPI interface {
     Ticker(ctx context.Context, symbol string) (core.Ticker, error)
     PlaceOrder(ctx context.Context, req core.OrderRequest) (core.Order, error)
     Positions(ctx context.Context, symbols ...string) ([]core.Position, error)
-    FutureNativeSymbol(futureCanonical string) (string, error)
-    FutureCanonicalSymbol(futureNative string) (string, error)
 }
 
 // WebSocket interface
 type WS interface {
     SubscribePublic(ctx context.Context, topics ...string) (core.Subscription, error)
     SubscribePrivate(ctx context.Context, topics ...string) (core.Subscription, error)
-    WSNativeSymbol(wsCanonical string) (string, error)
-    WSCanonicalSymbol(wsNative string) (string, error)
 }
 ```
+
+Use `core.SymbolTranslator` to convert between canonical and exchange-native symbols when needed.
 
 ## Core Data Types
 

@@ -168,7 +168,10 @@ type BalanceEvent struct {
 
 ```go
 topic := topics.Trade("BTC-USDT")
-channel, symbol := topics.Parse("trade:BTC-USDT")
+channel, symbol, err := topics.Parse(topic)
+if err != nil {
+    log.Fatalf("invalid topic: %v", err)
+}
 ```
 
 ### Topic Mappers (`exchanges/shared/infra/topics`)

@@ -14,6 +14,11 @@ type symbolRegistry struct {
 	loaded             map[core.Market]bool
 }
 
+type registrySnapshot struct {
+	nativeToCanonical  map[string]string
+	marketCanonicalMap map[core.Market]map[string]string
+}
+
 func newSymbolRegistry() *symbolRegistry {
 	return &symbolRegistry{
 		nativeToCanonical:  make(map[string]string),
@@ -109,4 +114,22 @@ func (r *symbolRegistry) nativeAny(canonical string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+func (r *symbolRegistry) snapshot() registrySnapshot {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	nativeCopy := make(map[string]string, len(r.nativeToCanonical))
+	for k, v := range r.nativeToCanonical {
+		nativeCopy[k] = v
+	}
+	marketCopy := make(map[core.Market]map[string]string, len(r.marketCanonicalMap))
+	for market, entries := range r.marketCanonicalMap {
+		entryCopy := make(map[string]string, len(entries))
+		for canonical, native := range entries {
+			entryCopy[canonical] = native
+		}
+		marketCopy[market] = entryCopy
+	}
+	return registrySnapshot{nativeToCanonical: nativeCopy, marketCanonicalMap: marketCopy}
 }

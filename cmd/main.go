@@ -205,7 +205,11 @@ func (m *MarketManager) Events() <-chan marketEvent {
 func (m *MarketManager) Subscribe(cmd marketSubscribeCommand) {
 	reqs := make(map[string]*SymbolSubscriptionRequest)
 	for _, topic := range cmd.Topics {
-		channel, symbol := coretopics.Parse(topic)
+		channel, symbol, err := coretopics.Parse(topic)
+		if err != nil {
+			log.Printf("ignoring invalid topic %q: %v", topic, err)
+			continue
+		}
 		symbol = normalizeSymbol(symbol)
 		if symbol == "" {
 			continue

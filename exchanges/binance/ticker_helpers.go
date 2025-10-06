@@ -1,0 +1,22 @@
+package binance
+
+import (
+	"strings"
+	"time"
+
+	"github.com/coachpo/meltica/core"
+	numeric "github.com/coachpo/meltica/exchanges/shared/infra/numeric"
+)
+
+type tickerResponse struct {
+	BidPrice string `json:"bidPrice"`
+	AskPrice string `json:"askPrice"`
+}
+
+var tickerNow = time.Now
+
+func buildTicker(symbol, bidPrice, askPrice string) core.Ticker {
+	bid, _ := numeric.Parse(strings.TrimSpace(bidPrice))
+	ask, _ := numeric.Parse(strings.TrimSpace(askPrice))
+	return core.Ticker{Symbol: symbol, Bid: bid, Ask: ask, Time: tickerNow()}
+}

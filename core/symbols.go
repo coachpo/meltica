@@ -9,47 +9,54 @@ import (
 // ExchangeName identifies a registered exchange implementation.
 type ExchangeName string
 
-// SymbolMapper exposes canonical/native conversion helpers for an exchange.
-type SymbolMapper interface {
-	NativeSymbol(canonical string) (string, error)
-	CanonicalSymbol(native string) (string, error)
+// SymbolTranslator exposes canonical/native conversion helpers for an exchange.
+type SymbolTranslator interface {
+	Native(canonical string) (string, error)
+	Canonical(native string) (string, error)
 }
 
 var (
-	mapperMu sync.RWMutex
-	mappers  = make(map[ExchangeName]SymbolMapper)
+	translatorMu sync.RWMutex
+	translators  = make(map[ExchangeName]SymbolTranslator)
 )
 
-// RegisterSymbolMapper associates the mapper with the given exchange name.
-func RegisterSymbolMapper(name ExchangeName, mapper SymbolMapper) {
-	if name == "" || mapper == nil {
+// RegisterSymbolTranslator associates the translator with the given exchange name.
+func RegisterSymbolTranslator(name ExchangeName, translator SymbolTranslator) {
+	if name == "" || translator == nil {
 		return
 	}
-	mapperMu.Lock()
-	defer mapperMu.Unlock()
-	mappers[name] = mapper
+	translatorMu.Lock()
+	defer translatorMu.Unlock()
+	translators[name] = translator
+}
+
+// SymbolTranslatorFor returns the registered translator for the exchange.
+func SymbolTranslatorFor(name ExchangeName) (SymbolTranslator, error) {
+	translatorMu.RLock()
+	translator, ok := translators[name]
+	translatorMu.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("core: symbol translator for exchange %s not registered", name)
+	}
+	return translator, nil
 }
 
 // NativeSymbol resolves a canonical symbol to the exchange native representation.
 func NativeSymbol(name ExchangeName, canonical string) (string, error) {
-	mapperMu.RLock()
-	mapper, ok := mappers[name]
-	mapperMu.RUnlock()
-	if !ok {
-		return "", fmt.Errorf("core: symbol mapper for exchange %s not registered", name)
+	translator, err := SymbolTranslatorFor(name)
+	if err != nil {
+		return "", err
 	}
-	return mapper.NativeSymbol(canonical)
+	return translator.Native(canonical)
 }
 
 // CanonicalFromNative converts an exchange native symbol into canonical form.
 func CanonicalFromNative(name ExchangeName, native string) (string, error) {
-	mapperMu.RLock()
-	mapper, ok := mappers[name]
-	mapperMu.RUnlock()
-	if !ok {
-		return "", fmt.Errorf("core: symbol mapper for exchange %s not registered", name)
+	translator, err := SymbolTranslatorFor(name)
+	if err != nil {
+		return "", err
 	}
-	return mapper.CanonicalSymbol(native)
+	return translator.Canonical(native)
 }
 
 // CanonicalSymbol returns a canonical symbol form Base-Quote (e.g., BTC-USDT)

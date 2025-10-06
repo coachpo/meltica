@@ -13,7 +13,7 @@ const Name core.ExchangeName = "binance"
 
 var registerOnce sync.Once
 
-// Register binds the Binance exchange factory and symbol mapper into the core registries.
+// Register binds the Binance exchange factory and symbol translator into the core registries.
 // Consumers should invoke Register() during application bootstrap (or import the package for side effects).
 func Register() {
 	registerOnce.Do(func() {
@@ -22,7 +22,7 @@ func Register() {
 			if err != nil {
 				return nil, err
 			}
-			core.RegisterSymbolMapper(Name, &exchangeMapper{exchange: x})
+			core.RegisterSymbolTranslator(Name, binance.NewSymbolTranslator(x))
 			return x, nil
 		})
 	})
@@ -30,16 +30,4 @@ func Register() {
 
 func init() {
 	Register()
-}
-
-type exchangeMapper struct {
-	exchange *binance.Exchange
-}
-
-func (m *exchangeMapper) NativeSymbol(canonical string) (string, error) {
-	return m.exchange.NativeSymbol(canonical)
-}
-
-func (m *exchangeMapper) CanonicalSymbol(native string) (string, error) {
-	return m.exchange.CanonicalSymbol(native)
 }

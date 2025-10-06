@@ -226,10 +226,6 @@ type SpotAPI interface {
 	PlaceOrder(ctx context.Context, req OrderRequest) (Order, error)
 	GetOrder(ctx context.Context, symbol, id, clientID string) (Order, error)
 	CancelOrder(ctx context.Context, symbol, id, clientID string) error
-	// SpotNativeSymbol converts canonical spot symbols to exchange-native format.
-	SpotNativeSymbol(spotCanonical string) (string, error)
-	// SpotCanonicalSymbol converts native spot symbols to canonical format.
-	SpotCanonicalSymbol(spotNative string) (string, error)
 }
 
 // FuturesAPI exposes canonicalized linear or inverse futures REST endpoints.
@@ -238,20 +234,12 @@ type FuturesAPI interface {
 	Ticker(ctx context.Context, symbol string) (Ticker, error)
 	PlaceOrder(ctx context.Context, req OrderRequest) (Order, error)
 	Positions(ctx context.Context, symbols ...string) ([]Position, error)
-	// FutureNativeSymbol converts canonical futures symbols to exchange-native format.
-	FutureNativeSymbol(futureCanonical string) (string, error)
-	// FutureCanonicalSymbol converts native futures symbols to canonical format.
-	FutureCanonicalSymbol(futureNative string) (string, error)
 }
 
 // WS exposes public and private websocket subscriptions.
 type WS interface {
 	SubscribePublic(ctx context.Context, topics ...string) (Subscription, error)
 	SubscribePrivate(ctx context.Context, topics ...string) (Subscription, error)
-	// WSNativeSymbol converts canonical websocket symbols to exchange-native format.
-	WSNativeSymbol(wsCanonical string) (string, error)
-	// WSCanonicalSymbol converts native websocket symbols to canonical format.
-	WSCanonicalSymbol(wsNative string) (string, error)
 }
 
 // Subscription delivers normalized websocket messages for a topic set.

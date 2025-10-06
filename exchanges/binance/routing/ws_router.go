@@ -14,12 +14,12 @@ import (
 
 // WSDependencies exposes the exchange hooks required by the websocket routing layer.
 type WSDependencies interface {
+	corestreams.OrderBookSnapshotProvider
 	CanonicalSymbol(binanceSymbol string) (string, error)
 	NativeSymbol(canonical string) (string, error)
 	CreateListenKey(ctx context.Context) (string, error)
 	KeepAliveListenKey(ctx context.Context, key string) error
 	CloseListenKey(ctx context.Context, key string) error
-	DepthSnapshot(ctx context.Context, symbol string, limit int) (corestreams.BookEvent, int64, error)
 }
 
 type RoutedMessage = corestreams.RoutedMessage
@@ -232,7 +232,10 @@ func (w *WSRouter) WSCanonicalSymbol(native string) (string, error) {
 func (w *WSRouter) buildStreams(topics []string) ([]string, error) {
 	streams := make([]string, 0, len(topics))
 	for _, topic := range topics {
-		channel, instrument := coretopics.Parse(topic)
+		channel, instrument, err := coretopics.Parse(topic)
+		if err != nil {
+			return nil, err
+		}
 		exchangeChannel := mapper.ExchangeChannelID(channel)
 		if instrument == "" {
 			streams = append(streams, topic)
@@ -357,7 +360,10 @@ func (w *WSRouter) startMonitoring(symbols []string) {
 func (w *WSRouter) extractBookSymbols(topics []string) []string {
 	var symbols []string
 	for _, topic := range topics {
-		channel, symbol := coretopics.Parse(topic)
+		channel, symbol, err := coretopics.Parse(topic)
+		if err != nil {
+			continue
+		}
 		if channel == coretopics.TopicBook && symbol != "" {
 			symbols = append(symbols, symbol)
 		}
