@@ -87,16 +87,19 @@ func (s *OrderBookService) processDepthDeltas(
 	}
 
 	// Replay buffered events
-	for _, delta := range buffer {
-		if delta.LastUpdateID <= book.LastUpdateID() {
-			continue // Skip old events
+	if len(buffer) > 0 {
+		for _, delta := range buffer {
+			if delta.LastUpdateID <= book.LastUpdateID() {
+				continue // Skip old events
+			}
+			s.applyDelta(book, delta, errs)
+			// Send updated snapshot
+			s.emitSnapshot(ctx, book, events)
 		}
-		s.applyDelta(book, delta, errs)
-		// Send updated snapshot
-		s.emitSnapshot(ctx, book, events)
+		buffer = nil
 	}
-	buffer = nil
 
+	// Periodic snapshots heartbeat
 	// Process incoming events
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
