@@ -20,7 +20,7 @@ type depthSnapshotService struct {
 	symbols *symbolService
 }
 
-func newDepthSnapshotService(router routingrest.RESTDispatcher, symbols *symbolService) *depthSnapshotService {
+func newOrderBookSnapshotService(router routingrest.RESTDispatcher, symbols *symbolService) *depthSnapshotService {
 	return &depthSnapshotService{router: router, symbols: symbols}
 }
 

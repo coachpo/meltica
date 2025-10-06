@@ -2,6 +2,7 @@ package binance
 
 import (
 	"context"
+	"log"
 	"strings"
 	"sync"
 	"time"
@@ -81,23 +82,22 @@ func newExchangeWithFactories(settings config.Settings, transports bootstrap.Tra
 		HandshakeTimeout: binCfg.HandshakeTimeout,
 	}
 	bundle := bootstrap.BuildTransportBundle(transports, routers, restCfg, wsCfg)
-
 	restRouter := bundle.Router().(routingrest.RESTDispatcher)
-	symbols := newSymbolService(restRouter)
-	listenKeys := newListenKeyService(restRouter)
-	depths := newDepthSnapshotService(restRouter, symbols)
-	wsDeps := newWSDependencies(symbols, listenKeys, depths)
+	symbolSvc := newSymbolService(restRouter)
+	listenKeySvc := newListenKeyService(restRouter)
+	orderBookSnapshotSvc := newOrderBookSnapshotService(restRouter, symbolSvc)
+	wsDeps := newWSDependencies(symbolSvc, listenKeySvc, orderBookSnapshotSvc)
 	bundle.SetWS(routers.NewWSRouter(bundle.WSInfra(), wsDeps))
 
-	orderBooks := newOrderBookService(bundle.WS().(wsRouter), depths, symbols)
+	orderBookSvc := newOrderBookService(bundle.WS().(wsRouter), orderBookSnapshotSvc, symbolSvc)
 
 	x := &Exchange{
 		name:                  "binance",
 		transports:            bundle,
-		symbols:               symbols,
-		listenKeys:            listenKeys,
-		depths:                depths,
-		orderBooks:            orderBooks,
+		symbols:               symbolSvc,
+		listenKeys:            listenKeySvc,
+		depths:                orderBookSnapshotSvc,
+		orderBooks:            orderBookSvc,
 		transportFactories:    transports,
 		routerFactories:       routers,
 		cfg:                   config.Apply(settings),
@@ -145,7 +145,7 @@ func (x *Exchange) UpdateConfig(opts ...config.Option) error {
 	restRouter := newBundle.Router().(routingrest.RESTDispatcher)
 	newSymbols := newSymbolService(restRouter)
 	newListenKeys := newListenKeyService(restRouter)
-	newDepths := newDepthSnapshotService(restRouter, newSymbols)
+	newDepths := newOrderBookSnapshotService(restRouter, newSymbols)
 	wsDeps := newWSDependencies(newSymbols, newListenKeys, newDepths)
 	newBundle.SetWS(x.routerFactories.NewWSRouter(newBundle.WSInfra(), wsDeps))
 
@@ -219,8 +219,7 @@ func (x *Exchange) symbolRefreshLoop(ctx context.Context) {
 			refreshCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			if err := x.symbols.Refresh(refreshCtx, marketsOrAll()...); err != nil {
 				// Log error but keep previous snapshot - don't tear down
-				// TODO: Add proper logging when logger is available
-				_ = err
+				log.Printf("binance symbol refresh failed: %v", err)
 			}
 			cancel()
 		}
