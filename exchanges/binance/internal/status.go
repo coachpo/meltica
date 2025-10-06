@@ -25,7 +25,7 @@ func MapTimeInForce(t core.TimeInForce) string {
 	switch t {
 	case core.GTC:
 		return "GTC"
-	case core.ICO:
+	case core.IOC:
 		return "IOC"
 	case core.FOK:
 		return "FOK"

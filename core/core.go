@@ -47,8 +47,8 @@ const (
 	GTC TimeInForce = "gtc"
 	// FOK is fill-or-kill.
 	FOK TimeInForce = "fok"
-	// ICO is immediate-or-cancel.
-	ICO TimeInForce = "ioc"
+	// IOC is immediate-or-cancel.
+	IOC TimeInForce = "ioc"
 )
 
 // Instrument is the canonical contract definition returned by every exchange.
