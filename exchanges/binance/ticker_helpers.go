@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/coachpo/meltica/core"
-	numeric "github.com/coachpo/meltica/exchanges/shared/infra/numeric"
+	"github.com/coachpo/meltica/exchanges/shared/infra/numeric"
 )
 
 type tickerResponse struct {

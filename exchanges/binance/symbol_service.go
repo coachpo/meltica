@@ -11,7 +11,7 @@ import (
 	"github.com/coachpo/meltica/core"
 	"github.com/coachpo/meltica/exchanges/binance/infra/rest"
 	"github.com/coachpo/meltica/exchanges/binance/internal"
-	numeric "github.com/coachpo/meltica/exchanges/shared/infra/numeric"
+	"github.com/coachpo/meltica/exchanges/shared/infra/numeric"
 	routingrest "github.com/coachpo/meltica/exchanges/shared/routing"
 )
 

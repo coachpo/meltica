@@ -74,7 +74,7 @@ func (e *E) Error() string {
 	if e == nil {
 		return "<nil>"
 	}
-	parts := []string{}
+	var parts []string
 
 	exchange := strings.TrimSpace(e.Exchange)
 	if exchange == "" {
