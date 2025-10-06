@@ -8,6 +8,7 @@ import (
 
 	"github.com/coachpo/meltica/config"
 	"github.com/coachpo/meltica/core"
+	"github.com/coachpo/meltica/core/exchanges/bootstrap"
 	corestreams "github.com/coachpo/meltica/core/streams"
 	"github.com/coachpo/meltica/exchanges/binance/infra/rest"
 	"github.com/coachpo/meltica/exchanges/binance/infra/ws"
@@ -19,13 +20,13 @@ import (
 type Exchange struct {
 	name string
 
-	transports         *transportBundle
+	transports         *bootstrap.TransportBundle
 	symbols            *symbolService
 	listenKeys         *listenKeyService
 	depths             *depthSnapshotService
 	orderBooks         *OrderBookService
-	transportFactories transportFactories
-	routerFactories    routerFactories
+	transportFactories bootstrap.TransportFactories
+	routerFactories    bootstrap.RouterFactories
 	cfg                config.Settings
 	cfgMu              sync.Mutex
 
@@ -54,33 +55,17 @@ type wsRouter interface {
 
 func New(apiKey, secret string, opts ...Option) (*Exchange, error) {
 	params := defaultConstructionParams()
-	params.cfgOpts = append(params.cfgOpts, config.WithBinanceAPI(apiKey, secret))
-	for _, opt := range opts {
-		if opt != nil {
-			opt(&params)
-		}
-	}
+	params.ConfigOpts = append(params.ConfigOpts, config.WithBinanceAPI(apiKey, secret))
+	bootstrap.ApplyOptions(params, opts...)
+
 	settings := config.FromEnv()
-	if len(params.cfgOpts) > 0 {
-		settings = config.Apply(settings, params.cfgOpts...)
+	if len(params.ConfigOpts) > 0 {
+		settings = config.Apply(settings, params.ConfigOpts...)
 	}
-	return newExchangeWithFactories(settings, params.transports, params.routers)
+	return newExchangeWithFactories(settings, params.Transports, params.Routers)
 }
 
-func NewWithSettings(settings config.Settings, opts ...Option) (*Exchange, error) {
-	params := defaultConstructionParams()
-	for _, opt := range opts {
-		if opt != nil {
-			opt(&params)
-		}
-	}
-	if len(params.cfgOpts) > 0 {
-		settings = config.Apply(settings, params.cfgOpts...)
-	}
-	return newExchangeWithFactories(settings, params.transports, params.routers)
-}
-
-func newExchangeWithFactories(settings config.Settings, transports transportFactories, routers routerFactories) (*Exchange, error) {
+func newExchangeWithFactories(settings config.Settings, transports bootstrap.TransportFactories, routers bootstrap.RouterFactories) (*Exchange, error) {
 	binCfg := resolveBinanceSettings(settings)
 	restCfg := rest.Config{
 		APIKey:         binCfg.Credentials.APIKey,
@@ -95,14 +80,16 @@ func newExchangeWithFactories(settings config.Settings, transports transportFact
 		PrivateURL:       binCfg.Websocket.PrivateURL,
 		HandshakeTimeout: binCfg.HandshakeTimeout,
 	}
-	bundle := buildTransportBundle(transports, routers, restCfg, wsCfg)
-	symbols := newSymbolService(bundle.Router())
-	listenKeys := newListenKeyService(bundle.Router())
-	depths := newDepthSnapshotService(bundle.Router(), symbols)
-	wsDeps := newWSDependencies(symbols, listenKeys, depths)
-	bundle.SetWS(routers.newWSRouter(bundle.WSInfra(), wsDeps))
+	bundle := bootstrap.BuildTransportBundle(transports, routers, restCfg, wsCfg)
 
-	orderBooks := newOrderBookService(bundle.WS(), depths, symbols)
+	restRouter := bundle.Router().(routingrest.RESTDispatcher)
+	symbols := newSymbolService(restRouter)
+	listenKeys := newListenKeyService(restRouter)
+	depths := newDepthSnapshotService(restRouter, symbols)
+	wsDeps := newWSDependencies(symbols, listenKeys, depths)
+	bundle.SetWS(routers.NewWSRouter(bundle.WSInfra(), wsDeps))
+
+	orderBooks := newOrderBookService(bundle.WS().(wsRouter), depths, symbols)
 
 	x := &Exchange{
 		name:                  "binance",
@@ -154,12 +141,13 @@ func (x *Exchange) UpdateConfig(opts ...config.Option) error {
 		HandshakeTimeout: binCfg.HandshakeTimeout,
 	}
 
-	newBundle := buildTransportBundle(x.transportFactories, x.routerFactories, restCfg, wsCfg)
-	newSymbols := newSymbolService(newBundle.Router())
-	newListenKeys := newListenKeyService(newBundle.Router())
-	newDepths := newDepthSnapshotService(newBundle.Router(), newSymbols)
+	newBundle := bootstrap.BuildTransportBundle(x.transportFactories, x.routerFactories, restCfg, wsCfg)
+	restRouter := newBundle.Router().(routingrest.RESTDispatcher)
+	newSymbols := newSymbolService(restRouter)
+	newListenKeys := newListenKeyService(restRouter)
+	newDepths := newDepthSnapshotService(restRouter, newSymbols)
 	wsDeps := newWSDependencies(newSymbols, newListenKeys, newDepths)
-	newBundle.SetWS(x.routerFactories.newWSRouter(newBundle.WSInfra(), wsDeps))
+	newBundle.SetWS(x.routerFactories.NewWSRouter(newBundle.WSInfra(), wsDeps))
 
 	x.cfgMu.Lock()
 	oldBundle := x.transports
@@ -353,14 +341,22 @@ func (x *Exchange) restRouter() routingrest.RESTDispatcher {
 	if x.transports == nil {
 		return nil
 	}
-	return x.transports.Router()
+	router := x.transports.Router()
+	if router == nil {
+		return nil
+	}
+	return router.(routingrest.RESTDispatcher)
 }
 
 func (x *Exchange) wsRouter() wsRouter {
 	if x.transports == nil {
 		return nil
 	}
-	return x.transports.WS()
+	router := x.transports.WS()
+	if router == nil {
+		return nil
+	}
+	return router.(wsRouter)
 }
 
 func marketsOrAll(markets ...core.Market) []core.Market {

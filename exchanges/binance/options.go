@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/coachpo/meltica/config"
+	"github.com/coachpo/meltica/core/exchanges/bootstrap"
 	coretransport "github.com/coachpo/meltica/core/transport"
 	"github.com/coachpo/meltica/exchanges/binance/infra/rest"
 	"github.com/coachpo/meltica/exchanges/binance/infra/ws"
@@ -11,97 +12,101 @@ import (
 	routingrest "github.com/coachpo/meltica/exchanges/shared/routing"
 )
 
-type Option func(*constructionParams)
+// Option is a functional option for configuring Binance exchange construction.
+type Option = bootstrap.Option
 
-type constructionParams struct {
-	cfgOpts    []config.Option
-	transports transportFactories
-	routers    routerFactories
-}
+// defaultConstructionParams returns Binance-specific defaults.
+func defaultConstructionParams() *bootstrap.ConstructionParams {
+	params := bootstrap.NewConstructionParams()
 
-type transportFactories struct {
-	newRESTClient func(rest.Config) coretransport.RESTClient
-	newWSClient   func(ws.Config) coretransport.StreamClient
-}
-
-type routerFactories struct {
-	newRESTRouter func(coretransport.RESTClient) routingrest.RESTDispatcher
-	newWSRouter   func(coretransport.StreamClient, bnrouting.WSDependencies) wsRouter
-}
-
-func defaultConstructionParams() constructionParams {
-	return constructionParams{
-		transports: transportFactories{
-			newRESTClient: func(cfg rest.Config) coretransport.RESTClient { return rest.NewClient(cfg) },
-			newWSClient:   func(cfg ws.Config) coretransport.StreamClient { return ws.NewClient(cfg) },
+	params.Transports = bootstrap.TransportFactories{
+		NewRESTClient: func(cfg interface{}) coretransport.RESTClient {
+			return rest.NewClient(cfg.(rest.Config))
 		},
-		routers: routerFactories{
-			newRESTRouter: func(client coretransport.RESTClient) routingrest.RESTDispatcher {
-				return bnrouting.NewRESTRouter(client)
-			},
-			newWSRouter: func(client coretransport.StreamClient, deps bnrouting.WSDependencies) wsRouter {
-				return bnrouting.NewWSRouter(client, deps)
-			},
+		NewWSClient: func(cfg interface{}) coretransport.StreamClient {
+			return ws.NewClient(cfg.(ws.Config))
 		},
 	}
-}
 
-func WithConfig(options ...config.Option) Option {
-	return func(params *constructionParams) {
-		params.cfgOpts = append(params.cfgOpts, options...)
+	params.Routers = bootstrap.RouterFactories{
+		NewRESTRouter: func(client coretransport.RESTClient) interface{} {
+			return bnrouting.NewRESTRouter(client)
+		},
+		NewWSRouter: func(client coretransport.StreamClient, deps interface{}) interface{} {
+			return bnrouting.NewWSRouter(client, deps.(bnrouting.WSDependencies))
+		},
 	}
+
+	return params
 }
 
+// WithRESTClientFactory sets a custom REST client factory.
 func WithRESTClientFactory(factory func(rest.Config) coretransport.RESTClient) Option {
-	return func(params *constructionParams) {
+	return func(params *bootstrap.ConstructionParams) {
 		if factory != nil {
-			params.transports.newRESTClient = factory
+			params.Transports.NewRESTClient = func(cfg interface{}) coretransport.RESTClient {
+				return factory(cfg.(rest.Config))
+			}
 		}
 	}
 }
 
+// WithRESTClient sets a pre-configured REST client.
 func WithRESTClient(client coretransport.RESTClient) Option {
 	return WithRESTClientFactory(func(rest.Config) coretransport.RESTClient { return client })
 }
 
+// WithRESTRouterFactory sets a custom REST router factory.
 func WithRESTRouterFactory(factory func(coretransport.RESTClient) routingrest.RESTDispatcher) Option {
-	return func(params *constructionParams) {
+	return func(params *bootstrap.ConstructionParams) {
 		if factory != nil {
-			params.routers.newRESTRouter = factory
+			params.Routers.NewRESTRouter = func(client coretransport.RESTClient) interface{} {
+				return factory(client)
+			}
 		}
 	}
 }
 
+// WithRESTRouter sets a pre-configured REST router.
 func WithRESTRouter(router routingrest.RESTDispatcher) Option {
 	return WithRESTRouterFactory(func(coretransport.RESTClient) routingrest.RESTDispatcher { return router })
 }
 
+// WithWSClientFactory sets a custom WebSocket client factory.
 func WithWSClientFactory(factory func(ws.Config) coretransport.StreamClient) Option {
-	return func(params *constructionParams) {
+	return func(params *bootstrap.ConstructionParams) {
 		if factory != nil {
-			params.transports.newWSClient = factory
+			params.Transports.NewWSClient = func(cfg interface{}) coretransport.StreamClient {
+				return factory(cfg.(ws.Config))
+			}
 		}
 	}
 }
 
+// WithWSClient sets a pre-configured WebSocket client.
 func WithWSClient(client coretransport.StreamClient) Option {
 	return WithWSClientFactory(func(ws.Config) coretransport.StreamClient { return client })
 }
 
+// WithWSRouterFactory sets a custom WebSocket router factory.
 func WithWSRouterFactory(factory func(coretransport.StreamClient, bnrouting.WSDependencies) wsRouter) Option {
-	return func(params *constructionParams) {
+	return func(params *bootstrap.ConstructionParams) {
 		if factory != nil {
-			params.routers.newWSRouter = factory
+			params.Routers.NewWSRouter = func(client coretransport.StreamClient, deps interface{}) interface{} {
+				return factory(client, deps.(bnrouting.WSDependencies))
+			}
 		}
 	}
 }
 
+// WithWSRouter sets a pre-configured WebSocket router.
 func WithWSRouter(router wsRouter) Option {
 	return WithWSRouterFactory(func(coretransport.StreamClient, bnrouting.WSDependencies) wsRouter { return router })
 }
 
+// WithSymbolRefreshInterval configures automatic symbol refresh.
 func WithSymbolRefreshInterval(interval time.Duration) Option {
-	return func(params *constructionParams) {
-		params.cfgOpts = append(params.cfgOpts, config.WithBinanceSymbolRefreshInterval(interval))
+	return func(params *bootstrap.ConstructionParams) {
+		params.ConfigOpts = append(params.ConfigOpts, config.WithBinanceSymbolRefreshInterval(interval))
 	}
 }

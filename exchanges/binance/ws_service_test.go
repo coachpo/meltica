@@ -42,7 +42,7 @@ func (r *testRouter) SubscribePrivate(context.Context) (bnrouting.Subscription, 
 	r.privateCalled = true
 	return r.sub, nil
 }
-func (r *testRouter) Close() error                             { return nil }
+func (r *testRouter) Close() error { return nil }
 func (r *testRouter) OrderBookSnapshot(string) (corestreams.BookEvent, bool) {
 	return corestreams.BookEvent{}, false
 }
