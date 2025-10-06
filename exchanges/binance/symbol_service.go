@@ -174,6 +174,69 @@ func (s *symbolService) snapshot(ctx context.Context) (registrySnapshot, error) 
 	return s.registry.snapshot(), nil
 }
 
+// Refresh reloads symbols for specified markets (or all markets if none specified).
+// It takes a write lock, clears the selected markets, and repopulates them.
+// If reload fails, it restores from a saved snapshot and returns the error.
+func (s *symbolService) Refresh(ctx context.Context, markets ...core.Market) error {
+	targetMarkets := marketsOrAll(markets...)
+
+	// Take a snapshot of current state for rollback
+	s.mu.RLock()
+	registrySnap := s.registry.snapshot()
+	cacheSnap := make(map[core.Market]map[string]core.Instrument, len(s.cache))
+	for market, instruments := range s.cache {
+		instCopy := make(map[string]core.Instrument, len(instruments))
+		for k, v := range instruments {
+			instCopy[k] = v
+		}
+		cacheSnap[market] = instCopy
+	}
+	loadedSnap := make(map[core.Market]bool)
+	s.registry.mu.RLock()
+	for market, status := range s.registry.loaded {
+		loadedSnap[market] = status
+	}
+	s.registry.mu.RUnlock()
+	s.mu.RUnlock()
+
+	// Clear the target markets
+	s.mu.Lock()
+	s.registry.mu.Lock()
+	for _, market := range targetMarkets {
+		// Clear cache
+		delete(s.cache, market)
+		// Clear registry entries
+		if marketMap, ok := s.registry.marketCanonicalMap[market]; ok {
+			for _, native := range marketMap {
+				delete(s.registry.nativeToCanonical, native)
+			}
+			delete(s.registry.marketCanonicalMap, market)
+		}
+		// Mark as not loaded
+		s.registry.loaded[market] = false
+	}
+	s.registry.mu.Unlock()
+	s.mu.Unlock()
+
+	// Attempt to reload each market
+	for _, market := range targetMarkets {
+		if err := s.ensureMarket(ctx, market); err != nil {
+			// Rollback on failure
+			s.mu.Lock()
+			s.registry.mu.Lock()
+			s.registry.nativeToCanonical = registrySnap.nativeToCanonical
+			s.registry.marketCanonicalMap = registrySnap.marketCanonicalMap
+			s.registry.loaded = loadedSnap
+			s.registry.mu.Unlock()
+			s.cache = cacheSnap
+			s.mu.Unlock()
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (s *symbolService) fetchMarketSymbols(ctx context.Context, spec marketSpec, router routingrest.RESTDispatcher) ([]symbolPayload, error) {
 	var resp struct {
 		Symbols []struct {

@@ -2,6 +2,7 @@ package binance
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"testing"
 
@@ -11,13 +12,19 @@ import (
 )
 
 type stubRESTDispatcher struct {
-	t       *testing.T
-	fill    func(out any)
-	lastMsg routingrest.RESTMessage
+	t          *testing.T
+	fill       func(out any)
+	lastMsg    routingrest.RESTMessage
+	shouldFail bool
+	callCount  int
 }
 
 func (s *stubRESTDispatcher) Dispatch(_ context.Context, msg routingrest.RESTMessage, out any) error {
 	s.lastMsg = msg
+	s.callCount++
+	if s.shouldFail {
+		return errors.New("simulated dispatch error")
+	}
 	if s.fill != nil {
 		s.fill(out)
 	}
@@ -137,5 +144,164 @@ func TestFetchMarketSymbolsUsesTradingStatusAndPrecision(t *testing.T) {
 	}
 	if payload[0].native != "BTCUSDT" {
 		t.Fatalf("expected native symbol BTCUSDT, got %q", payload[0].native)
+	}
+}
+
+func TestSymbolServiceRefreshSingleMarket(t *testing.T) {
+	t.Parallel()
+
+	stub := &stubRESTDispatcher{t: t}
+	stub.fill = makeSymbolResponse(t, []symbolDef{
+		{
+			Symbol:              "BTCUSDT",
+			Base:                "BTC",
+			Quote:               "USDT",
+			Status:              "TRADING",
+			BasePrecision:       8,
+			QuoteAssetPrecision: 5,
+			QuotePrecision:      4,
+		},
+	})
+
+	svc := newSymbolService(stub)
+
+	// Initial load
+	if err := svc.ensureMarket(context.Background(), core.MarketSpot); err != nil {
+		t.Fatalf("ensureMarket failed: %v", err)
+	}
+
+	if stub.callCount != 1 {
+		t.Fatalf("expected 1 dispatch call, got %d", stub.callCount)
+	}
+
+	// Change the response
+	stub.fill = makeSymbolResponse(t, []symbolDef{
+		{
+			Symbol:              "ETHUSDT",
+			Base:                "ETH",
+			Quote:               "USDT",
+			Status:              "TRADING",
+			BasePrecision:       8,
+			QuoteAssetPrecision: 4,
+			QuotePrecision:      4,
+		},
+	})
+
+	// Refresh spot market
+	if err := svc.Refresh(context.Background(), core.MarketSpot); err != nil {
+		t.Fatalf("Refresh failed: %v", err)
+	}
+
+	if stub.callCount != 2 {
+		t.Fatalf("expected 2 dispatch calls after refresh, got %d", stub.callCount)
+	}
+
+	// Verify the cache was updated
+	instruments, err := svc.instruments(context.Background(), core.MarketSpot)
+	if err != nil {
+		t.Fatalf("instruments failed: %v", err)
+	}
+
+	if len(instruments) != 1 {
+		t.Fatalf("expected 1 instrument after refresh, got %d", len(instruments))
+	}
+
+	if instruments[0].Symbol != "ETH-USDT" {
+		t.Fatalf("expected ETH-USDT after refresh, got %s", instruments[0].Symbol)
+	}
+}
+
+func TestSymbolServiceRefreshAllMarkets(t *testing.T) {
+	t.Parallel()
+
+	stub := &stubRESTDispatcher{t: t}
+	stub.fill = makeSymbolResponse(t, []symbolDef{
+		{
+			Symbol:              "BTCUSDT",
+			Base:                "BTC",
+			Quote:               "USDT",
+			Status:              "TRADING",
+			BasePrecision:       8,
+			QuoteAssetPrecision: 5,
+			QuotePrecision:      4,
+		},
+	})
+
+	svc := newSymbolService(stub)
+
+	// Refresh all markets (should refresh 3 markets: spot, linear, inverse)
+	if err := svc.Refresh(context.Background()); err != nil {
+		t.Fatalf("Refresh failed: %v", err)
+	}
+
+	// Should have called for all 3 markets
+	if stub.callCount != 3 {
+		t.Fatalf("expected 3 dispatch calls (one per market), got %d", stub.callCount)
+	}
+}
+
+func TestSymbolServiceRefreshRollbackOnFailure(t *testing.T) {
+	t.Parallel()
+
+	stub := &stubRESTDispatcher{t: t}
+	stub.fill = makeSymbolResponse(t, []symbolDef{
+		{
+			Symbol:              "BTCUSDT",
+			Base:                "BTC",
+			Quote:               "USDT",
+			Status:              "TRADING",
+			BasePrecision:       8,
+			QuoteAssetPrecision: 5,
+			QuotePrecision:      4,
+		},
+	})
+
+	svc := newSymbolService(stub)
+
+	// Initial load
+	if err := svc.ensureMarket(context.Background(), core.MarketSpot); err != nil {
+		t.Fatalf("ensureMarket failed: %v", err)
+	}
+
+	// Get initial state
+	initialInstruments, err := svc.instruments(context.Background(), core.MarketSpot)
+	if err != nil {
+		t.Fatalf("instruments failed: %v", err)
+	}
+
+	if len(initialInstruments) != 1 || initialInstruments[0].Symbol != "BTC-USDT" {
+		t.Fatalf("unexpected initial state")
+	}
+
+	// Make the next dispatch fail
+	stub.shouldFail = true
+
+	// Attempt refresh - should fail and rollback
+	if err := svc.Refresh(context.Background(), core.MarketSpot); err == nil {
+		t.Fatalf("expected Refresh to fail, but it succeeded")
+	}
+
+	// Verify the old data is still present (rollback worked)
+	instruments, err := svc.instruments(context.Background(), core.MarketSpot)
+	if err != nil {
+		t.Fatalf("instruments failed after rollback: %v", err)
+	}
+
+	if len(instruments) != 1 {
+		t.Fatalf("expected 1 instrument after rollback, got %d", len(instruments))
+	}
+
+	if instruments[0].Symbol != "BTC-USDT" {
+		t.Fatalf("expected BTC-USDT after rollback, got %s", instruments[0].Symbol)
+	}
+
+	// Verify native symbol mapping is still intact
+	native, err := svc.nativeForMarkets(context.Background(), "BTC-USDT", core.MarketSpot)
+	if err != nil {
+		t.Fatalf("nativeForMarkets failed after rollback: %v", err)
+	}
+
+	if native != "BTCUSDT" {
+		t.Fatalf("expected BTCUSDT after rollback, got %s", native)
 	}
 }

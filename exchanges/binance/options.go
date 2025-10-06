@@ -1,6 +1,8 @@
 package binance
 
 import (
+	"time"
+
 	"github.com/coachpo/meltica/config"
 	coretransport "github.com/coachpo/meltica/core/transport"
 	"github.com/coachpo/meltica/exchanges/binance/infra/rest"
@@ -96,4 +98,10 @@ func WithWSRouterFactory(factory func(coretransport.StreamClient, bnrouting.WSDe
 
 func WithWSRouter(router wsRouter) Option {
 	return WithWSRouterFactory(func(coretransport.StreamClient, bnrouting.WSDependencies) wsRouter { return router })
+}
+
+func WithSymbolRefreshInterval(interval time.Duration) Option {
+	return func(params *constructionParams) {
+		params.cfgOpts = append(params.cfgOpts, config.WithBinanceSymbolRefreshInterval(interval))
+	}
 }

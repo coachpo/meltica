@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/coachpo/meltica/config"
 	"github.com/coachpo/meltica/core"
@@ -27,6 +28,11 @@ type Exchange struct {
 	routerFactories    routerFactories
 	cfg                config.Settings
 	cfgMu              sync.Mutex
+
+	// Symbol refresh controls
+	symbolRefreshInterval time.Duration
+	symbolRefreshCancel   context.CancelFunc
+	symbolRefreshDone     chan struct{}
 }
 
 var capabilities = core.Capabilities(
@@ -99,15 +105,24 @@ func newExchangeWithFactories(settings config.Settings, transports transportFact
 	orderBooks := newOrderBookService(bundle.WS(), depths, symbols)
 
 	x := &Exchange{
-		name:               "binance",
-		transports:         bundle,
-		symbols:            symbols,
-		listenKeys:         listenKeys,
-		depths:             depths,
-		orderBooks:         orderBooks,
-		transportFactories: transports,
-		routerFactories:    routers,
-		cfg:                config.Apply(settings),
+		name:                  "binance",
+		transports:            bundle,
+		symbols:               symbols,
+		listenKeys:            listenKeys,
+		depths:                depths,
+		orderBooks:            orderBooks,
+		transportFactories:    transports,
+		routerFactories:       routers,
+		cfg:                   config.Apply(settings),
+		symbolRefreshInterval: binCfg.SymbolRefreshInterval,
+		symbolRefreshDone:     make(chan struct{}),
+	}
+
+	// Start background symbol refresh if configured
+	if binCfg.SymbolRefreshInterval > 0 {
+		ctx, cancel := context.WithCancel(context.Background())
+		x.symbolRefreshCancel = cancel
+		go x.symbolRefreshLoop(ctx)
 	}
 
 	return x, nil
@@ -179,10 +194,49 @@ func (x *Exchange) InverseFutures(ctx context.Context) core.FuturesAPI {
 func (x *Exchange) WS() core.WS { return newWSService(x.wsRouter()) }
 
 func (x *Exchange) Close() error {
+	// Stop background symbol refresh if running
+	if x.symbolRefreshCancel != nil {
+		x.symbolRefreshCancel()
+		<-x.symbolRefreshDone
+	}
+
 	if x.transports != nil {
 		return x.transports.Close()
 	}
 	return nil
+}
+
+// RefreshSymbols manually triggers a reload of symbol metadata for the specified markets.
+// If no markets are specified, all markets are refreshed.
+func (x *Exchange) RefreshSymbols(ctx context.Context, markets ...core.Market) error {
+	if x.symbols == nil {
+		return internal.Exchange("symbol service unavailable")
+	}
+	return x.symbols.Refresh(ctx, markets...)
+}
+
+// symbolRefreshLoop periodically refreshes symbol metadata in the background.
+func (x *Exchange) symbolRefreshLoop(ctx context.Context) {
+	defer close(x.symbolRefreshDone)
+
+	ticker := time.NewTicker(x.symbolRefreshInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			// Use a timeout context for each refresh attempt
+			refreshCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			if err := x.symbols.Refresh(refreshCtx, marketsOrAll()...); err != nil {
+				// Log error but keep previous snapshot - don't tear down
+				// TODO: Add proper logging when logger is available
+				_ = err
+			}
+			cancel()
+		}
+	}
 }
 
 func resolveBinanceSettings(cfg config.Settings) config.ExchangeSettings {

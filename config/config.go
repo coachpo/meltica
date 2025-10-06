@@ -34,11 +34,12 @@ type WebsocketSettings struct {
 }
 
 type ExchangeSettings struct {
-	REST             map[string]string
-	Websocket        WebsocketSettings
-	Credentials      Credentials
-	HTTPTimeout      time.Duration
-	HandshakeTimeout time.Duration
+	REST                  map[string]string
+	Websocket             WebsocketSettings
+	Credentials           Credentials
+	HTTPTimeout           time.Duration
+	HandshakeTimeout      time.Duration
+	SymbolRefreshInterval time.Duration
 }
 
 type Settings struct {
@@ -230,6 +231,12 @@ func WithBinanceHTTPTimeout(timeout time.Duration) Option {
 
 func WithBinanceAPI(key, secret string) Option {
 	return WithExchangeCredentials(string(ExchangeBinance), key, secret)
+}
+
+func WithBinanceSymbolRefreshInterval(interval time.Duration) Option {
+	return mutateExchangeOption(string(ExchangeBinance), func(es *ExchangeSettings) {
+		es.SymbolRefreshInterval = interval
+	})
 }
 
 func mutateExchangeOption(exchange string, fn func(*ExchangeSettings)) Option {
