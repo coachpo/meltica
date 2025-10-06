@@ -38,7 +38,7 @@ func (d *stubDeps) CloseListenKey(ctx context.Context, key string) error {
 	return nil
 }
 
-func (d *stubDeps) DepthSnapshot(ctx context.Context, symbol string, limit int) (corestreams.BookEvent, int64, error) {
+func (d *stubDeps) OrderBookDepthSnapshot(ctx context.Context, symbol string, limit int) (corestreams.BookEvent, int64, error) {
 	return corestreams.BookEvent{}, 0, nil
 }
 

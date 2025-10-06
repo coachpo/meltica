@@ -9,7 +9,7 @@ import (
 	corestreams "github.com/coachpo/meltica/core/streams"
 )
 
-// OrderBookManager manages order book state for different symbols.
+// OrderBookManager manages order book state for different symbolSvc.
 type OrderBookManager struct {
 	mu    sync.RWMutex
 	books map[string]*OrderBook

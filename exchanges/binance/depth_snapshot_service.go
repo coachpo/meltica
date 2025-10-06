@@ -14,17 +14,17 @@ import (
 	routingrest "github.com/coachpo/meltica/exchanges/shared/routing"
 )
 
-// depthSnapshotService fetches REST depth snapshots for symbols.
-type depthSnapshotService struct {
+// orderBookSnapshotService fetches REST depth snapshots for symbols.
+type orderBookSnapshotService struct {
 	router  routingrest.RESTDispatcher
 	symbols *symbolService
 }
 
-func newOrderBookSnapshotService(router routingrest.RESTDispatcher, symbols *symbolService) *depthSnapshotService {
-	return &depthSnapshotService{router: router, symbols: symbols}
+func newOrderBookSnapshotService(router routingrest.RESTDispatcher, symbols *symbolService) *orderBookSnapshotService {
+	return &orderBookSnapshotService{router: router, symbols: symbols}
 }
 
-func (s *depthSnapshotService) Snapshot(ctx context.Context, symbol string, limit int) (corestreams.BookEvent, int64, error) {
+func (s *orderBookSnapshotService) Snapshot(ctx context.Context, symbol string, limit int) (corestreams.BookEvent, int64, error) {
 	if s.router == nil {
 		return corestreams.BookEvent{}, 0, internal.Invalid("depth snapshot: rest router unavailable")
 	}

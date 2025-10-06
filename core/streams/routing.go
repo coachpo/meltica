@@ -36,5 +36,5 @@ type Subscription interface {
 }
 
 type OrderBookSnapshotProvider interface {
-	DepthSnapshot(ctx context.Context, symbol string, limit int) (BookEvent, int64, error)
+	OrderBookDepthSnapshot(ctx context.Context, symbol string, limit int) (BookEvent, int64, error)
 }

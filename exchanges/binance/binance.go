@@ -21,15 +21,16 @@ import (
 type Exchange struct {
 	name string
 
-	transports         *bootstrap.TransportBundle
-	symbols            *symbolService
-	listenKeys         *listenKeyService
-	depths             *depthSnapshotService
-	orderBooks         *OrderBookService
-	transportFactories bootstrap.TransportFactories
-	routerFactories    bootstrap.RouterFactories
-	cfg                config.Settings
-	cfgMu              sync.Mutex
+	transportBundle *bootstrap.TransportBundle
+	symbolSvc       *symbolService
+	listenKeySvc    *listenKeyService
+	//TODO: orderBookSnapshotService and OrderBookService should be merged into a single service
+	orderBookSnapshotSvc *orderBookSnapshotService
+	orderBookSvc         *OrderBookService
+	transportFactories   bootstrap.TransportFactories
+	routerFactories      bootstrap.RouterFactories
+	cfg                  config.Settings
+	cfgMutex             sync.Mutex
 
 	// Symbol refresh controls
 	symbolRefreshInterval time.Duration
@@ -93,11 +94,11 @@ func newExchangeWithFactories(settings config.Settings, transports bootstrap.Tra
 
 	x := &Exchange{
 		name:                  "binance",
-		transports:            bundle,
-		symbols:               symbolSvc,
-		listenKeys:            listenKeySvc,
-		depths:                orderBookSnapshotSvc,
-		orderBooks:            orderBookSvc,
+		transportBundle:       bundle,
+		symbolSvc:             symbolSvc,
+		listenKeySvc:          listenKeySvc,
+		orderBookSnapshotSvc:  orderBookSnapshotSvc,
+		orderBookSvc:          orderBookSvc,
 		transportFactories:    transports,
 		routerFactories:       routers,
 		cfg:                   config.Apply(settings),
@@ -117,8 +118,8 @@ func newExchangeWithFactories(settings config.Settings, transports bootstrap.Tra
 
 // Config returns a snapshot of the active configuration.
 func (x *Exchange) Config() config.Settings {
-	x.cfgMu.Lock()
-	defer x.cfgMu.Unlock()
+	x.cfgMutex.Lock()
+	defer x.cfgMutex.Unlock()
 	return config.Apply(x.cfg)
 }
 
@@ -141,22 +142,22 @@ func (x *Exchange) UpdateConfig(opts ...config.Option) error {
 		HandshakeTimeout: binCfg.HandshakeTimeout,
 	}
 
-	newBundle := bootstrap.BuildTransportBundle(x.transportFactories, x.routerFactories, restCfg, wsCfg)
-	restRouter := newBundle.Router().(routingrest.RESTDispatcher)
-	newSymbols := newSymbolService(restRouter)
-	newListenKeys := newListenKeyService(restRouter)
-	newDepths := newOrderBookSnapshotService(restRouter, newSymbols)
-	wsDeps := newWSDependencies(newSymbols, newListenKeys, newDepths)
-	newBundle.SetWS(x.routerFactories.NewWSRouter(newBundle.WSInfra(), wsDeps))
+	transportBundle := bootstrap.BuildTransportBundle(x.transportFactories, x.routerFactories, restCfg, wsCfg)
+	restRouter := transportBundle.Router().(routingrest.RESTDispatcher)
+	symbolSvc := newSymbolService(restRouter)
+	listenKeySvc := newListenKeyService(restRouter)
+	orderBookSnapshotSvc := newOrderBookSnapshotService(restRouter, symbolSvc)
+	wsDeps := newWSDependencies(symbolSvc, listenKeySvc, orderBookSnapshotSvc)
+	transportBundle.SetWS(x.routerFactories.NewWSRouter(transportBundle.WSInfra(), wsDeps))
 
-	x.cfgMu.Lock()
-	oldBundle := x.transports
-	x.transports = newBundle
-	x.symbols = newSymbols
-	x.listenKeys = newListenKeys
-	x.depths = newDepths
+	x.cfgMutex.Lock()
+	oldBundle := x.transportBundle
+	x.transportBundle = transportBundle
+	x.symbolSvc = symbolSvc
+	x.listenKeySvc = listenKeySvc
+	x.orderBookSnapshotSvc = orderBookSnapshotSvc
 	x.cfg = newCfg
-	x.cfgMu.Unlock()
+	x.cfgMutex.Unlock()
 
 	if oldBundle != nil {
 		_ = oldBundle.Close()
@@ -188,8 +189,8 @@ func (x *Exchange) Close() error {
 		<-x.symbolRefreshDone
 	}
 
-	if x.transports != nil {
-		return x.transports.Close()
+	if x.transportBundle != nil {
+		return x.transportBundle.Close()
 	}
 	return nil
 }
@@ -197,10 +198,10 @@ func (x *Exchange) Close() error {
 // RefreshSymbols manually triggers a reload of symbol metadata for the specified markets.
 // If no markets are specified, all markets are refreshed.
 func (x *Exchange) RefreshSymbols(ctx context.Context, markets ...core.Market) error {
-	if x.symbols == nil {
+	if x.symbolSvc == nil {
 		return internal.Exchange("symbol service unavailable")
 	}
-	return x.symbols.Refresh(ctx, markets...)
+	return x.symbolSvc.Refresh(ctx, markets...)
 }
 
 // symbolRefreshLoop periodically refreshes symbol metadata in the background.
@@ -217,7 +218,7 @@ func (x *Exchange) symbolRefreshLoop(ctx context.Context) {
 		case <-ticker.C:
 			// Use a timeout context for each refresh attempt
 			refreshCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			if err := x.symbols.Refresh(refreshCtx, marketsOrAll()...); err != nil {
+			if err := x.symbolSvc.Refresh(refreshCtx, marketsOrAll()...); err != nil {
 				// Log error but keep previous snapshot - don't tear down
 				log.Printf("binance symbol refresh failed: %v", err)
 			}
@@ -260,7 +261,7 @@ func resolveBinanceSettings(cfg config.Settings) config.ExchangeSettings {
 	return merged
 }
 
-// CanonicalSymbol converts Binance native symbols to canonical form with caching support.
+// CanonicalSymbol converts Binance native symbolSvc to canonical form with caching support.
 func (x *Exchange) CanonicalSymbol(binanceSymbol string) (string, error) {
 	return x.canonicalSymbolForMarkets(context.Background(), binanceSymbol)
 }
@@ -270,31 +271,38 @@ func (x *Exchange) NativeSymbol(canonical string) (string, error) {
 }
 
 func (x *Exchange) CreateListenKey(ctx context.Context) (string, error) {
-	if x.listenKeys == nil {
+	if x.listenKeySvc == nil {
 		return "", internal.Exchange("listen key service unavailable")
 	}
-	return x.listenKeys.Create(ctx)
+	return x.listenKeySvc.Create(ctx)
 }
 
 func (x *Exchange) KeepAliveListenKey(ctx context.Context, key string) error {
-	if x.listenKeys == nil {
+	if x.listenKeySvc == nil {
 		return internal.Exchange("listen key service unavailable")
 	}
-	return x.listenKeys.KeepAlive(ctx, key)
+	return x.listenKeySvc.KeepAlive(ctx, key)
 }
 
 func (x *Exchange) CloseListenKey(ctx context.Context, key string) error {
-	if x.listenKeys == nil {
+	if x.listenKeySvc == nil {
 		return internal.Exchange("listen key service unavailable")
 	}
-	return x.listenKeys.Close(ctx, key)
+	return x.listenKeySvc.Close(ctx, key)
 }
 
-func (x *Exchange) DepthSnapshot(ctx context.Context, symbol string, limit int) (corestreams.BookEvent, int64, error) {
-	if x.depths == nil {
+func (x *Exchange) OrderBookDepthSnapshot(ctx context.Context, symbol string, limit int) (corestreams.BookEvent, int64, error) {
+	if x.orderBookSnapshotSvc == nil {
 		return corestreams.BookEvent{}, 0, internal.Exchange("depth snapshot service unavailable")
 	}
-	return x.depths.Snapshot(ctx, symbol, limit)
+	return x.orderBookSnapshotSvc.Snapshot(ctx, symbol, limit)
+}
+
+func (x *Exchange) OrderBookSnapshots(ctx context.Context, symbol string) (<-chan corestreams.BookEvent, <-chan error, error) {
+	if x.orderBookSvc == nil {
+		return nil, nil, internal.Exchange("order book service unavailable")
+	}
+	return x.orderBookSvc.Subscribe(ctx, symbol)
 }
 
 func (x *Exchange) timeInForceCode(t core.TimeInForce) string {
@@ -302,45 +310,45 @@ func (x *Exchange) timeInForceCode(t core.TimeInForce) string {
 }
 
 func (x *Exchange) nativeSymbolForMarkets(ctx context.Context, canonical string, markets ...core.Market) (string, error) {
-	if x.symbols == nil {
+	if x.symbolSvc == nil {
 		return "", internal.Exchange("symbol service unavailable")
 	}
-	return x.symbols.nativeForMarkets(ctx, canonical, markets...)
+	return x.symbolSvc.nativeForMarkets(ctx, canonical, markets...)
 }
 
 func (x *Exchange) canonicalSymbolForMarkets(ctx context.Context, binanceSymbol string, markets ...core.Market) (string, error) {
-	if x.symbols == nil {
+	if x.symbolSvc == nil {
 		return "", internal.Exchange("symbol service unavailable")
 	}
-	return x.symbols.canonicalForMarkets(ctx, binanceSymbol, markets...)
+	return x.symbolSvc.canonicalForMarkets(ctx, binanceSymbol, markets...)
 }
 
 func (x *Exchange) ensureMarketSymbols(ctx context.Context, market core.Market) error {
-	if x.symbols == nil {
+	if x.symbolSvc == nil {
 		return internal.Exchange("symbol service unavailable")
 	}
-	return x.symbols.ensureMarket(ctx, market)
+	return x.symbolSvc.ensureMarket(ctx, market)
 }
 
 func (x *Exchange) instrumentsForMarket(ctx context.Context, market core.Market) ([]core.Instrument, error) {
-	if x.symbols == nil {
+	if x.symbolSvc == nil {
 		return nil, internal.Exchange("symbol service unavailable")
 	}
-	return x.symbols.instruments(ctx, market)
+	return x.symbolSvc.instruments(ctx, market)
 }
 
 func (x *Exchange) instrument(ctx context.Context, market core.Market, symbol string) (core.Instrument, bool, error) {
-	if x.symbols == nil {
+	if x.symbolSvc == nil {
 		return core.Instrument{}, false, internal.Exchange("symbol service unavailable")
 	}
-	return x.symbols.instrument(ctx, market, symbol)
+	return x.symbolSvc.instrument(ctx, market, symbol)
 }
 
 func (x *Exchange) restRouter() routingrest.RESTDispatcher {
-	if x.transports == nil {
+	if x.transportBundle == nil {
 		return nil
 	}
-	router := x.transports.Router()
+	router := x.transportBundle.Router()
 	if router == nil {
 		return nil
 	}
@@ -348,10 +356,10 @@ func (x *Exchange) restRouter() routingrest.RESTDispatcher {
 }
 
 func (x *Exchange) wsRouter() wsRouter {
-	if x.transports == nil {
+	if x.transportBundle == nil {
 		return nil
 	}
-	router := x.transports.WS()
+	router := x.transportBundle.WS()
 	if router == nil {
 		return nil
 	}

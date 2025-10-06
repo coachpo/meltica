@@ -17,13 +17,13 @@ import (
 // by consuming raw DepthDelta events from Level 2 routers.
 type OrderBookService struct {
 	router  wsRouter
-	depths  *depthSnapshotService
+	depths  *orderBookSnapshotService
 	mu      sync.RWMutex
 	books   map[string]*OrderBook
 	symbols *symbolService
 }
 
-func newOrderBookService(router wsRouter, depths *depthSnapshotService, symbols *symbolService) *OrderBookService {
+func newOrderBookService(router wsRouter, depths *orderBookSnapshotService, symbols *symbolService) *OrderBookService {
 	return &OrderBookService{
 		router:  router,
 		depths:  depths,

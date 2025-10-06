@@ -105,7 +105,7 @@ func NewSymbolTranslator(x *Exchange) core.SymbolTranslator {
 				return registrySnapshot{}, err
 			}
 		}
-		snapshot, err := ex.symbols.snapshot(context.Background())
+		snapshot, err := ex.symbolSvc.snapshot(context.Background())
 		if err != nil {
 			translator.loadErr = err
 			return registrySnapshot{}, err

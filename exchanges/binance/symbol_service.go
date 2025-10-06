@@ -174,7 +174,7 @@ func (s *symbolService) snapshot(ctx context.Context) (registrySnapshot, error) 
 	return s.registry.snapshot(), nil
 }
 
-// Refresh reloads symbols for specified markets (or all markets if none specified).
+// Refresh reloads symbolSvc for specified markets (or all markets if none specified).
 // It takes a write lock, clears the selected markets, and repopulates them.
 // If reload fails, it restores from a saved snapshot and returns the error.
 func (s *symbolService) Refresh(ctx context.Context, markets ...core.Market) error {
@@ -252,7 +252,7 @@ func (s *symbolService) fetchMarketSymbols(ctx context.Context, spec marketSpec,
 				TickSize   string `json:"tickSize"`
 				StepSize   string `json:"stepSize"`
 			} `json:"filters"`
-		} `json:"symbols"`
+		} `json:"symbolSvc"`
 	}
 	msg := routingrest.RESTMessage{API: string(spec.api), Method: http.MethodGet, Path: spec.path, Query: map[string]string{"symbolStatus": "TRADING"}}
 	if err := router.Dispatch(ctx, msg, &resp); err != nil {

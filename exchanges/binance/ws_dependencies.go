@@ -11,10 +11,10 @@ import (
 type wsDependencies struct {
 	symbols    *symbolService
 	listenKeys *listenKeyService
-	depths     *depthSnapshotService
+	depths     *orderBookSnapshotService
 }
 
-func newWSDependencies(symbols *symbolService, listenKeys *listenKeyService, depths *depthSnapshotService) *wsDependencies {
+func newWSDependencies(symbols *symbolService, listenKeys *listenKeyService, depths *orderBookSnapshotService) *wsDependencies {
 	return &wsDependencies{symbols: symbols, listenKeys: listenKeys, depths: depths}
 }
 
@@ -53,7 +53,7 @@ func (d *wsDependencies) CloseListenKey(ctx context.Context, key string) error {
 	return d.listenKeys.Close(ctx, key)
 }
 
-func (d *wsDependencies) DepthSnapshot(ctx context.Context, symbol string, limit int) (corestreams.BookEvent, int64, error) {
+func (d *wsDependencies) OrderBookDepthSnapshot(ctx context.Context, symbol string, limit int) (corestreams.BookEvent, int64, error) {
 	if d.depths == nil {
 		return corestreams.BookEvent{}, 0, internal.Exchange("depth snapshot service unavailable")
 	}
