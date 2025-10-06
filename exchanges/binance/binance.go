@@ -86,7 +86,7 @@ func NewWithSettings(settings config.Settings) (*Exchange, error) {
 func (x *Exchange) Config() config.Settings {
 	x.cfgMu.Lock()
 	defer x.cfgMu.Unlock()
-	return x.cfg
+	return config.Apply(x.cfg)
 }
 
 // UpdateConfig applies configuration overrides at runtime, rebuilding clients and clearing caches.
