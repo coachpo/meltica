@@ -11,10 +11,15 @@ import (
 type wsDependencies struct {
 	symbols    *symbolService
 	listenKeys *listenKeyService
-	depths     *orderBookSnapshotService
+	depths     depthSnapshotProvider
 }
 
-func newWSDependencies(symbols *symbolService, listenKeys *listenKeyService, depths *orderBookSnapshotService) *wsDependencies {
+// depthSnapshotProvider is an interface for fetching order book snapshots.
+type depthSnapshotProvider interface {
+	Snapshot(ctx context.Context, symbol string, limit int) (corestreams.BookEvent, int64, error)
+}
+
+func newWSDependencies(symbols *symbolService, listenKeys *listenKeyService, depths depthSnapshotProvider) *wsDependencies {
 	return &wsDependencies{symbols: symbols, listenKeys: listenKeys, depths: depths}
 }
 

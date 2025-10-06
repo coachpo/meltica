@@ -24,9 +24,7 @@ type Exchange struct {
 	transportBundle *bootstrap.TransportBundle
 	symbolSvc       *symbolService
 	listenKeySvc    *listenKeyService
-	//TODO: orderBookSnapshotService and OrderBookService should be merged into a single service
-	orderBookSnapshotSvc *orderBookSnapshotService
-	orderBookSvc         *OrderBookService
+	orderBookSvc    *OrderBookService
 	transportFactories   bootstrap.TransportFactories
 	routerFactories      bootstrap.RouterFactories
 	cfg                  config.Settings
@@ -86,18 +84,16 @@ func newExchangeWithFactories(settings config.Settings, transports bootstrap.Tra
 	restRouter := bundle.Router().(routingrest.RESTDispatcher)
 	symbolSvc := newSymbolService(restRouter)
 	listenKeySvc := newListenKeyService(restRouter)
-	orderBookSnapshotSvc := newOrderBookSnapshotService(restRouter, symbolSvc)
-	wsDeps := newWSDependencies(symbolSvc, listenKeySvc, orderBookSnapshotSvc)
+	wsDeps := newWSDependencies(symbolSvc, listenKeySvc, nil)
 	bundle.SetWS(routers.NewWSRouter(bundle.WSInfra(), wsDeps))
 
-	orderBookSvc := newOrderBookService(bundle.WS().(wsRouter), orderBookSnapshotSvc, symbolSvc)
+	orderBookSvc := newOrderBookService(bundle.WS().(wsRouter), restRouter, symbolSvc)
 
 	x := &Exchange{
 		name:                  "binance",
 		transportBundle:       bundle,
 		symbolSvc:             symbolSvc,
 		listenKeySvc:          listenKeySvc,
-		orderBookSnapshotSvc:  orderBookSnapshotSvc,
 		orderBookSvc:          orderBookSvc,
 		transportFactories:    transports,
 		routerFactories:       routers,
@@ -146,16 +142,17 @@ func (x *Exchange) UpdateConfig(opts ...config.Option) error {
 	restRouter := transportBundle.Router().(routingrest.RESTDispatcher)
 	symbolSvc := newSymbolService(restRouter)
 	listenKeySvc := newListenKeyService(restRouter)
-	orderBookSnapshotSvc := newOrderBookSnapshotService(restRouter, symbolSvc)
-	wsDeps := newWSDependencies(symbolSvc, listenKeySvc, orderBookSnapshotSvc)
+	wsDeps := newWSDependencies(symbolSvc, listenKeySvc, nil)
 	transportBundle.SetWS(x.routerFactories.NewWSRouter(transportBundle.WSInfra(), wsDeps))
+
+	orderBookSvc := newOrderBookService(transportBundle.WS().(wsRouter), restRouter, symbolSvc)
 
 	x.cfgMutex.Lock()
 	oldBundle := x.transportBundle
 	x.transportBundle = transportBundle
 	x.symbolSvc = symbolSvc
 	x.listenKeySvc = listenKeySvc
-	x.orderBookSnapshotSvc = orderBookSnapshotSvc
+	x.orderBookSvc = orderBookSvc
 	x.cfg = newCfg
 	x.cfgMutex.Unlock()
 
@@ -292,10 +289,10 @@ func (x *Exchange) CloseListenKey(ctx context.Context, key string) error {
 }
 
 func (x *Exchange) OrderBookDepthSnapshot(ctx context.Context, symbol string, limit int) (corestreams.BookEvent, int64, error) {
-	if x.orderBookSnapshotSvc == nil {
+	if x.orderBookSvc == nil {
 		return corestreams.BookEvent{}, 0, internal.Exchange("depth snapshot service unavailable")
 	}
-	return x.orderBookSnapshotSvc.Snapshot(ctx, symbol, limit)
+	return x.orderBookSvc.Snapshot(ctx, symbol, limit)
 }
 
 func (x *Exchange) OrderBookSnapshots(ctx context.Context, symbol string) (<-chan corestreams.BookEvent, <-chan error, error) {
