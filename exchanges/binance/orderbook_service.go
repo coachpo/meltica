@@ -9,8 +9,8 @@ import (
 
 	corestreams "github.com/coachpo/meltica/core/streams"
 	coretopics "github.com/coachpo/meltica/core/topics"
-	bnrouting "github.com/coachpo/meltica/exchanges/binance/routing"
 	"github.com/coachpo/meltica/exchanges/binance/internal"
+	bnrouting "github.com/coachpo/meltica/exchanges/binance/routing"
 )
 
 // OrderBookService is a Level-3 service that manages order book state
@@ -91,7 +91,9 @@ func (s *OrderBookService) processDepthDeltas(
 		if delta.LastUpdateID <= book.LastUpdateID() {
 			continue // Skip old events
 		}
-		s.applyDelta(book, delta, events, errs)
+		s.applyDelta(book, delta, errs)
+		// Send updated snapshot
+		s.emitSnapshot(ctx, book, events)
 	}
 	buffer = nil
 
@@ -107,13 +109,7 @@ func (s *OrderBookService) processDepthDeltas(
 		case <-ticker.C:
 			// Periodically send snapshots
 			if book.Initialized() {
-				snapshot := book.GetSnapshot()
-				select {
-				case events <- snapshot:
-				case <-ctx.Done():
-					return
-				default:
-				}
+				s.emitSnapshot(ctx, book, events)
 			}
 
 		case msg, ok := <-sub.C():
@@ -144,7 +140,9 @@ func (s *OrderBookService) processDepthDeltas(
 				continue
 			}
 
-			s.applyDelta(book, delta, events, errs)
+			s.applyDelta(book, delta, errs)
+			// Send updated snapshot
+			s.emitSnapshot(ctx, book, events)
 
 		case err, ok := <-sub.Err():
 			if !ok {
@@ -161,33 +159,39 @@ func (s *OrderBookService) processDepthDeltas(
 	}
 }
 
+// emitSnapshot obtains the current snapshot and performs a non-blocking send.
+// Returns true if the snapshot was successfully delivered, false otherwise.
+func (s *OrderBookService) emitSnapshot(ctx context.Context, book *OrderBook, events chan<- corestreams.BookEvent) bool {
+	snapshot := book.GetSnapshot()
+	select {
+	case events <- snapshot:
+		return true
+	case <-ctx.Done():
+		return false
+	default:
+		return false
+	}
+}
+
 // applyDelta applies a DepthDelta to the order book.
 func (s *OrderBookService) applyDelta(
 	book *OrderBook,
 	delta *bnrouting.DepthDelta,
-	events chan<- corestreams.BookEvent,
 	errs chan<- error,
 ) {
 	success := book.UpdateFromDelta(delta.Bids, delta.Asks, delta.FirstUpdateID, delta.LastUpdateID, delta.EventTime)
 	if !success {
 		// Gap detected, need to reinitialize
 		log.Printf("Order book gap detected for %s, reinitializing", delta.Symbol)
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		initCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		if err := s.initializeOrderBook(ctx, book, delta.Symbol); err != nil {
+		if err := s.initializeOrderBook(initCtx, book, delta.Symbol); err != nil {
 			select {
 			case errs <- err:
 			default:
 			}
 		}
 		return
-	}
-
-	// Send updated snapshot
-	snapshot := book.GetSnapshot()
-	select {
-	case events <- snapshot:
-	default:
 	}
 }
 
