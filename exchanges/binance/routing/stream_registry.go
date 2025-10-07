@@ -2,40 +2,111 @@ package routing
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 
 	"github.com/coachpo/meltica/exchanges/binance/internal"
 )
 
-// StreamKind identifies the type of stream based on its suffix.
 type StreamKind string
 
 const (
-	StreamKindTrade      StreamKind = "trade"
-	StreamKindBookTicker StreamKind = "bookTicker"
-	StreamKindDepth      StreamKind = "depth"
-	StreamKindOrder      StreamKind = "ORDER_TRADE_UPDATE"
-	StreamKindBalance    StreamKind = "balanceUpdate"
-	StreamKindAccount    StreamKind = "outboundAccountPosition"
+	StreamKindTrade          StreamKind = "trade"
+	StreamKindTicker         StreamKind = "ticker"
+	StreamKindOrderbookDelta StreamKind = "depth@100ms"
+	StreamKindOrder          StreamKind = "order"
+	StreamKindBalance        StreamKind = "balance"
+	StreamKindAccount        StreamKind = "outboundAccountPosition"
 )
 
-// StreamDescriptor captures metadata about a subscribed stream upfront.
-type StreamDescriptor struct {
-	RawName        string
-	CanonicalSymbol string
-	Kind           StreamKind
+func (k StreamKind) String() string { return string(k) }
+
+var streamKindIndex = func() map[string]StreamKind {
+	kinds := []StreamKind{
+		StreamKindTrade,
+		StreamKindTicker,
+		StreamKindOrderbookDelta,
+		StreamKindOrder,
+		StreamKindBalance,
+		StreamKindAccount,
+	}
+	index := make(map[string]StreamKind, len(kinds))
+	for _, kind := range kinds {
+		index[strings.ToLower(kind.String())] = kind
+	}
+	return index
+}()
+
+func streamKindRequiresSymbol(kind StreamKind) bool {
+	switch kind {
+	case StreamKindBalance, StreamKindAccount:
+		return false
+	default:
+		return true
+	}
 }
 
-// StreamHandler processes a raw message and populates a RoutedMessage.
+func topicForSymbol(kind StreamKind, symbol string) string {
+	trimmed := strings.TrimSpace(symbol)
+	if streamKindRequiresSymbol(kind) {
+		if trimmed == "" {
+			panic(fmt.Sprintf("topics: empty symbol for stream kind %s", kind))
+		}
+		return buildTopic(kind.String(), trimmed)
+	}
+	if trimmed == "" {
+		return kind.String()
+	}
+	return buildTopic(kind.String(), trimmed)
+}
+
+func Trade(symbol string) string     { return topicForSymbol(StreamKindTrade, symbol) }
+func Ticker(symbol string) string    { return topicForSymbol(StreamKindTicker, symbol) }
+func Orderbook(symbol string) string { return topicForSymbol(StreamKindOrderbookDelta, symbol) }
+func UserOrder(symbol string) string { return topicForSymbol(StreamKindOrder, symbol) }
+func UserBalance() string            { return topicForSymbol(StreamKindBalance, "") }
+func AccountSnapshot() string        { return topicForSymbol(StreamKindAccount, "") }
+
+func buildTopic(channel, symbol string) string {
+	channel = strings.TrimSpace(channel)
+	symbol = strings.TrimSpace(symbol)
+	if channel == "" {
+		panic("topics: empty channel")
+	}
+	if symbol == "" {
+		panic(fmt.Sprintf("topics: empty symbol for channel %s", channel))
+	}
+	return channel + ":" + symbol
+}
+
+func Parse(topic string) (StreamKind, string, error) {
+	trimmed := strings.TrimSpace(topic)
+	if trimmed == "" {
+		return "", "", fmt.Errorf("topics: empty topic")
+	}
+	channel := trimmed
+	symbol := ""
+	if idx := strings.IndexByte(trimmed, ':'); idx >= 0 {
+		channel = strings.TrimSpace(trimmed[:idx])
+		symbol = strings.TrimSpace(trimmed[idx+1:])
+	}
+	kind, ok := streamKindIndex[strings.ToLower(channel)]
+	if !ok {
+		return "", "", fmt.Errorf("topics: unknown channel %q", channel)
+	}
+	if streamKindRequiresSymbol(kind) && symbol == "" {
+		return "", "", fmt.Errorf("topics: missing symbol for %s", kind)
+	}
+	return kind, symbol, nil
+}
+
 type StreamHandler func(*RoutedMessage, []byte, string) error
 
-// StreamRegistry maps StreamKind to handlers, avoiding repeated parsing.
 type StreamRegistry struct {
 	handlers map[StreamKind]StreamHandler
 	deps     WSDependencies
 }
 
-// NewStreamRegistry creates a registry with all known handlers.
 func NewStreamRegistry(deps WSDependencies) *StreamRegistry {
 	r := &StreamRegistry{
 		handlers: make(map[StreamKind]StreamHandler),
@@ -43,8 +114,8 @@ func NewStreamRegistry(deps WSDependencies) *StreamRegistry {
 	}
 
 	r.handlers[StreamKindTrade] = r.handleTrade
-	r.handlers[StreamKindBookTicker] = r.handleBookTicker
-	r.handlers[StreamKindDepth] = r.handleDepth
+	r.handlers[StreamKindTicker] = r.handleTicker
+	r.handlers[StreamKindOrderbookDelta] = r.handleOrderbook
 	r.handlers[StreamKindOrder] = r.handleOrderUpdate
 	r.handlers[StreamKindBalance] = r.handleBalanceUpdate
 	r.handlers[StreamKindAccount] = r.handleAccountPosition
@@ -52,20 +123,19 @@ func NewStreamRegistry(deps WSDependencies) *StreamRegistry {
 	return r
 }
 
-// Dispatch routes a message using the stream kind.
 func (r *StreamRegistry) Dispatch(msg *RoutedMessage, payload []byte, stream string, kind StreamKind) error {
 	handler, ok := r.handlers[kind]
 	if !ok {
-		// Unknown stream kind - skip
 		return nil
 	}
 	return handler(msg, payload, stream)
 }
 
-// ParseStreamKind determines the kind from stream name or event type.
 func ParseStreamKind(stream string, eventType string) StreamKind {
 	if eventType != "" {
 		switch eventType {
+		case "24hrTicker":
+			return StreamKindTicker
 		case "ORDER_TRADE_UPDATE":
 			return StreamKindOrder
 		case "balanceUpdate":
@@ -74,20 +144,17 @@ func ParseStreamKind(stream string, eventType string) StreamKind {
 			return StreamKindAccount
 		}
 	}
-
 	switch {
 	case strings.Contains(stream, "@trade"):
 		return StreamKindTrade
-	case strings.Contains(stream, "@bookTicker"):
-		return StreamKindBookTicker
+	case strings.Contains(stream, "@ticker"):
+		return StreamKindTicker
 	case strings.Contains(stream, "@depth"):
-		return StreamKindDepth
+		return StreamKindOrderbookDelta
 	default:
 		return ""
 	}
 }
-
-// Handler implementations
 
 func (r *StreamRegistry) handleTrade(msg *RoutedMessage, payload []byte, stream string) error {
 	var rec struct {
@@ -99,16 +166,14 @@ func (r *StreamRegistry) handleTrade(msg *RoutedMessage, payload []byte, stream 
 	if err := json.Unmarshal(payload, &rec); err != nil {
 		return internal.WrapExchange(err, "decode trade event")
 	}
-
 	symbol, err := r.deps.CanonicalSymbol(rec.Symbol)
 	if err != nil {
 		return err
 	}
-
 	return parseTradeEvent(msg, &rec, symbol)
 }
 
-func (r *StreamRegistry) handleBookTicker(msg *RoutedMessage, payload []byte, stream string) error {
+func (r *StreamRegistry) handleTicker(msg *RoutedMessage, payload []byte, stream string) error {
 	var rec struct {
 		EventType string      `json:"e"`
 		EventTime int64       `json:"E"`
@@ -121,18 +186,16 @@ func (r *StreamRegistry) handleBookTicker(msg *RoutedMessage, payload []byte, st
 		LastQty   json.Number `json:"Q"`
 	}
 	if err := json.Unmarshal(payload, &rec); err != nil {
-		return internal.WrapExchange(err, "decode book ticker")
+		return internal.WrapExchange(err, "decode ticker event")
 	}
-
 	symbol, err := r.deps.CanonicalSymbol(rec.Symbol)
 	if err != nil {
 		return err
 	}
-
-	return parseBookTickerEvent(msg, &rec, symbol)
+	return parseTickerEvent(msg, &rec, symbol)
 }
 
-func (r *StreamRegistry) handleDepth(msg *RoutedMessage, payload []byte, stream string) error {
+func (r *StreamRegistry) handleOrderbook(msg *RoutedMessage, payload []byte, stream string) error {
 	var rec struct {
 		Event         string          `json:"e"`
 		Symbol        string          `json:"s"`
@@ -145,13 +208,11 @@ func (r *StreamRegistry) handleDepth(msg *RoutedMessage, payload []byte, stream 
 	if err := json.Unmarshal(payload, &rec); err != nil {
 		return internal.WrapExchange(err, "decode depth")
 	}
-
 	symbol, err := r.deps.CanonicalSymbol(rec.Symbol)
 	if err != nil {
 		return err
 	}
-
-	return parseDepthEvent(msg, &rec, symbol)
+	return parseOrderbookEvent(msg, &rec, symbol)
 }
 
 func (r *StreamRegistry) handleOrderUpdate(msg *RoutedMessage, payload []byte, stream string) error {
@@ -169,5 +230,5 @@ func (r *StreamRegistry) handleBalanceUpdate(msg *RoutedMessage, payload []byte,
 }
 
 func (r *StreamRegistry) handleAccountPosition(msg *RoutedMessage, payload []byte, stream string) error {
-	return parseBalanceUpdateEvent(msg, payload, "outboundAccountPosition")
+	return parseBalanceUpdateEvent(msg, payload, StreamKindAccount.String())
 }

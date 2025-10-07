@@ -7,7 +7,6 @@ import (
 
 	"github.com/coachpo/meltica/core"
 	corestreams "github.com/coachpo/meltica/core/streams"
-	coretopics "github.com/coachpo/meltica/core/topics"
 	"github.com/coachpo/meltica/exchanges/binance/internal"
 	"github.com/coachpo/meltica/exchanges/shared/infra/numeric"
 )
@@ -22,8 +21,7 @@ func parseTradeEvent(msg *RoutedMessage, rec *struct {
 	if symbol == "" {
 		return internal.Exchange("ws trade: missing symbol")
 	}
-	topic := topicFromChannel(BNXTradeChannel, symbol)
-	msg.Topic = topic
+	msg.Topic = topicForSymbol(StreamKindTrade, symbol)
 	msg.Route = corestreams.RouteTradeUpdate
 	price, _ := numeric.Parse(rec.Price.String())
 	qty, _ := numeric.Parse(rec.Qty.String())
@@ -31,8 +29,8 @@ func parseTradeEvent(msg *RoutedMessage, rec *struct {
 	return nil
 }
 
-// parseBookTickerEvent populates a RoutedMessage with ticker data.
-func parseBookTickerEvent(msg *RoutedMessage, rec *struct {
+// parseTickerEvent populates a RoutedMessage with ticker data.
+func parseTickerEvent(msg *RoutedMessage, rec *struct {
 	EventType string      `json:"e"`
 	EventTime int64       `json:"E"`
 	Symbol    string      `json:"s"`
@@ -44,10 +42,9 @@ func parseBookTickerEvent(msg *RoutedMessage, rec *struct {
 	LastQty   json.Number `json:"Q"`
 }, symbol string) error {
 	if symbol == "" {
-		return internal.Exchange("ws bookTicker: missing symbol")
+		return internal.Exchange("ws ticker: missing symbol")
 	}
-	topic := topicFromChannel(BNXTickerChannel, symbol)
-	msg.Topic = topic
+	msg.Topic = topicForSymbol(StreamKindTicker, symbol)
 	msg.Route = corestreams.RouteTickerUpdate
 	bid, _ := numeric.Parse(rec.BidPrice.String())
 	ask, _ := numeric.Parse(rec.AskPrice.String())
@@ -56,8 +53,8 @@ func parseBookTickerEvent(msg *RoutedMessage, rec *struct {
 	return nil
 }
 
-// parseDepthEvent populates a RoutedMessage with depth delta data.
-func parseDepthEvent(msg *RoutedMessage, rec *struct {
+// parseOrderbookEvent populates a RoutedMessage with order book delta data.
+func parseOrderbookEvent(msg *RoutedMessage, rec *struct {
 	Event         string          `json:"e"`
 	Symbol        string          `json:"s"`
 	FirstUpdateID int64           `json:"U"`
@@ -77,7 +74,7 @@ func parseDepthEvent(msg *RoutedMessage, rec *struct {
 	asks := depthLevelsFromPairs(rec.Asks)
 	eventTime := time.UnixMilli(rec.EventTime)
 
-	msg.Topic = coretopics.Book(symbol)
+	msg.Topic = Orderbook(symbol)
 	msg.Route = corestreams.RouteDepthDelta
 	msg.Parsed = &DepthDelta{
 		Symbol:        symbol,
@@ -110,7 +107,7 @@ func parseOrderUpdateEvent(msg *RoutedMessage, payload []byte) error {
 	filled, _ := numeric.Parse(ou.Order.FilledQty.String())
 	avg, _ := numeric.Parse(ou.Order.AvgPrice.String())
 	msg.Route = corestreams.RouteOrderUpdate
-	msg.Topic = topicFromChannel(BNXOrderChannel, ou.Order.Symbol)
+	msg.Topic = topicForSymbol(StreamKindOrder, ou.Order.Symbol)
 	msg.Parsed = &corestreams.OrderEvent{
 		Symbol:    ou.Order.Symbol,
 		OrderID:   fmt.Sprintf("%d", ou.Order.ID),
@@ -143,7 +140,7 @@ func parseBalanceUpdateEvent(msg *RoutedMessage, payload []byte, event string) e
 			amt, _ := numeric.Parse(b.Free.String())
 			be.Balances = append(be.Balances, core.Balance{Asset: b.Asset, Available: amt, Time: time.UnixMilli(oap.EventTime)})
 		}
-		msg.Topic = coretopics.UserBalance()
+		msg.Topic = UserBalance()
 		msg.Route = corestreams.RouteBalanceSnapshot
 		msg.Parsed = &be
 		return nil
@@ -157,7 +154,7 @@ func parseBalanceUpdateEvent(msg *RoutedMessage, payload []byte, event string) e
 			return err
 		}
 		amt, _ := numeric.Parse(bu.Delta.String())
-		msg.Topic = coretopics.UserBalance()
+		msg.Topic = UserBalance()
 		msg.Route = corestreams.RouteBalanceSnapshot
 		msg.Parsed = &corestreams.BalanceEvent{
 			Balances: []core.Balance{

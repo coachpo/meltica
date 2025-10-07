@@ -7,7 +7,6 @@ import (
 	"time"
 
 	corestreams "github.com/coachpo/meltica/core/streams"
-	coretopics "github.com/coachpo/meltica/core/topics"
 	coretransport "github.com/coachpo/meltica/core/transport"
 	"github.com/coachpo/meltica/exchanges/binance/internal"
 )
@@ -136,23 +135,20 @@ func (d *PublicDispatcher) buildStreams(topics []string) ([]string, error) {
 func buildStreamsForTopics(topics []string, deps WSDependencies) ([]string, error) {
 	streams := make([]string, 0, len(topics))
 	for _, topic := range topics {
-		channel, instrument, err := coretopics.Parse(topic)
+		kind, instrument, err := Parse(topic)
 		if err != nil {
 			return nil, err
 		}
-		exchangeChannel := mapper.ExchangeChannelID(channel)
+		channelID := kind.String()
 		if instrument == "" {
-			streams = append(streams, topic)
+			streams = append(streams, channelID)
 			continue
-		}
-		if exchangeChannel == "" {
-			exchangeChannel = strings.ToLower(channel)
 		}
 		native, err := deps.NativeSymbol(instrument)
 		if err != nil {
 			return nil, err
 		}
-		streams = append(streams, strings.ToLower(native)+"@"+exchangeChannel)
+		streams = append(streams, strings.ToLower(native)+"@"+channelID)
 	}
 	return streams, nil
 }

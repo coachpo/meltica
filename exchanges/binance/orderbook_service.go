@@ -11,7 +11,6 @@ import (
 
 	"github.com/coachpo/meltica/core"
 	corestreams "github.com/coachpo/meltica/core/streams"
-	coretopics "github.com/coachpo/meltica/core/topics"
 	"github.com/coachpo/meltica/exchanges/binance/infra/rest"
 	"github.com/coachpo/meltica/exchanges/binance/internal"
 	bnrouting "github.com/coachpo/meltica/exchanges/binance/routing"
@@ -42,7 +41,7 @@ func newOrderBookService(router wsRouter, restRouter routingrest.RESTDispatcher,
 // Subscribe subscribes to order book updates for a symbol and returns a channel of BookEvents.
 func (s *OrderBookService) Subscribe(ctx context.Context, symbol string) (<-chan corestreams.BookEvent, <-chan error, error) {
 	// Subscribe to raw depth delta events
-	sub, err := s.router.SubscribePublic(ctx, coretopics.Book(symbol))
+	sub, err := s.router.SubscribePublic(ctx, bnrouting.Orderbook(symbol))
 	if err != nil {
 		return nil, nil, internal.WrapExchange(err, "subscribe depth stream")
 	}

@@ -7,7 +7,6 @@ import (
 
 	corestreams "github.com/coachpo/meltica/core/streams"
 	"github.com/coachpo/meltica/core/streams/mocks"
-	coretopics "github.com/coachpo/meltica/core/topics"
 	coretransport "github.com/coachpo/meltica/core/transport"
 )
 
@@ -68,7 +67,7 @@ func TestWSRouterSubscribePublicUsesStreamClient(t *testing.T) {
 	router := NewWSRouter(streamClient, deps)
 	defer router.Close()
 
-	sub, err := router.SubscribePublic(ctx, coretopics.Trade("BTC-USDT"))
+	sub, err := router.SubscribePublic(ctx, Trade("BTC-USDT"))
 	if err != nil {
 		t.Fatalf("subscribe public failed: %v", err)
 	}

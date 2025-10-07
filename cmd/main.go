@@ -16,15 +16,15 @@ import (
 	"github.com/coachpo/meltica/core"
 	"github.com/coachpo/meltica/core/registry"
 	corestreams "github.com/coachpo/meltica/core/streams"
-	coretopics "github.com/coachpo/meltica/core/topics"
 	binanceplugin "github.com/coachpo/meltica/exchanges/binance/plugin"
+	bnrouting "github.com/coachpo/meltica/exchanges/binance/routing"
 	"github.com/coachpo/meltica/exchanges/shared/infra/numeric"
 )
 
 const (
 	fallbackPriceScale       = 2
 	fallbackQuantityScale    = 6
-	defaultBookLogInterval   = 200 * time.Millisecond
+	defaultBookLogInterval   = 100 * time.Millisecond
 	maxTopicsPerSubscription = 200
 )
 
@@ -185,7 +185,7 @@ func (m *MarketManager) Events() <-chan marketEvent {
 func (m *MarketManager) Subscribe(cmd marketSubscribeCommand) {
 	reqs := make(map[string]*SymbolSubscriptionRequest)
 	for _, topic := range cmd.Topics {
-		channel, symbol, err := coretopics.Parse(topic)
+		kind, symbol, err := bnrouting.Parse(topic)
 		if err != nil {
 			log.Printf("ignoring invalid topic %q: %v", topic, err)
 			continue
@@ -199,12 +199,12 @@ func (m *MarketManager) Subscribe(cmd marketSubscribeCommand) {
 			req = &SymbolSubscriptionRequest{Symbol: symbol}
 			reqs[symbol] = req
 		}
-		switch channel {
-		case coretopics.TopicTrade:
+		switch kind {
+		case bnrouting.StreamKindTrade:
 			req.Trades = true
-		case coretopics.TopicTicker:
+		case bnrouting.StreamKindTicker:
 			req.Ticker = true
-		case coretopics.TopicBook:
+		case bnrouting.StreamKindOrderbookDelta:
 			req.Book = true
 		}
 	}
@@ -301,10 +301,10 @@ func (m *MarketManager) collectActiveTopicsLocked() []string {
 			continue
 		}
 		if sub.Trades {
-			topics = append(topics, coretopics.Trade(symbol))
+			topics = append(topics, bnrouting.Trade(symbol))
 		}
 		if sub.Ticker {
-			topics = append(topics, coretopics.Ticker(symbol))
+			topics = append(topics, bnrouting.Ticker(symbol))
 		}
 	}
 	return topics
@@ -638,7 +638,7 @@ func (m *MarketManager) handleOrderBookSnapshots(ctx context.Context, symbol str
 			}
 			m.emit(marketEvent{
 				Kind:    marketEventBook,
-				Topic:   coretopics.Book(bookCopy.Symbol),
+				Topic:   bnrouting.Orderbook(bookCopy.Symbol),
 				Payload: &bookCopy,
 				Time:    bookCopy.Time,
 				Message: fmt.Sprintf("depth=%d interval=%s", cfg.BookDepthLevels, cfg.UpdateInterval),
