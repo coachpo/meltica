@@ -41,7 +41,7 @@ func newOrderBookService(router wsRouter, restRouter routingrest.RESTDispatcher,
 // Subscribe subscribes to order book updates for a symbol and returns a channel of BookEvents.
 func (s *OrderBookService) Subscribe(ctx context.Context, symbol string) (<-chan corestreams.BookEvent, <-chan error, error) {
 	// Subscribe to raw depth delta events
-	sub, err := s.router.SubscribePublic(ctx, bnrouting.Orderbook(symbol))
+	sub, err := s.router.SubscribePublic(ctx, bnrouting.OrderBook(symbol))
 	if err != nil {
 		return nil, nil, internal.WrapExchange(err, "subscribe depth stream")
 	}

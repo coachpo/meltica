@@ -11,12 +11,12 @@ import (
 type StreamKind string
 
 const (
-	StreamKindTrade          StreamKind = "trade"
-	StreamKindTicker         StreamKind = "ticker"
-	StreamKindOrderbookDelta StreamKind = "depth@100ms"
-	StreamKindOrder          StreamKind = "order"
-	StreamKindBalance        StreamKind = "balance"
-	StreamKindAccount        StreamKind = "outboundAccountPosition"
+	StreamKindTrade     StreamKind = "trade"
+	StreamKindTicker    StreamKind = "ticker"
+	StreamKindBookDelta StreamKind = "depth@100ms"
+	StreamKindOrder     StreamKind = "order"
+	StreamKindBalance   StreamKind = "balance"
+	StreamKindAccount   StreamKind = "outboundAccountPosition"
 )
 
 func (k StreamKind) String() string { return string(k) }
@@ -25,7 +25,7 @@ var streamKindIndex = func() map[string]StreamKind {
 	kinds := []StreamKind{
 		StreamKindTrade,
 		StreamKindTicker,
-		StreamKindOrderbookDelta,
+		StreamKindBookDelta,
 		StreamKindOrder,
 		StreamKindBalance,
 		StreamKindAccount,
@@ -62,7 +62,7 @@ func topicForSymbol(kind StreamKind, symbol string) string {
 
 func Trade(symbol string) string     { return topicForSymbol(StreamKindTrade, symbol) }
 func Ticker(symbol string) string    { return topicForSymbol(StreamKindTicker, symbol) }
-func Orderbook(symbol string) string { return topicForSymbol(StreamKindOrderbookDelta, symbol) }
+func OrderBook(symbol string) string { return topicForSymbol(StreamKindBookDelta, symbol) }
 func UserOrder(symbol string) string { return topicForSymbol(StreamKindOrder, symbol) }
 func UserBalance() string            { return topicForSymbol(StreamKindBalance, "") }
 func AccountSnapshot() string        { return topicForSymbol(StreamKindAccount, "") }
@@ -115,7 +115,7 @@ func NewStreamRegistry(deps WSDependencies) *StreamRegistry {
 
 	r.handlers[StreamKindTrade] = r.handleTrade
 	r.handlers[StreamKindTicker] = r.handleTicker
-	r.handlers[StreamKindOrderbookDelta] = r.handleOrderbook
+	r.handlers[StreamKindBookDelta] = r.handleOrderbook
 	r.handlers[StreamKindOrder] = r.handleOrderUpdate
 	r.handlers[StreamKindBalance] = r.handleBalanceUpdate
 	r.handlers[StreamKindAccount] = r.handleAccountPosition
@@ -150,7 +150,7 @@ func ParseStreamKind(stream string, eventType string) StreamKind {
 	case strings.Contains(stream, "@ticker"):
 		return StreamKindTicker
 	case strings.Contains(stream, "@depth"):
-		return StreamKindOrderbookDelta
+		return StreamKindBookDelta
 	default:
 		return ""
 	}

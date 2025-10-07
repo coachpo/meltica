@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"os"
 	"os/signal"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -26,6 +27,8 @@ const (
 	fallbackQuantityScale    = 6
 	defaultBookLogInterval   = 100 * time.Millisecond
 	maxTopicsPerSubscription = 200
+	eventBufferSize          = 1024
+	minEventWorkers          = 2
 )
 
 // SubscriptionConfig defines symbol-level tuning for market data streams.
@@ -143,7 +146,7 @@ func NewMarketManager(exchange core.Exchange) (*MarketManager, error) {
 		exchange:   exchange,
 		ws:         wsParticipant,
 		orderBooks: orderBook,
-		events:     make(chan marketEvent, 512),
+		events:     make(chan marketEvent, eventBufferSize),
 		bookFeeds:  make(map[string]*bookFeed),
 		symbols:    make(map[string]*symbolSubscription),
 	}, nil
@@ -204,7 +207,7 @@ func (m *MarketManager) Subscribe(cmd marketSubscribeCommand) {
 			req.Trades = true
 		case bnrouting.StreamKindTicker:
 			req.Ticker = true
-		case bnrouting.StreamKindOrderbookDelta:
+		case bnrouting.StreamKindBookDelta:
 			req.Book = true
 		}
 	}
@@ -638,7 +641,7 @@ func (m *MarketManager) handleOrderBookSnapshots(ctx context.Context, symbol str
 			}
 			m.emit(marketEvent{
 				Kind:    marketEventBook,
-				Topic:   bnrouting.Orderbook(bookCopy.Symbol),
+				Topic:   bnrouting.OrderBook(bookCopy.Symbol),
 				Payload: &bookCopy,
 				Time:    bookCopy.Time,
 				Message: fmt.Sprintf("depth=%d interval=%s", cfg.BookDepthLevels, cfg.UpdateInterval),
@@ -773,15 +776,38 @@ func main() {
 	processor := newEventProcessor(manager, formatter, nativeSymbols)
 
 	events := manager.Events()
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for evt := range events {
-			processor.handle(evt)
-		}
-		log.Println("market event stream closed")
-	}()
+	workerCtx, workerCancel := context.WithCancel(ctx)
+	defer workerCancel()
+
+	workerCount := runtime.NumCPU()
+	if workerCount < minEventWorkers {
+		workerCount = minEventWorkers
+	}
+
+	var eventsWG sync.WaitGroup
+	var once sync.Once
+	logClosed := func() {
+		once.Do(func() { log.Println("market event stream closed") })
+	}
+
+	for i := 0; i < workerCount; i++ {
+		eventsWG.Add(1)
+		go func() {
+			defer eventsWG.Done()
+			for {
+				select {
+				case <-workerCtx.Done():
+					return
+				case evt, ok := <-events:
+					if !ok {
+						logClosed()
+						return
+					}
+					processor.handle(evt)
+				}
+			}
+		}()
+	}
 
 	// Determine subscription set for the default USDT markets
 	requests := buildDefaultSubscriptions(defaultSymbols, instruments)
@@ -791,7 +817,8 @@ func main() {
 	fmt.Println("Stopping order book monitor...")
 	manager.Stop()
 	managerStarted = false
-	wg.Wait()
+	workerCancel()
+	eventsWG.Wait()
 }
 
 type bookLevel struct {
@@ -960,6 +987,7 @@ func formatDecimal(r *big.Rat, scale int) string {
 type eventProcessor struct {
 	manager       *MarketManager
 	formatter     precisionFormatter
+	bookMu        sync.Mutex
 	lastBookLogs  map[string]time.Time
 	nativeSymbols map[string]string
 }
@@ -1041,11 +1069,14 @@ func (p *eventProcessor) handle(evt marketEvent) {
 				depth = cfg.BookDepthLevels
 			}
 		}
+		p.bookMu.Lock()
 		last := p.lastBookLogs[symbol]
 		if !last.IsZero() && time.Since(last) < interval {
+			p.bookMu.Unlock()
 			return
 		}
 		p.lastBookLogs[symbol] = time.Now()
+		p.bookMu.Unlock()
 		bids := topLevels(book.Bids, depth, true)
 		asks := topLevels(book.Asks, depth, false)
 		native := p.nativeSymbol(symbol)

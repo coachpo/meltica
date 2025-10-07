@@ -74,7 +74,7 @@ func parseOrderbookEvent(msg *RoutedMessage, rec *struct {
 	asks := depthLevelsFromPairs(rec.Asks)
 	eventTime := time.UnixMilli(rec.EventTime)
 
-	msg.Topic = Orderbook(symbol)
+	msg.Topic = OrderBook(symbol)
 	msg.Route = corestreams.RouteDepthDelta
 	msg.Parsed = &DepthDelta{
 		Symbol:        symbol,
