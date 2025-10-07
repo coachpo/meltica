@@ -1,6 +1,6 @@
 # System Architecture Overview
 
-The system is structured into three logical layers — **Level 1**, **Level 2**, and **Level 3** — each responsible for a specific aspect of communication and business processing.
+The system is structured into four logical layers — **Level 1**, **Level 2**, **Level 3**, and **Level 4** — each responsible for a specific aspect of communication and business processing.
 This layered structure supports both WebSocket and HTTP REST interfaces while maintaining consistent message flow and error handling.
 
 ---
@@ -54,12 +54,44 @@ Implements the domain and business logic.
 
 ---
 
+## **Level 4 – Filter Layer**
+
+**Purpose:**
+Creates exchange-agnostic market-data pipelines that orchestrate Level 3 services, apply policy filters, and expose normalized streams to downstream clients.
+
+**Responsibilities:**
+- Coordinates feed sourcing across exchanges via adapters that expose declared capabilities.
+- Normalizes events into canonical envelopes (symbol, timestamp, payload) regardless of exchange-specific quirks.
+- Applies filter policies such as throttling, deduplication, enrichment, aggregation, and selective fan-out.
+- Manages lifecycle concerns for feed pipelines: context propagation, retries, error fan-in, and graceful teardown.
+- Provides a single facade for interactive CLIs and services to consume filtered market data without touching Level 3 primitives directly.
+
+**Stage Catalog:**
+- `Source` – multiplexes exchange-native feed channels (books, trades, tickers) into canonical event envelopes.
+- `Normalize` – enforces canonical symbol casing, guarantees timestamps, and prepares events for downstream policy stages.
+- `Throttle` – enforces minimum emit intervals per symbol/kind to prevent overload from bursty feeds.
+- `Aggregate` – trims order-book depth, updates snapshot caches, and prepares derived data for observers.
+- `VWAP` – maintains running volume-weighted average price analytics emitted alongside raw trade flow.
+- `Reliability` – wraps upstream errors with pipeline context and preserves ordering guarantees.
+- `Observer` – emits structured callbacks for metrics/logging hooks without blocking the data path.
+- `Sampling` – performs time-based down-sampling when requested (useful for UI dashboards or logs).
+- `Dispatch` – final guard that ensures non-nil output channels even when earlier stages short-circuit.
+
+### Registering Filter Adapters & Stages
+
+1. Implement the `marketdata/filter.Adapter` interface inside the exchange plugin. Declare supported feeds via `Capabilities()` and surface channel-based sources for each feed type you expose (`BookSources`, `TradeSources`, `TickerSources`). The adapter should translate Level 3 services (for example, Binance `OrderBookService.Subscribe`) into canonical channels of `corestreams` events.
+2. Wire the adapter into consumers (such as `cmd/market_data`) by instantiating `filter.NewCoordinator(adapter)` and issuing a `FilterRequest`. The coordinator will validate capabilities before building the stage pipeline.
+3. To extend filtering behaviour, create a new `filter.Stage` (via `filter.NewStageFunc`) that transforms, enriches, or routes `EventEnvelope` streams. Update the coordinator’s stage builder to insert the new stage where appropriate or conditionally add it based on `FilterRequest` flags.
+4. Add integration tests that exercise the adapter with recorded fixtures to ensure stage orchestration remains stable, and unit tests for any new stages to verify ordering, error propagation, and cancellation semantics.
+
+---
+
 ## **Data Flow Summary**
 
-| Communication Type | Level 1 | Level 2 | Level 3 | Description |
-|--------------------|----------|----------|----------|--------------|
-| **WebSocket** | Connection management (connect, reconnect, ping/pong) | Message routing via dispatchers, subscription/unsubscription, message conversion via stream registry | Business logic, request generation | Continuous, bidirectional stream |
-| **REST (HTTP)** | Connection handling, request signing | Request building & response normalization | Business logic, request initiation | Stateless, point-to-point request/response |
+| Communication Type | Level 1 | Level 2 | Level 3 | Level 4 | Description |
+|--------------------|----------|----------|----------|----------|--------------|
+| **WebSocket** | Connection management (connect, reconnect, ping/pong) | Message routing via dispatchers, subscription/unsubscription, message conversion via stream registry | Business logic, request generation | Pipeline orchestration, normalization, filtering, fan-out | Continuous, bidirectional stream |
+| **REST (HTTP)** | Connection handling, request signing | Request building & response normalization | Business logic, request initiation | Snapshot hydration, enrichment, aggregation before distribution | Stateless, point-to-point request/response |
 
 ---
 

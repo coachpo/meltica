@@ -9,25 +9,30 @@ import (
 	"os"
 	"os/signal"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/coachpo/meltica/core"
 	"github.com/coachpo/meltica/core/registry"
 	corestreams "github.com/coachpo/meltica/core/streams"
+	binancel4 "github.com/coachpo/meltica/exchanges/binance/filter"
 	binanceplugin "github.com/coachpo/meltica/exchanges/binance/plugin"
-	"github.com/coachpo/meltica/exchanges/shared/infra/numeric"
+	"github.com/coachpo/meltica/internal/numeric"
+	mdfilter "github.com/coachpo/meltica/marketdata/filter"
 )
 
 const (
 	defaultSymbolList     = "BTC-USDT,ETH-USDT,BNB-USDT"
 	fallbackPriceScale    = 2
 	fallbackQuantityScale = 6
+	defaultBookDepth      = 5
 )
 
 func main() {
 	symbolsFlag := flag.String("symbols", defaultSymbolList, "Comma separated canonical symbols (e.g. BTC-USDT,ETH-USDT)")
 	includeBook := flag.Bool("book", false, "Subscribe to order book deltas in addition to trades and tickers")
+	bookDepth := flag.Int("book-depth", defaultBookDepth, "Maximum depth levels per side to display for order books (<=0 keeps full depth)")
+	minEmit := flag.Duration("throttle", 0, "Minimum interval between successive events per symbol/kind (e.g. 250ms)")
+	enableVWAP := flag.Bool("enable-vwap", true, "Emit rolling VWAP analytics events for trades")
 	flag.Parse()
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -44,48 +49,41 @@ func main() {
 		log.Fatalf("no symbols provided")
 	}
 
-	if err := run(ctx, exchange, symbols, *includeBook); err != nil {
+	if err := run(ctx, exchange, symbols, *includeBook, *bookDepth, *minEmit, *enableVWAP); err != nil {
 		log.Fatalf("market data error: %v", err)
 	}
 }
 
-func run(ctx context.Context, exchange core.Exchange, symbols []string, withBook bool) error {
-	wsParticipant, ok := exchange.(core.WebsocketParticipant)
-	if !ok {
-		return fmt.Errorf("exchange %s does not expose websocket access", exchange.Name())
-	}
-
+func run(ctx context.Context, exchange core.Exchange, symbols []string, withBook bool, bookDepth int, minEmit time.Duration, enableVWAP bool) error {
 	instruments := loadInstrumentCache(ctx, exchange)
 	formatter := newPrecisionFormatter(instruments)
 
-	topics := buildTopics(symbols)
-	if len(topics) == 0 {
-		return fmt.Errorf("no topics to subscribe")
-	}
-
-	sub, err := wsParticipant.WS().SubscribePublic(ctx, topics...)
+	var (
+		filterCoordinator *mdfilter.Coordinator
+		filterStream      mdfilter.FilterStream
+		err               error
+	)
+	filterCoordinator, filterStream, err = startMarketFilter(ctx, exchange, symbols, withBook, bookDepth, minEmit, enableVWAP)
 	if err != nil {
-		return fmt.Errorf("subscribe public: %w", err)
+		return fmt.Errorf("start filter: %w", err)
 	}
-	defer sub.Close()
+	defer filterStream.Close()
+	defer filterCoordinator.Close()
 
-	fmt.Printf("Subscribed to %d topics:\n", len(topics))
-	for _, topic := range topics {
-		fmt.Printf("  %s\n", topic)
-	}
-
-	var bookWG sync.WaitGroup
+	fmt.Printf("Streaming %d symbols: trades & tickers", len(symbols))
 	if withBook {
-		if obs, ok := exchange.(orderBookSubscriber); ok {
-			startOrderBookFeeds(ctx, &bookWG, obs, formatter, symbols)
-		} else {
-			log.Printf("exchange %s does not provide applied order book snapshots", exchange.Name())
-		}
+		fmt.Printf(" + books(depth=%d)", bookDepth)
 	}
-	defer bookWG.Wait()
+	if minEmit > 0 {
+		fmt.Printf(" throttle=%s", minEmit)
+	}
+	if !enableVWAP {
+		fmt.Printf(" vwap=disabled")
+	}
+	fmt.Println()
 
-	msgCh := sub.C()
-	errCh := sub.Err()
+	eventCh := filterStream.Events
+	errCh := filterStream.Errors
 
 	for {
 		select {
@@ -93,22 +91,45 @@ func run(ctx context.Context, exchange core.Exchange, symbols []string, withBook
 			return nil
 		case err, ok := <-errCh:
 			if !ok {
-				return nil
+				errCh = nil
+				if eventCh == nil {
+					return nil
+				}
+				continue
 			}
 			if err != nil {
-				return fmt.Errorf("subscription error: %w", err)
+				log.Printf("market data error: %v", err)
 			}
-		case msg, ok := <-msgCh:
+		case evt, ok := <-eventCh:
 			if !ok {
-				return nil
+				eventCh = nil
+				if errCh == nil {
+					return nil
+				}
+				continue
 			}
-			printMessage(msg, formatter)
+			switch evt.Kind {
+			case mdfilter.EventKindTrade:
+				if evt.Trade != nil {
+					printTradeEvent(*evt.Trade, formatter)
+				}
+			case mdfilter.EventKindTicker:
+				if evt.Ticker != nil {
+					printTickerEvent(*evt.Ticker, formatter)
+				}
+			case mdfilter.EventKindBook:
+				if evt.Book != nil {
+					printBookSnapshot(*evt.Book, formatter)
+				}
+			case mdfilter.EventKindVWAP:
+				if evt.Stats != nil {
+					printVWAPEvent(*evt.Stats, evt.Timestamp, formatter)
+				}
+			default:
+				// ignore unknown event kinds for now
+			}
 		}
 	}
-
-	sub.Close()
-	bookWG.Wait()
-	return nil
 }
 
 func selectSymbols(raw string) []string {
@@ -155,46 +176,35 @@ func buildTopics(symbols []string) []string {
 	return topics
 }
 
-func printMessage(msg core.Message, formatter precisionFormatter) {
-	switch evt := msg.Parsed.(type) {
-	case *corestreams.TradeEvent:
-		fmt.Printf("[%s] TRADE  %s qty=%s price=%s\n",
-			formatTime(evt.Time),
-			evt.Symbol,
-			formatter.quantity(evt.Symbol, evt.Quantity),
-			formatter.price(evt.Symbol, evt.Price),
-		)
-	case *corestreams.TickerEvent:
-		fmt.Printf("[%s] TICKER %s bid=%s ask=%s\n",
-			formatTime(evt.Time),
-			evt.Symbol,
-			formatter.price(evt.Symbol, evt.Bid),
-			formatter.price(evt.Symbol, evt.Ask),
-		)
-	case *corestreams.BookEvent:
-		fmt.Printf("[%s] BOOK   %s bids=%s asks=%s depth=%d/%d\n",
-			formatTime(evt.Time),
-			evt.Symbol,
-			describeTopLevel(formatter, evt.Symbol, evt.Bids),
-			describeTopLevel(formatter, evt.Symbol, evt.Asks),
-			len(evt.Bids),
-			len(evt.Asks),
-		)
-	default:
-		if len(msg.Raw) > 0 {
-			fmt.Printf("[%s] EVENT  topic=%s route=%s raw=%s\n",
-				formatTime(msg.At),
-				msg.Topic,
-				msg.Event,
-				string(msg.Raw),
-			)
-		} else {
-			fmt.Printf("[%s] EVENT  topic=%s\n",
-				formatTime(msg.At),
-				msg.Topic,
-			)
-		}
+func printTradeEvent(evt corestreams.TradeEvent, formatter precisionFormatter) {
+	fmt.Printf("[%s] TRADE  %s qty=%s price=%s\n",
+		formatTime(evt.Time),
+		evt.Symbol,
+		formatter.quantity(evt.Symbol, evt.Quantity),
+		formatter.price(evt.Symbol, evt.Price),
+	)
+}
+
+func printTickerEvent(evt corestreams.TickerEvent, formatter precisionFormatter) {
+	fmt.Printf("[%s] TICKER %s bid=%s ask=%s\n",
+		formatTime(evt.Time),
+		evt.Symbol,
+		formatter.price(evt.Symbol, evt.Bid),
+		formatter.price(evt.Symbol, evt.Ask),
+	)
+}
+
+func printVWAPEvent(evt mdfilter.AnalyticsEvent, ts time.Time, formatter precisionFormatter) {
+	vwap := "-"
+	if evt.VWAP != nil {
+		vwap = formatter.price(evt.Symbol, evt.VWAP)
 	}
+	fmt.Printf("[%s] VWAP   %s vwap=%s trades=%d\n",
+		formatTime(ts),
+		evt.Symbol,
+		vwap,
+		evt.TradeCount,
+	)
 }
 
 func describeTopLevel(formatter precisionFormatter, symbol string, levels []core.BookDepthLevel) string {
@@ -297,66 +307,75 @@ func loadInstrumentCache(ctx context.Context, exchange core.Exchange) map[string
 	return cache
 }
 
-type orderBookSubscriber interface {
-	OrderBookSnapshots(ctx context.Context, symbol string) (<-chan corestreams.BookEvent, <-chan error, error)
+func startMarketFilter(
+	ctx context.Context,
+	exchange core.Exchange,
+	symbols []string,
+	includeBook bool,
+	bookDepth int,
+	minEmit time.Duration,
+	enableVWAP bool,
+) (*mdfilter.Coordinator, mdfilter.FilterStream, error) {
+	adapter, err := resolveFilterAdapter(exchange)
+	if err != nil {
+		return nil, mdfilter.FilterStream{}, err
+	}
+
+	req := mdfilter.FilterRequest{
+		Symbols: symbols,
+		Feeds: mdfilter.FeedSelection{
+			Books:   includeBook,
+			Trades:  true,
+			Tickers: true,
+		},
+		BookDepth:       bookDepth,
+		EnableSnapshots: true,
+		EnableVWAP:      enableVWAP,
+		MinEmitInterval: minEmit,
+	}
+
+	coordinator := mdfilter.NewCoordinator(adapter)
+	stream, err := coordinator.Stream(ctx, req)
+	if err != nil {
+		coordinator.Close()
+		return nil, mdfilter.FilterStream{}, err
+	}
+	return coordinator, stream, nil
 }
 
-func startOrderBookFeeds(
-	ctx context.Context,
-	wg *sync.WaitGroup,
-	subscriber orderBookSubscriber,
-	formatter precisionFormatter,
-	symbols []string,
-) {
-	for _, symbol := range symbols {
-		symbol := normalizeSymbol(symbol)
-		if symbol == "" {
-			continue
-		}
-
-		wg.Add(1)
-		go func(sym string) {
-			defer wg.Done()
-
-			feedCtx, cancel := context.WithCancel(ctx)
-			defer cancel()
-
-			events, errs, err := subscriber.OrderBookSnapshots(feedCtx, sym)
-			if err != nil {
-				log.Printf("order book feed %s: %v", sym, err)
-				return
-			}
-
-			eventCh := events
-			errCh := errs
-			for {
-				select {
-				case <-feedCtx.Done():
-					return
-				case evt, ok := <-eventCh:
-					if !ok {
-						eventCh = nil
-						if errCh == nil {
-							return
-						}
-						continue
-					}
-					printBookSnapshot(evt, formatter)
-				case err, ok := <-errCh:
-					if !ok {
-						errCh = nil
-						if eventCh == nil {
-							return
-						}
-						continue
-					}
-					if err != nil {
-						log.Printf("order book feed %s error: %v", sym, err)
-					}
-				}
-			}
-		}(symbol)
+func resolveFilterAdapter(exchange core.Exchange) (mdfilter.Adapter, error) {
+	switch exchange.Name() {
+	case string(binanceplugin.Name):
+		return buildBinanceFilterAdapter(exchange)
+	default:
+		return nil, fmt.Errorf("exchange %s does not expose a filter adapter", exchange.Name())
 	}
+}
+
+func buildBinanceFilterAdapter(exchange core.Exchange) (mdfilter.Adapter, error) {
+	var orderBooks interface {
+		OrderBookSnapshots(ctx context.Context, symbol string) (<-chan corestreams.BookEvent, <-chan error, error)
+	}
+	if obs, ok := exchange.(interface {
+		OrderBookSnapshots(ctx context.Context, symbol string) (<-chan corestreams.BookEvent, <-chan error, error)
+	}); ok {
+		orderBooks = obs
+	}
+
+	var ws core.WS
+	if participant, ok := exchange.(core.WebsocketParticipant); ok {
+		ws = participant.WS()
+	}
+
+	if orderBooks == nil && ws == nil {
+		return nil, fmt.Errorf("exchange %s does not expose required feeds", exchange.Name())
+	}
+
+	adapter, err := binancel4.NewAdapter(orderBooks, ws)
+	if err != nil {
+		return nil, err
+	}
+	return adapter, nil
 }
 
 func printBookSnapshot(evt corestreams.BookEvent, formatter precisionFormatter) {
