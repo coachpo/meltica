@@ -13,8 +13,8 @@ import (
 	"github.com/coachpo/meltica/core"
 	corestreams "github.com/coachpo/meltica/core/streams"
 	binancefilter "github.com/coachpo/meltica/exchanges/binance/filter"
+	mdfilter "github.com/coachpo/meltica/filter"
 	"github.com/coachpo/meltica/internal/numeric"
-	mdfilter "github.com/coachpo/meltica/marketdata/filter"
 )
 
 type bookFixture struct {

@@ -6,7 +6,7 @@ import (
 	"time"
 
 	corestreams "github.com/coachpo/meltica/core/streams"
-	"github.com/coachpo/meltica/marketdata/filter"
+	"github.com/coachpo/meltica/filter"
 )
 
 type stubAdapter struct {

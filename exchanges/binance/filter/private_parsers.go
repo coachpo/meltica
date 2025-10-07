@@ -8,7 +8,7 @@ import (
 	"time"
 
 	corestreams "github.com/coachpo/meltica/core/streams"
-	mdfilter "github.com/coachpo/meltica/marketdata/filter"
+	mdfilter "github.com/coachpo/meltica/filter"
 )
 
 // PrivateMessageParser parses Binance private WebSocket messages
@@ -125,14 +125,14 @@ func (p *PrivateMessageParser) ParseOrderUpdate(raw []byte) (*mdfilter.OrderEven
 	status := p.normalizeOrderStatus(msg.OrderStatus)
 
 	return &mdfilter.OrderEvent{
-		Symbol:       msg.Symbol,
-		OrderID:      fmt.Sprintf("%d", msg.OrderID),
-		Side:         msg.Side,
-		Price:        price,
-		Quantity:     quantity,
-		Status:       status,
-		Type:         msg.OrderType,
-		TimeInForce:  msg.TimeInForce,
+		Symbol:      msg.Symbol,
+		OrderID:     fmt.Sprintf("%d", msg.OrderID),
+		Side:        msg.Side,
+		Price:       price,
+		Quantity:    quantity,
+		Status:      status,
+		Type:        msg.OrderType,
+		TimeInForce: msg.TimeInForce,
 	}, nil
 }
 

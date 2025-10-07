@@ -13,30 +13,30 @@ import (
 
 // MockAdapter implements the Adapter interface for testing multi-channel flows
 type MockAdapter struct {
-	capabilities   Capabilities
-	bookEvents     map[string]chan corestreams.BookEvent
-	tradeEvents    map[string]chan corestreams.TradeEvent
-	tickerEvents   map[string]chan corestreams.TickerEvent
-	privateEvents  map[EventKind]chan EventEnvelope
-	privateErrors  map[EventKind]chan error
-	restResults    map[string]EventEnvelope
+	capabilities  Capabilities
+	bookEvents    map[string]chan corestreams.BookEvent
+	tradeEvents   map[string]chan corestreams.TradeEvent
+	tickerEvents  map[string]chan corestreams.TickerEvent
+	privateEvents map[EventKind]chan EventEnvelope
+	privateErrors map[EventKind]chan error
+	restResults   map[string]EventEnvelope
 }
 
 func NewMockAdapter() *MockAdapter {
 	return &MockAdapter{
 		capabilities: Capabilities{
-			Books:         true,
-			Trades:        true,
-			Tickers:       true,
+			Books:          true,
+			Trades:         true,
+			Tickers:        true,
 			PrivateStreams: true,
 			RESTEndpoints:  true,
 		},
-		bookEvents:     make(map[string]chan corestreams.BookEvent),
-		tradeEvents:    make(map[string]chan corestreams.TradeEvent),
-		tickerEvents:   make(map[string]chan corestreams.TickerEvent),
-		privateEvents:  make(map[EventKind]chan EventEnvelope),
-		privateErrors:  make(map[EventKind]chan error),
-		restResults:    make(map[string]EventEnvelope),
+		bookEvents:    make(map[string]chan corestreams.BookEvent),
+		tradeEvents:   make(map[string]chan corestreams.TradeEvent),
+		tickerEvents:  make(map[string]chan corestreams.TickerEvent),
+		privateEvents: make(map[EventKind]chan EventEnvelope),
+		privateErrors: make(map[EventKind]chan error),
+		restResults:   make(map[string]EventEnvelope),
 	}
 }
 
@@ -276,13 +276,13 @@ func TestMultiChannelPrivateStreams(t *testing.T) {
 			Symbol:    "ETH-USDT",
 			Timestamp: time.Now(),
 			OrderEvent: &OrderEvent{
-				Symbol:     "ETH-USDT",
-				OrderID:    "12345",
-				Side:       "BUY",
-				Price:      bigRat("3000"),
-				Quantity:   bigRat("1"),
-				Status:     "FILLED",
-				Type:       "LIMIT",
+				Symbol:      "ETH-USDT",
+				OrderID:     "12345",
+				Side:        "BUY",
+				Price:       bigRat("3000"),
+				Quantity:    bigRat("1"),
+				Status:      "FILLED",
+				Type:        "LIMIT",
 				TimeInForce: "GTC",
 			},
 		}:

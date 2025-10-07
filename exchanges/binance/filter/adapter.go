@@ -9,7 +9,7 @@ import (
 	"github.com/coachpo/meltica/core"
 	corestreams "github.com/coachpo/meltica/core/streams"
 	"github.com/coachpo/meltica/exchanges/shared/routing"
-	"github.com/coachpo/meltica/marketdata/filter"
+	"github.com/coachpo/meltica/filter"
 )
 
 type orderBookSubscriber interface {
@@ -92,9 +92,9 @@ func NewAdapterWithREST(orderBooks orderBookSubscriber, ws publicSubscriber, pri
 // Capabilities declares supported feeds.
 func (a *Adapter) Capabilities() filter.Capabilities {
 	return filter.Capabilities{
-		Books:         a.orderBooks != nil,
-		Trades:        a.ws != nil,
-		Tickers:       a.ws != nil,
+		Books:          a.orderBooks != nil,
+		Trades:         a.ws != nil,
+		Tickers:        a.ws != nil,
 		PrivateStreams: a.privateWS != nil,
 		RESTEndpoints:  a.restRouter != nil,
 	}
@@ -407,19 +407,19 @@ func (a *Adapter) isRetryableError(err error, policy *filter.RetryPolicy) bool {
 	// TODO: Check status codes if we have access to HTTP response
 	// For now, we'll retry on network errors and rate limiting
 	return strings.Contains(errStr, "timeout") ||
-		   strings.Contains(errStr, "network") ||
-		   strings.Contains(errStr, "rate limit") ||
-		   strings.Contains(errStr, "429")
+		strings.Contains(errStr, "network") ||
+		strings.Contains(errStr, "rate limit") ||
+		strings.Contains(errStr, "429")
 }
 
 // createResponseEnvelope creates an event envelope from REST response
 func (a *Adapter) createResponseEnvelope(req filter.InteractionRequest, result interface{}, err error) filter.EventEnvelope {
 	envelope := filter.EventEnvelope{
-		Kind:           filter.EventKindRestResponse,
-		Channel:        filter.ChannelREST,
-		Symbol:         req.Symbol,
-		Timestamp:      time.Now(),
-		CorrelationID:  req.CorrelationID,
+		Kind:          filter.EventKindRestResponse,
+		Channel:       filter.ChannelREST,
+		Symbol:        req.Symbol,
+		Timestamp:     time.Now(),
+		CorrelationID: req.CorrelationID,
 	}
 
 	if err != nil {
@@ -486,10 +486,10 @@ func (a *Adapter) forwardPrivateEvents(ctx context.Context, streamType string, e
 
 			// Convert core.Message to streams.RoutedMessage
 			routedMsg := corestreams.RoutedMessage{
-				Topic: msg.Topic,
-				Raw:   msg.Raw,
-				At:    msg.At,
-				Route: "private", // Default route for private messages
+				Topic:  msg.Topic,
+				Raw:    msg.Raw,
+				At:     msg.At,
+				Route:  "private", // Default route for private messages
 				Parsed: msg.Parsed,
 			}
 
@@ -513,7 +513,7 @@ func (a *Adapter) forwardPrivateEvents(ctx context.Context, streamType string, e
 
 			// Filter by stream type if needed
 			if (streamType == "account" && envelope.Kind == filter.EventKindAccount) ||
-			   (streamType == "orders" && envelope.Kind == filter.EventKindOrder) {
+				(streamType == "orders" && envelope.Kind == filter.EventKindOrder) {
 				select {
 				case events <- envelope:
 				case <-ctx.Done():

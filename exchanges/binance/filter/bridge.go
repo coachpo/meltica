@@ -9,7 +9,7 @@ import (
 
 	"github.com/coachpo/meltica/exchanges/binance/infra/rest"
 	"github.com/coachpo/meltica/exchanges/shared/routing"
-	mdfilter "github.com/coachpo/meltica/marketdata/filter"
+	mdfilter "github.com/coachpo/meltica/filter"
 )
 
 // RESTBridge implements a Level-4 bridge that maps InteractionRequest to routing.RESTMessage

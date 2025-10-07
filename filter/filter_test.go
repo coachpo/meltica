@@ -9,9 +9,8 @@ import (
 
 	"github.com/coachpo/meltica/core"
 	corestreams "github.com/coachpo/meltica/core/streams"
-	"github.com/coachpo/meltica/marketdata/filter"
+	"github.com/coachpo/meltica/filter"
 )
-
 
 func TestCoordinatorBookStream(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -300,9 +299,15 @@ func TestVWAPStageEmitsAnalytics(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	tradeCh := make(chan corestreams.TradeEvent, 2)
-	tradeCh <- corestreams.TradeEvent{Symbol: "BTC-USDT", Price: big.NewRat(100, 1), Quantity: big.NewRat(2, 1), Time: time.Unix(300, 0)}
-	tradeCh <- corestreams.TradeEvent{Symbol: "BTC-USDT", Price: big.NewRat(200, 1), Quantity: big.NewRat(1, 1), Time: time.Unix(301, 0)}
+	trades := []corestreams.TradeEvent{
+		{Symbol: "BTC-USDT", Price: big.NewRat(100, 1), Quantity: big.NewRat(2, 1), Time: time.Unix(300, 0)},
+		{Symbol: "BTC-USDT", Price: big.NewRat(200, 1), Quantity: big.NewRat(1, 1), Time: time.Unix(301, 0)},
+	}
+
+	tradeCh := make(chan corestreams.TradeEvent, len(trades))
+	for _, trade := range trades {
+		tradeCh <- trade
+	}
 	close(tradeCh)
 	errCh := make(chan error)
 	close(errCh)
@@ -327,32 +332,52 @@ func TestVWAPStageEmitsAnalytics(t *testing.T) {
 	}
 	defer stream.Close()
 
-	var lastStats *filter.AnalyticsEvent
+	events := stream.Events
+	errors := stream.Errors
+	targetTrades := int64(len(trades))
+	timeout := time.NewTimer(time.Second)
+	defer timeout.Stop()
 
-	for evt := range stream.Events {
-		if evt.Kind == filter.EventKindVWAP {
-			if evt.Stats == nil {
-				t.Fatalf("missing analytics payload")
+outer:
+	for {
+		select {
+		case evt, ok := <-events:
+			if !ok {
+				events = nil
+				continue
 			}
-			lastStats = evt.Stats
-		}
-	}
-	for err := range stream.Errors {
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-	}
+			if evt.Kind == filter.EventKindVWAP {
+				stats := evt.Stats
+				if stats == nil {
+					t.Fatalf("missing analytics payload")
+				}
+				if stats.TradeCount < targetTrades {
+					continue
+				}
+				if stats.TradeCount > targetTrades {
+					t.Fatalf("unexpected trade count: %d", stats.TradeCount)
+				}
 
-	if lastStats == nil {
-		t.Fatalf("expected VWAP analytics event")
-	}
-
-	expected := big.NewRat(400, 3)
-	if lastStats.VWAP == nil || lastStats.VWAP.Cmp(expected) != 0 {
-		t.Fatalf("unexpected vwap: got %v want %v", lastStats.VWAP, expected)
-	}
-	if lastStats.TradeCount != 2 {
-		t.Fatalf("unexpected trade count: %d", lastStats.TradeCount)
+				expected := big.NewRat(400, 3)
+				if stats.VWAP == nil || stats.VWAP.Cmp(expected) != 0 {
+					t.Fatalf("unexpected vwap: got %v want %v", stats.VWAP, expected)
+				}
+				break outer
+			}
+		case err, ok := <-errors:
+			if !ok {
+				errors = nil
+				continue
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		case <-timeout.C:
+			t.Fatal("timed out waiting for VWAP analytics")
+		}
+		if events == nil && errors == nil {
+			t.Fatalf("stream closed before analytics event was received")
+		}
 	}
 }
 

@@ -86,7 +86,7 @@ Creates exchange-agnostic market-data pipelines that orchestrate Level 3 service
 
 ### Registering Filter Adapters & Stages
 
-1. Implement the `marketdata/filter.Adapter` interface inside the exchange plugin. Declare supported capabilities via `Capabilities()` including public feeds (`Books`, `Trades`, `Tickers`), private streams (`PrivateStreams`), and REST endpoints (`RESTEndpoints`).
+1. Implement the `filter.Adapter` interface inside the exchange plugin. Declare supported capabilities via `Capabilities()` including public feeds (`Books`, `Trades`, `Tickers`), private streams (`PrivateStreams`), and REST endpoints (`RESTEndpoints`).
 2. Surface channel-based sources for each feed type (`BookSources`, `TradeSources`, `TickerSources`, `PrivateSources`) and implement REST execution (`ExecuteREST`). The adapter should translate Level 3 services into canonical channels of `corestreams` events and `EventEnvelope` streams.
 3. Wire the adapter into consumers (such as `cmd/market_data`) by instantiating `filter.NewInteractionFacade(adapter, auth)` and using high-level methods (`SubscribePublic`, `SubscribePrivate`, `FetchREST`). For advanced use cases, use `filter.NewCoordinator(adapter, auth)` directly.
 4. To extend filtering behaviour, create a new `filter.Stage` (via `filter.NewStageFunc`) that transforms, enriches, or routes `EventEnvelope` streams. Update the coordinator's stage builder to insert the new stage where appropriate or conditionally add it based on `FilterRequest` flags.

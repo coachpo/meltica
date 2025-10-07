@@ -8,8 +8,8 @@ import (
 	"github.com/coachpo/meltica/core"
 	corestreams "github.com/coachpo/meltica/core/streams"
 	binanceplugin "github.com/coachpo/meltica/exchanges/binance/plugin"
+	mdfilter "github.com/coachpo/meltica/filter"
 	"github.com/coachpo/meltica/internal/numeric"
-	mdfilter "github.com/coachpo/meltica/marketdata/filter"
 )
 
 type fakeExchange struct {
@@ -174,7 +174,7 @@ func TestStartMarketFilter(t *testing.T) {
 
 		// Break if we've received all expected events or streams are closed
 		if (receivedTrades >= 1 && receivedTickers >= 1 && receivedBooks >= 1) ||
-		   (stream.Events == nil && stream.Errors == nil) {
+			(stream.Events == nil && stream.Errors == nil) {
 			break
 		}
 	}

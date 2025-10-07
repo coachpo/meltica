@@ -10,7 +10,6 @@ import (
 	corestreams "github.com/coachpo/meltica/core/streams"
 )
 
-
 func newSamplingStage(interval time.Duration) Stage {
 	return NewStageFunc("sampling", func(ctx context.Context, input StageResult) StageResult {
 		if interval <= 0 || input.Events == nil {

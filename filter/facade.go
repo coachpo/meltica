@@ -60,7 +60,7 @@ func (f *InteractionFacade) SubscribePrivate(
 	}
 
 	req := FilterRequest{
-		EnablePrivate: true,
+		EnablePrivate:   true,
 		MinEmitInterval: config.MinEmitInterval,
 		EnableSnapshots: config.EnableSnapshots,
 		Observer:        config.Observer,
@@ -81,7 +81,7 @@ func (f *InteractionFacade) FetchREST(
 	}
 
 	req := FilterRequest{
-		RESTRequests:   requests,
+		RESTRequests:    requests,
 		MinEmitInterval: config.MinEmitInterval,
 		Observer:        config.Observer,
 	}
@@ -208,10 +208,10 @@ type RESTOption func(*RESTConfig)
 // DefaultRetryPolicy returns a sensible default retry policy
 func DefaultRetryPolicy() *RetryPolicy {
 	return &RetryPolicy{
-		MaxAttempts: 3,
-		BaseDelay:   Duration(100 * time.Millisecond),
-		MaxDelay:    Duration(5 * time.Second),
-		BackoffMultiplier: 2.0,
+		MaxAttempts:          3,
+		BaseDelay:            Duration(100 * time.Millisecond),
+		MaxDelay:             Duration(5 * time.Second),
+		BackoffMultiplier:    2.0,
 		RetryableStatusCodes: []int{429, 500, 502, 503, 504},
 		RetryableErrors: []string{
 			"timeout",
@@ -226,10 +226,10 @@ func DefaultRetryPolicy() *RetryPolicy {
 // AggressiveRetryPolicy returns a more aggressive retry policy for critical operations
 func AggressiveRetryPolicy() *RetryPolicy {
 	return &RetryPolicy{
-		MaxAttempts: 5,
-		BaseDelay:   Duration(50 * time.Millisecond),
-		MaxDelay:    Duration(10 * time.Second),
-		BackoffMultiplier: 1.5,
+		MaxAttempts:          5,
+		BaseDelay:            Duration(50 * time.Millisecond),
+		MaxDelay:             Duration(10 * time.Second),
+		BackoffMultiplier:    1.5,
 		RetryableStatusCodes: []int{429, 500, 502, 503, 504},
 		RetryableErrors: []string{
 			"timeout",
@@ -245,10 +245,10 @@ func AggressiveRetryPolicy() *RetryPolicy {
 // ConservativeRetryPolicy returns a conservative retry policy for non-critical operations
 func ConservativeRetryPolicy() *RetryPolicy {
 	return &RetryPolicy{
-		MaxAttempts: 2,
-		BaseDelay:   Duration(500 * time.Millisecond),
-		MaxDelay:    Duration(2 * time.Second),
-		BackoffMultiplier: 1.2,
+		MaxAttempts:          2,
+		BaseDelay:            Duration(500 * time.Millisecond),
+		MaxDelay:             Duration(2 * time.Second),
+		BackoffMultiplier:    1.2,
 		RetryableStatusCodes: []int{429, 503},
 		RetryableErrors: []string{
 			"rate limit",

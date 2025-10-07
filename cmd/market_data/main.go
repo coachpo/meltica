@@ -17,8 +17,8 @@ import (
 	binancel4 "github.com/coachpo/meltica/exchanges/binance/filter"
 	binanceplugin "github.com/coachpo/meltica/exchanges/binance/plugin"
 	"github.com/coachpo/meltica/exchanges/shared/routing"
+	mdfilter "github.com/coachpo/meltica/filter"
 	"github.com/coachpo/meltica/internal/numeric"
-	mdfilter "github.com/coachpo/meltica/marketdata/filter"
 )
 
 const (
@@ -513,9 +513,9 @@ func executeRESTCall(ctx context.Context, exchange core.Exchange, endpoint strin
 
 	// Create REST request
 	request := mdfilter.InteractionRequest{
-		Channel: mdfilter.ChannelREST,
-		Method:  method,
-		Path:    path,
+		Channel:     mdfilter.ChannelREST,
+		Method:      method,
+		Path:        path,
 		AuthContext: auth,
 	}
 

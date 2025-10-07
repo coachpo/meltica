@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/coachpo/meltica/exchanges/shared/routing"
-	mdfilter "github.com/coachpo/meltica/marketdata/filter"
+	mdfilter "github.com/coachpo/meltica/filter"
 )
 
 // SessionManager handles Binance private session lifecycle including listen-key management
@@ -231,15 +231,15 @@ func (sm *SessionManager) GetSessionStatus() *SessionStatus {
 	}
 
 	return &SessionStatus{
-			State:           sm.authContext.SessionState,
-			ListenKey:       sm.authContext.ListenKey,
-			CreatedAt:       sm.authContext.ListenKeyMetadata.CreatedAt,
-			LastKeepAlive:   sm.authContext.ListenKeyMetadata.LastKeepAlive,
-			ExpiresAt:       sm.authContext.ListenKeyMetadata.ExpiresAt,
-			RenewalCount:    sm.authContext.ListenKeyMetadata.RenewalCount,
-			FailureCount:    sm.authContext.ListenKeyMetadata.FailureCount,
-			IsActive:        sm.authContext.ListenKeyMetadata.IsActive,
-		}
+		State:         sm.authContext.SessionState,
+		ListenKey:     sm.authContext.ListenKey,
+		CreatedAt:     sm.authContext.ListenKeyMetadata.CreatedAt,
+		LastKeepAlive: sm.authContext.ListenKeyMetadata.LastKeepAlive,
+		ExpiresAt:     sm.authContext.ListenKeyMetadata.ExpiresAt,
+		RenewalCount:  sm.authContext.ListenKeyMetadata.RenewalCount,
+		FailureCount:  sm.authContext.ListenKeyMetadata.FailureCount,
+		IsActive:      sm.authContext.ListenKeyMetadata.IsActive,
+	}
 }
 
 // SessionStatus represents the current status of a private session
@@ -257,9 +257,9 @@ type SessionStatus struct {
 // DefaultSessionConfig returns a sensible default configuration for Binance sessions
 func DefaultSessionConfig() mdfilter.SessionConfig {
 	return mdfilter.SessionConfig{
-		KeepAliveInterval: mdfilter.Duration(30 * time.Minute),
-		RenewalThreshold:  mdfilter.Duration(10 * time.Minute),
+		KeepAliveInterval:  mdfilter.Duration(30 * time.Minute),
+		RenewalThreshold:   mdfilter.Duration(10 * time.Minute),
 		MaxRenewalFailures: 3,
-		AutoRenew:         true,
+		AutoRenew:          true,
 	}
 }

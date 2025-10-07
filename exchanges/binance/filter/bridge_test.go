@@ -6,7 +6,7 @@ import (
 
 	"github.com/coachpo/meltica/exchanges/binance/infra/rest"
 	"github.com/coachpo/meltica/exchanges/shared/routing"
-	mdfilter "github.com/coachpo/meltica/marketdata/filter"
+	mdfilter "github.com/coachpo/meltica/filter"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

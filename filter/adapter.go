@@ -8,9 +8,9 @@ import (
 
 // Capabilities describes which feeds and channels an adapter can provide.
 type Capabilities struct {
-	Books         bool
-	Trades        bool
-	Tickers       bool
+	Books          bool
+	Trades         bool
+	Tickers        bool
 	PrivateStreams bool
 	RESTEndpoints  bool
 }

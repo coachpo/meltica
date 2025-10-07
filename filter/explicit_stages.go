@@ -21,11 +21,11 @@ const (
 
 // StageConfig contains configuration for pipeline stages
 type StageConfig struct {
-	Type              StageType
-	Channel           ChannelType
-	Config            interface{}
-	Enabled           bool
-	ConcurrencyLimit  int
+	Type               StageType
+	Channel            ChannelType
+	Config             interface{}
+	Enabled            bool
+	ConcurrencyLimit   int
 	RateLimitPerSecond float64
 }
 
@@ -287,18 +287,18 @@ func (c *StageCoordinator) Execute(ctx context.Context, initial StageResult) Sta
 
 // StageMetrics contains metrics for pipeline stages
 type StageMetrics struct {
-	StageName     string
-	StageType     StageType
+	StageName      string
+	StageType      StageType
 	ProcessedCount int64
-	ErrorCount    int64
-	Latency       time.Duration
+	ErrorCount     int64
+	Latency        time.Duration
 }
 
 // StageRegistry manages stage instances and their configurations
 type StageRegistry struct {
-	stages   map[string]Stage
-	configs  map[string]*StageConfig
-	metrics  map[string]*StageMetrics
+	stages  map[string]Stage
+	configs map[string]*StageConfig
+	metrics map[string]*StageMetrics
 }
 
 // NewStageRegistry creates a new stage registry
@@ -356,10 +356,10 @@ func DefaultStageConfigs() map[StageType]*StageConfig {
 			Enabled: true,
 		},
 		StageTypeRequest: {
-			Type:    StageTypeRequest,
-			Channel: ChannelREST,
-			Enabled: true,
-			ConcurrencyLimit: 10,
+			Type:               StageTypeRequest,
+			Channel:            ChannelREST,
+			Enabled:            true,
+			ConcurrencyLimit:   10,
 			RateLimitPerSecond: 10.0,
 		},
 		StageTypeResponse: {

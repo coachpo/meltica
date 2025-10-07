@@ -7,13 +7,13 @@ import (
 
 	"github.com/coachpo/meltica/exchanges/shared/infra/transport"
 	"github.com/coachpo/meltica/exchanges/shared/routing"
-	mdfilter "github.com/coachpo/meltica/marketdata/filter"
+	mdfilter "github.com/coachpo/meltica/filter"
 )
 
 // RESTWrapper provides retry and rate limiting capabilities for REST requests
 type RESTWrapper struct {
-	router      routing.RESTDispatcher
-	limiter     *transport.TokenBucketLimiter
+	router       routing.RESTDispatcher
+	limiter      *transport.TokenBucketLimiter
 	defaultRetry *mdfilter.RetryPolicy
 }
 
@@ -30,8 +30,8 @@ func NewRESTWrapper(router routing.RESTDispatcher, requestsPerSecond float64, de
 	}
 
 	return &RESTWrapper{
-		router:      router,
-		limiter:     limiter,
+		router:       router,
+		limiter:      limiter,
 		defaultRetry: defaultRetry,
 	}
 }
@@ -52,10 +52,10 @@ func (w *RESTWrapper) Dispatch(ctx context.Context, msg routing.RESTMessage, out
 // DefaultRetryPolicy returns a sensible default retry policy for Binance
 func DefaultRetryPolicy() *mdfilter.RetryPolicy {
 	return &mdfilter.RetryPolicy{
-		MaxAttempts: 3,
-		BaseDelay:   mdfilter.Duration(100 * time.Millisecond),
-		MaxDelay:    mdfilter.Duration(5 * time.Second),
-		BackoffMultiplier: 2.0,
+		MaxAttempts:          3,
+		BaseDelay:            mdfilter.Duration(100 * time.Millisecond),
+		MaxDelay:             mdfilter.Duration(5 * time.Second),
+		BackoffMultiplier:    2.0,
 		RetryableStatusCodes: []int{429, 500, 502, 503, 504},
 		RetryableErrors: []string{
 			"timeout",
@@ -70,10 +70,10 @@ func DefaultRetryPolicy() *mdfilter.RetryPolicy {
 // AggressiveRetryPolicy returns a more aggressive retry policy for critical operations
 func AggressiveRetryPolicy() *mdfilter.RetryPolicy {
 	return &mdfilter.RetryPolicy{
-		MaxAttempts: 5,
-		BaseDelay:   mdfilter.Duration(50 * time.Millisecond),
-		MaxDelay:    mdfilter.Duration(10 * time.Second),
-		BackoffMultiplier: 1.5,
+		MaxAttempts:          5,
+		BaseDelay:            mdfilter.Duration(50 * time.Millisecond),
+		MaxDelay:             mdfilter.Duration(10 * time.Second),
+		BackoffMultiplier:    1.5,
 		RetryableStatusCodes: []int{429, 500, 502, 503, 504},
 		RetryableErrors: []string{
 			"timeout",
@@ -89,10 +89,10 @@ func AggressiveRetryPolicy() *mdfilter.RetryPolicy {
 // ConservativeRetryPolicy returns a conservative retry policy for non-critical operations
 func ConservativeRetryPolicy() *mdfilter.RetryPolicy {
 	return &mdfilter.RetryPolicy{
-		MaxAttempts: 2,
-		BaseDelay:   mdfilter.Duration(500 * time.Millisecond),
-		MaxDelay:    mdfilter.Duration(2 * time.Second),
-		BackoffMultiplier: 1.2,
+		MaxAttempts:          2,
+		BaseDelay:            mdfilter.Duration(500 * time.Millisecond),
+		MaxDelay:             mdfilter.Duration(2 * time.Second),
+		BackoffMultiplier:    1.2,
 		RetryableStatusCodes: []int{429, 503},
 		RetryableErrors: []string{
 			"rate limit",
