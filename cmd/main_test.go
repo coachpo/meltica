@@ -57,31 +57,28 @@ func TestBuildDefaultSubscriptionsIncludesAvailableSymbols(t *testing.T) {
 		"BTC-USDT": {},
 		"ETH-USDT": {},
 	}
-	reqs := buildDefaultSubscriptions("BTC-USDT", nil, instruments)
-	if len(reqs) == 0 {
-		t.Fatalf("expected at least one subscription request")
+	reqs := buildDefaultSubscriptions([]string{"BTC-USDT", "ETH-USDT"}, instruments)
+	if len(reqs) != 2 {
+		t.Fatalf("expected 2 subscription requests, got %d", len(reqs))
 	}
-	foundPrimary := false
+	seen := make(map[string]struct{}, len(reqs))
 	for _, req := range reqs {
-		if req.Symbol == "BTC-USDT" {
-			foundPrimary = true
-			if !req.Book {
-				t.Fatalf("expected BTC-USDT to include order book subscription")
-			}
-			if req.Config.BookDepthLevels <= 0 {
-				t.Fatalf("expected depth levels to be configured")
-			}
-			if req.Config.UpdateInterval != defaultBookLogInterval {
-				t.Fatalf("expected default book interval, got %s", req.Config.UpdateInterval)
-			}
-		} else if req.Symbol == "ETH-USDT" {
-			if req.Config.UpdateInterval != defaultTickerInterval {
-				t.Fatalf("expected throttled interval, got %s", req.Config.UpdateInterval)
-			}
+		seen[req.Symbol] = struct{}{}
+		if !req.Book {
+			t.Fatalf("expected %s to include order book subscription", req.Symbol)
+		}
+		if req.Config.BookDepthLevels != 2 {
+			t.Fatalf("expected %s depth levels to be 2, got %d", req.Symbol, req.Config.BookDepthLevels)
+		}
+		if req.Config.UpdateInterval != defaultBookLogInterval {
+			t.Fatalf("expected %s to use default book interval, got %s", req.Symbol, req.Config.UpdateInterval)
 		}
 	}
-	if !foundPrimary {
-		t.Fatalf("expected primary symbol in subscriptions")
+	if _, ok := seen["BTC-USDT"]; !ok {
+		t.Fatalf("expected BTC-USDT in subscriptions")
+	}
+	if _, ok := seen["ETH-USDT"]; !ok {
+		t.Fatalf("expected ETH-USDT in subscriptions")
 	}
 }
 

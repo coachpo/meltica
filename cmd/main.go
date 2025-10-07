@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"log"
@@ -23,13 +22,10 @@ import (
 )
 
 const (
-	defaultBase              = "BTC"
-	defaultQuote             = "USDT"
 	fallbackPriceScale       = 2
 	fallbackQuantityScale    = 6
 	defaultBookLogInterval   = 200 * time.Millisecond
 	maxTopicsPerSubscription = 200
-	defaultTickerInterval    = 500 * time.Millisecond
 )
 
 // SubscriptionConfig defines symbol-level tuning for market data streams.
@@ -70,11 +66,6 @@ func (s *controlState) setMenu(kind userCommandKind, options []string) {
 	copySlice := append([]string(nil), options...)
 	s.lastMenu = copySlice
 	s.lastKind = kind
-}
-
-func (s *controlState) clear() {
-	s.lastMenu = nil
-	s.lastKind = commandUnknown
 }
 
 type userCommandKind int
@@ -152,7 +143,7 @@ func NewMarketManager(exchange core.Exchange) (*MarketManager, error) {
 		exchange:   exchange,
 		ws:         wsParticipant,
 		orderBooks: orderBook,
-		events:     make(chan marketEvent, 256),
+		events:     make(chan marketEvent, 512),
 		bookFeeds:  make(map[string]*bookFeed),
 		symbols:    make(map[string]*symbolSubscription),
 	}, nil
@@ -694,7 +685,7 @@ func (m *MarketManager) handleWSMessage(msg core.Message) {
 		m.emit(marketEvent{
 			Kind:    marketEventSystem,
 			Topic:   msg.Topic,
-			Message: fmt.Sprintf("unhandled message route=%s", msg.Event),
+			Message: fmt.Sprintf("unhandled message route=%s content=%s", msg.Event, msg.Raw),
 			Time:    msg.At,
 		})
 	}
@@ -743,15 +734,6 @@ func main() {
 	}
 	defer exchange.Close()
 
-	canonicalSymbol := core.CanonicalSymbol(defaultBase, defaultQuote)
-	nativeSymbol, err := core.NativeSymbol(binanceplugin.Name, canonicalSymbol)
-	if err != nil {
-		log.Printf("failed to resolve native symbol for %s: %v", canonicalSymbol, err)
-		nativeSymbol = canonicalSymbol
-	}
-
-	fmt.Printf("Monitoring %s depth via exchange pipelines...\n", nativeSymbol)
-
 	manager, err := NewMarketManager(exchange)
 	if err != nil {
 		log.Fatalf("exchange does not satisfy runtime requirements: %v", err)
@@ -766,7 +748,29 @@ func main() {
 
 	instruments := loadInstrumentCache(ctx, exchange)
 	formatter := newPrecisionFormatter(instruments)
-	processor := newEventProcessor(manager, formatter)
+	defaultSymbols := []string{"BTC-USDT", "ETH-USDT", "BNB-USDT", "XRP-USDT", "SOL-USDT", "DOGE-USDT"}
+	nativeSymbols := make(map[string]string, len(defaultSymbols))
+	fmt.Println("Subscribing to markets (canonical -> native):")
+	seenSymbols := make(map[string]struct{}, len(defaultSymbols))
+	for _, canonical := range defaultSymbols {
+		symbol := normalizeSymbol(canonical)
+		if symbol == "" {
+			continue
+		}
+		if _, ok := seenSymbols[symbol]; ok {
+			continue
+		}
+		seenSymbols[symbol] = struct{}{}
+		resolved, err := core.NativeSymbol(binanceplugin.Name, symbol)
+		if err != nil {
+			log.Printf("failed to resolve native symbol for %s: %v", symbol, err)
+			resolved = symbol
+		}
+		nativeSymbols[symbol] = resolved
+		fmt.Printf("  %s -> %s\n", symbol, resolved)
+	}
+
+	processor := newEventProcessor(manager, formatter, nativeSymbols)
 
 	events := manager.Events()
 	var wg sync.WaitGroup
@@ -780,8 +784,7 @@ func main() {
 	}()
 
 	// Determine subscription set for the default USDT markets
-	defaultSymbols := []string{"BTC-USDT", "ETH-USDT", "BNB-USDT", "XRP-USDT", "SOL-USDT", "DOGE-USDT"}
-	requests := buildDefaultSubscriptions(canonicalSymbol, defaultSymbols, instruments)
+	requests := buildDefaultSubscriptions(defaultSymbols, instruments)
 	manager.SubscribeSymbols(requests...)
 
 	<-ctx.Done()
@@ -866,10 +869,9 @@ func loadInstrumentCache(ctx context.Context, exchange core.Exchange) map[string
 	return cache
 }
 
-func buildDefaultSubscriptions(primary string, symbols []string, instruments map[string]core.Instrument) []SymbolSubscriptionRequest {
-	primary = normalizeSymbol(primary)
+func buildDefaultSubscriptions(symbols []string, instruments map[string]core.Instrument) []SymbolSubscriptionRequest {
 	defaultCandidates := []string{
-		primary,
+		"BTC-USDT",
 		"ETH-USDT",
 		"BNB-USDT",
 		"XRP-USDT",
@@ -880,12 +882,9 @@ func buildDefaultSubscriptions(primary string, symbols []string, instruments map
 	if len(symbols) > 0 {
 		candidates = symbols
 	}
-	if primary != "" && !containsSymbol(candidates, primary) {
-		candidates = append([]string{primary}, candidates...)
-	}
 	seen := make(map[string]struct{})
 	requests := make([]SymbolSubscriptionRequest, 0, len(candidates))
-	for idx, candidate := range candidates {
+	for _, candidate := range candidates {
 		symbol := normalizeSymbol(candidate)
 		if symbol == "" {
 			continue
@@ -903,22 +902,13 @@ func buildDefaultSubscriptions(primary string, symbols []string, instruments map
 			Symbol: symbol,
 			Trades: true,
 			Ticker: true,
-			Config: SubscriptionConfig{UpdateInterval: defaultTickerInterval},
-		}
-		if symbol == primary || (primary == "" && idx == 0) {
-			req.Book = true
-			req.Config.BookDepthLevels = 2
-			req.Config.UpdateInterval = defaultBookLogInterval
+			Book:   true,
+			Config: SubscriptionConfig{
+				BookDepthLevels: 2,
+				UpdateInterval:  defaultBookLogInterval,
+			},
 		}
 		requests = append(requests, req)
-	}
-	if len(requests) == 0 && primary != "" {
-		req := SymbolSubscriptionRequest{Symbol: primary, Trades: true, Ticker: true, Book: true, Config: SubscriptionConfig{BookDepthLevels: 1, UpdateInterval: defaultBookLogInterval}}
-		if len(instruments) == 0 {
-			requests = append(requests, req)
-		} else if _, ok := instruments[primary]; ok {
-			requests = append(requests, req)
-		}
 	}
 	return requests
 }
@@ -968,13 +958,36 @@ func formatDecimal(r *big.Rat, scale int) string {
 }
 
 type eventProcessor struct {
-	manager      *MarketManager
-	formatter    precisionFormatter
-	lastBookLogs map[string]time.Time
+	manager       *MarketManager
+	formatter     precisionFormatter
+	lastBookLogs  map[string]time.Time
+	nativeSymbols map[string]string
 }
 
-func newEventProcessor(manager *MarketManager, formatter precisionFormatter) *eventProcessor {
-	return &eventProcessor{manager: manager, formatter: formatter, lastBookLogs: make(map[string]time.Time)}
+func newEventProcessor(manager *MarketManager, formatter precisionFormatter, nativeSymbols map[string]string) *eventProcessor {
+	copySymbols := make(map[string]string, len(nativeSymbols))
+	for canonical, native := range nativeSymbols {
+		copySymbols[canonical] = native
+	}
+	return &eventProcessor{
+		manager:       manager,
+		formatter:     formatter,
+		lastBookLogs:  make(map[string]time.Time),
+		nativeSymbols: copySymbols,
+	}
+}
+
+func (p *eventProcessor) nativeSymbol(symbol string) string {
+	canonical := normalizeSymbol(symbol)
+	if canonical == "" {
+		return ""
+	}
+	if p.nativeSymbols != nil {
+		if native, ok := p.nativeSymbols[canonical]; ok && native != "" {
+			return native
+		}
+	}
+	return canonical
 }
 
 func (p *eventProcessor) handle(evt marketEvent) {
@@ -985,26 +998,32 @@ func (p *eventProcessor) handle(evt marketEvent) {
 			log.Printf("trade event payload mismatch: %#v", evt.Payload)
 			return
 		}
-		// symbol := resolveEventSymbol(trade.Symbol, evt.Topic)
-		// log.Printf("[WS] trade topic=%s price=%s qty=%s at=%s",
-		// 	evt.Topic,
-		// 	p.formatter.price(symbol, trade.Price),
-		// 	p.formatter.quantity(symbol, trade.Quantity),
-		// 	trade.Time.Format(time.RFC3339Nano),
-		// )
+		canonical := resolveEventSymbol(trade.Symbol, evt.Topic)
+		native := p.nativeSymbol(canonical)
+		log.Printf("[WS] trade topic=%s canonical=%s native=%s price=%s qty=%s at=%s",
+			evt.Topic,
+			canonical,
+			native,
+			p.formatter.price(canonical, trade.Price),
+			p.formatter.quantity(canonical, trade.Quantity),
+			trade.Time.Format(time.RFC3339Nano),
+		)
 	case marketEventTicker:
 		ticker, ok := evt.Payload.(*corestreams.TickerEvent)
 		if !ok || ticker == nil {
 			log.Printf("ticker event payload mismatch: %#v", evt.Payload)
 			return
 		}
-		// symbol := resolveEventSymbol(ticker.Symbol, evt.Topic)
-		// log.Printf("[WS] ticker topic=%s bid=%s ask=%s at=%s",
-		// 	evt.Topic,
-		// 	p.formatter.price(symbol, ticker.Bid),
-		// 	p.formatter.price(symbol, ticker.Ask),
-		// 	ticker.Time.Format(time.RFC3339Nano),
-		// )
+		canonical := resolveEventSymbol(ticker.Symbol, evt.Topic)
+		native := p.nativeSymbol(canonical)
+		log.Printf("[WS] ticker topic=%s canonical=%s native=%s bid=%s ask=%s at=%s",
+			evt.Topic,
+			canonical,
+			native,
+			p.formatter.price(canonical, ticker.Bid),
+			p.formatter.price(canonical, ticker.Ask),
+			ticker.Time.Format(time.RFC3339Nano),
+		)
 	case marketEventBook:
 		book, ok := evt.Payload.(*corestreams.BookEvent)
 		if !ok || book == nil {
@@ -1029,8 +1048,11 @@ func (p *eventProcessor) handle(evt marketEvent) {
 		p.lastBookLogs[symbol] = time.Now()
 		bids := topLevels(book.Bids, depth, true)
 		asks := topLevels(book.Asks, depth, false)
-		log.Printf("[WS] book topic=%s depth=%d bids=%d asks=%d bidLevels=%s askLevels=%s at=%s",
+		native := p.nativeSymbol(symbol)
+		log.Printf("[WS] book topic=%s canonical=%s native=%s depth=%d bids=%d asks=%d bidLevels=%s askLevels=%s at=%s",
 			evt.Topic,
+			symbol,
+			native,
 			depth,
 			len(book.Bids),
 			len(book.Asks),
@@ -1062,183 +1084,6 @@ func formatBookLevels(symbol string, levels []bookLevel, formatter precisionForm
 		parts[i] = fmt.Sprintf("%s@%s", formatter.quantity(symbol, level.qty), formatter.price(symbol, level.price))
 	}
 	return strings.Join(parts, " | ")
-}
-
-func shouldStartControlPrompt(disable bool) bool {
-	if disable {
-		return false
-	}
-	info, err := os.Stdin.Stat()
-	if err != nil {
-		return false
-	}
-	return info.Mode()&os.ModeCharDevice != 0
-}
-
-func startControlPrompt(ctx context.Context, cancel context.CancelFunc, manager *MarketManager, catalog []string) {
-	if cancel == nil {
-		cancel = func() {}
-	}
-	lines := make(chan string)
-	errs := make(chan error, 1)
-	go func() {
-		scanner := bufio.NewScanner(os.Stdin)
-		for scanner.Scan() {
-			text := scanner.Text()
-			select {
-			case lines <- text:
-			case <-ctx.Done():
-				return
-			}
-		}
-		if err := scanner.Err(); err != nil {
-			errs <- err
-		}
-		close(lines)
-	}()
-
-	fmt.Println("Control prompt ready. Commands: help, list, pause, resume, subscribe, unsubscribe, quit.")
-	fmt.Print("> ")
-	state := &controlState{}
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case err := <-errs:
-			if err != nil {
-				log.Printf("control prompt error: %v", err)
-			}
-			return
-		case line, ok := <-lines:
-			if !ok {
-				return
-			}
-			cmd := parseControlCommand(line)
-			executeUserCommand(cmd, manager, cancel, state, catalog)
-			fmt.Print("> ")
-		}
-	}
-}
-
-func executeUserCommand(cmd userCommand, manager *MarketManager, cancel context.CancelFunc, state *controlState, catalog []string) {
-	switch cmd.kind {
-	case commandHelp:
-		printControlHelp()
-	case commandList:
-		subs := manager.ActiveSubscriptions()
-		if len(subs) == 0 {
-			fmt.Println("No active subscriptions.")
-			return
-		}
-		fmt.Println("Active subscriptions:")
-		for idx, sub := range subs {
-			status := "active"
-			if sub.Paused {
-				status = "paused"
-			}
-			fmt.Printf("  %d) %s trades=%t ticker=%t book=%t depth=%d interval=%s [%s]\n",
-				idx+1,
-				sub.Symbol,
-				sub.Trades,
-				sub.Ticker,
-				sub.Book,
-				sub.Config.BookDepthLevels,
-				sub.Config.UpdateInterval,
-				status,
-			)
-		}
-	case commandPause:
-		subs := manager.ActiveSubscriptions()
-		allowed := makeSymbolSetFromSubs(subs)
-		if len(cmd.symbols) == 0 {
-			showMenu(state, commandPause, "Active symbols:", extractSymbols(subs))
-			return
-		}
-		symbols := resolveCommandSymbols(cmd.symbols, commandPause, state, allowed)
-		if len(symbols) == 0 {
-			fmt.Println("pause requires at least one valid symbol")
-			return
-		}
-		manager.PauseSymbols(symbols...)
-		state.clear()
-		fmt.Printf("Paused: %s\n", strings.Join(symbols, ", "))
-	case commandResume:
-		subs := manager.ActiveSubscriptions()
-		allowed := makeSymbolSetFromSubs(subs)
-		if len(cmd.symbols) == 0 {
-			showMenu(state, commandResume, "Active symbols:", extractSymbols(subs))
-			return
-		}
-		symbols := resolveCommandSymbols(cmd.symbols, commandResume, state, allowed)
-		if len(symbols) == 0 {
-			fmt.Println("resume requires at least one valid symbol")
-			return
-		}
-		manager.ResumeSymbols(symbols...)
-		state.clear()
-		fmt.Printf("Resumed: %s\n", strings.Join(symbols, ", "))
-	case commandUnsubscribe:
-		subs := manager.ActiveSubscriptions()
-		allowed := makeSymbolSetFromSubs(subs)
-		if len(cmd.symbols) == 0 {
-			showMenu(state, commandUnsubscribe, "Active symbols:", extractSymbols(subs))
-			return
-		}
-		symbols := resolveCommandSymbols(cmd.symbols, commandUnsubscribe, state, allowed)
-		if len(symbols) == 0 {
-			fmt.Println("unsubscribe requires at least one valid symbol")
-			return
-		}
-		manager.UnsubscribeSymbols(symbols...)
-		state.clear()
-		fmt.Printf("Unsubscribed: %s\n", strings.Join(symbols, ", "))
-	case commandSubscribe:
-		active := manager.ActiveSubscriptions()
-		available := filterAvailableSymbols(catalog, active)
-		allowed := makeSymbolSet(available)
-		if len(cmd.symbols) == 0 {
-			showMenu(state, commandSubscribe, "Available symbols:", available)
-			return
-		}
-		symbols := resolveCommandSymbols(cmd.symbols, commandSubscribe, state, allowed)
-		if len(symbols) == 0 {
-			fmt.Println("subscribe requires at least one valid symbol")
-			return
-		}
-		reqs := make([]SymbolSubscriptionRequest, 0, len(symbols))
-		for i, sym := range symbols {
-			req := SymbolSubscriptionRequest{Symbol: sym, Trades: true, Ticker: true}
-			if i == 0 {
-				req.Book = true
-				req.Config.BookDepthLevels = 2
-				req.Config.UpdateInterval = defaultBookLogInterval
-			} else {
-				req.Config.UpdateInterval = defaultTickerInterval
-			}
-			reqs = append(reqs, req)
-		}
-		manager.SubscribeSymbols(reqs...)
-		state.clear()
-		fmt.Printf("Subscribed: %s\n", strings.Join(symbols, ", "))
-	case commandQuit:
-		fmt.Println("Shutting down...")
-		cancel()
-	case commandUnknown:
-		if strings.TrimSpace(cmd.raw) != "" {
-			fmt.Printf("unknown command: %s\n", cmd.raw)
-		}
-	}
-}
-
-func printControlHelp() {
-	fmt.Println("Commands:")
-	fmt.Println("  help                         Show this help text")
-	fmt.Println("  list                         Display active subscriptions")
-	fmt.Println("  pause SYMBOL [SYMBOL...]     Pause one or more symbols")
-	fmt.Println("  resume SYMBOL [SYMBOL...]    Resume previously paused symbols")
-	fmt.Println("  subscribe SYMBOL [SYMBOL...] Subscribe symbols with default feed config")
-	fmt.Println("  unsubscribe SYMBOL [...]     Remove symbols from monitoring")
-	fmt.Println("  quit                         Stop the monitor and exit")
 }
 
 func parseControlCommand(input string) userCommand {
@@ -1296,23 +1141,6 @@ func parseControlCommand(input string) userCommand {
 	return cmd
 }
 
-func sortedSymbolsFromInstruments(instruments map[string]core.Instrument) []string {
-	syms := make([]string, 0, len(instruments))
-	for symbol := range instruments {
-		syms = append(syms, symbol)
-	}
-	sort.Strings(syms)
-	return syms
-}
-
-func extractSymbols(subs []symbolSubscription) []string {
-	out := make([]string, 0, len(subs))
-	for _, sub := range subs {
-		out = append(out, sub.Symbol)
-	}
-	return out
-}
-
 func makeSymbolSet(symbols []string) map[string]struct{} {
 	set := make(map[string]struct{}, len(symbols))
 	for _, sym := range symbols {
@@ -1340,39 +1168,6 @@ func filterAvailableSymbols(catalog []string, active []symbolSubscription) []str
 		out = append(out, key)
 	}
 	return out
-}
-
-func showMenu(state *controlState, kind userCommandKind, title string, options []string) {
-	if len(options) == 0 {
-		fmt.Println("No entries available.")
-		state.clear()
-		return
-	}
-	if title != "" {
-		fmt.Println(title)
-	}
-	for idx, opt := range options {
-		fmt.Printf("  %d) %s\n", idx+1, opt)
-	}
-	if keyword := commandKeyword(kind); keyword != "" {
-		fmt.Printf("Use \"%s <number>\" or \"%s SYMBOL\" to modify subscriptions.\n", keyword, keyword)
-	}
-	state.setMenu(kind, options)
-}
-
-func commandKeyword(kind userCommandKind) string {
-	switch kind {
-	case commandPause:
-		return "pause"
-	case commandResume:
-		return "resume"
-	case commandSubscribe:
-		return "subscribe"
-	case commandUnsubscribe:
-		return "unsubscribe"
-	default:
-		return ""
-	}
 }
 
 func resolveCommandSymbols(inputs []string, kind userCommandKind, state *controlState, allowed map[string]struct{}) []string {

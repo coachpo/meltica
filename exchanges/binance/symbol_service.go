@@ -252,7 +252,7 @@ func (s *symbolService) fetchMarketSymbols(ctx context.Context, spec marketSpec,
 				TickSize   string `json:"tickSize"`
 				StepSize   string `json:"stepSize"`
 			} `json:"filters"`
-		} `json:"symbolSvc"`
+		} `json:"symbols"`
 	}
 	msg := routingrest.RESTMessage{API: string(spec.api), Method: http.MethodGet, Path: spec.path, Query: map[string]string{"symbolStatus": "TRADING"}}
 	if err := router.Dispatch(ctx, msg, &resp); err != nil {
