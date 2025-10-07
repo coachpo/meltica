@@ -1,6 +1,8 @@
 package bootstrap
 
 import (
+	"time"
+
 	"github.com/coachpo/meltica/config"
 	coretransport "github.com/coachpo/meltica/core/transport"
 )
@@ -15,10 +17,29 @@ type ConstructionParams struct {
 	Routers    RouterFactories
 }
 
+// TransportConfig holds unified transport configuration (REST + WS + credentials).
+type TransportConfig struct {
+	// REST configuration
+	APIKey         string
+	Secret         string
+	SpotBaseURL    string
+	LinearBaseURL  string
+	InverseBaseURL string
+	HTTPTimeout    time.Duration
+
+	// WebSocket configuration
+	PublicURL        string
+	PrivateURL       string
+	HandshakeTimeout time.Duration
+
+	// Additional metadata
+	SymbolRefreshInterval time.Duration
+}
+
 // TransportFactories holds factory functions for creating transport clients.
 type TransportFactories struct {
-	NewRESTClient func(interface{}) coretransport.RESTClient
-	NewWSClient   func(interface{}) coretransport.StreamClient
+	NewRESTClient func(TransportConfig) coretransport.RESTClient
+	NewWSClient   func(TransportConfig) coretransport.StreamClient
 }
 
 // RouterFactories holds factory functions for creating routers.

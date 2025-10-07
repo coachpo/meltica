@@ -11,8 +11,6 @@ import (
 	"github.com/coachpo/meltica/core"
 	"github.com/coachpo/meltica/core/exchanges/bootstrap"
 	corestreams "github.com/coachpo/meltica/core/streams"
-	"github.com/coachpo/meltica/exchanges/binance/infra/rest"
-	"github.com/coachpo/meltica/exchanges/binance/infra/ws"
 	"github.com/coachpo/meltica/exchanges/binance/internal"
 	bnrouting "github.com/coachpo/meltica/exchanges/binance/routing"
 	routingrest "github.com/coachpo/meltica/exchanges/shared/routing"
@@ -67,20 +65,19 @@ func New(apiKey, secret string, opts ...Option) (*Exchange, error) {
 
 func newExchangeWithFactories(settings config.Settings, transports bootstrap.TransportFactories, routers bootstrap.RouterFactories) (*Exchange, error) {
 	binCfg := resolveBinanceSettings(settings)
-	restCfg := rest.Config{
-		APIKey:         binCfg.Credentials.APIKey,
-		Secret:         binCfg.Credentials.APISecret,
-		SpotBaseURL:    binCfg.REST[config.BinanceRESTSurfaceSpot],
-		LinearBaseURL:  binCfg.REST[config.BinanceRESTSurfaceLinear],
-		InverseBaseURL: binCfg.REST[config.BinanceRESTSurfaceInverse],
-		Timeout:        binCfg.HTTPTimeout,
+	transportCfg := bootstrap.TransportConfig{
+		APIKey:                binCfg.Credentials.APIKey,
+		Secret:                binCfg.Credentials.APISecret,
+		SpotBaseURL:           binCfg.REST[config.BinanceRESTSurfaceSpot],
+		LinearBaseURL:         binCfg.REST[config.BinanceRESTSurfaceLinear],
+		InverseBaseURL:        binCfg.REST[config.BinanceRESTSurfaceInverse],
+		HTTPTimeout:           binCfg.HTTPTimeout,
+		PublicURL:             binCfg.Websocket.PublicURL,
+		PrivateURL:            binCfg.Websocket.PrivateURL,
+		HandshakeTimeout:      binCfg.HandshakeTimeout,
+		SymbolRefreshInterval: binCfg.SymbolRefreshInterval,
 	}
-	wsCfg := ws.Config{
-		PublicURL:        binCfg.Websocket.PublicURL,
-		PrivateURL:       binCfg.Websocket.PrivateURL,
-		HandshakeTimeout: binCfg.HandshakeTimeout,
-	}
-	bundle := bootstrap.BuildTransportBundle(transports, routers, restCfg, wsCfg)
+	bundle := bootstrap.BuildTransportBundle(transports, routers, transportCfg)
 	restRouter := bundle.Router().(routingrest.RESTDispatcher)
 	symbolSvc := newSymbolService(restRouter)
 	listenKeySvc := newListenKeyService(restRouter)
@@ -124,21 +121,20 @@ func (x *Exchange) UpdateConfig(opts ...config.Option) error {
 	base := x.Config()
 	newCfg := config.Apply(base, opts...)
 	binCfg := resolveBinanceSettings(newCfg)
-	restCfg := rest.Config{
-		APIKey:         binCfg.Credentials.APIKey,
-		Secret:         binCfg.Credentials.APISecret,
-		SpotBaseURL:    binCfg.REST[config.BinanceRESTSurfaceSpot],
-		LinearBaseURL:  binCfg.REST[config.BinanceRESTSurfaceLinear],
-		InverseBaseURL: binCfg.REST[config.BinanceRESTSurfaceInverse],
-		Timeout:        binCfg.HTTPTimeout,
-	}
-	wsCfg := ws.Config{
-		PublicURL:        binCfg.Websocket.PublicURL,
-		PrivateURL:       binCfg.Websocket.PrivateURL,
-		HandshakeTimeout: binCfg.HandshakeTimeout,
+	transportCfg := bootstrap.TransportConfig{
+		APIKey:                binCfg.Credentials.APIKey,
+		Secret:                binCfg.Credentials.APISecret,
+		SpotBaseURL:           binCfg.REST[config.BinanceRESTSurfaceSpot],
+		LinearBaseURL:         binCfg.REST[config.BinanceRESTSurfaceLinear],
+		InverseBaseURL:        binCfg.REST[config.BinanceRESTSurfaceInverse],
+		HTTPTimeout:           binCfg.HTTPTimeout,
+		PublicURL:             binCfg.Websocket.PublicURL,
+		PrivateURL:            binCfg.Websocket.PrivateURL,
+		HandshakeTimeout:      binCfg.HandshakeTimeout,
+		SymbolRefreshInterval: binCfg.SymbolRefreshInterval,
 	}
 
-	transportBundle := bootstrap.BuildTransportBundle(x.transportFactories, x.routerFactories, restCfg, wsCfg)
+	transportBundle := bootstrap.BuildTransportBundle(x.transportFactories, x.routerFactories, transportCfg)
 	restRouter := transportBundle.Router().(routingrest.RESTDispatcher)
 	symbolSvc := newSymbolService(restRouter)
 	listenKeySvc := newListenKeyService(restRouter)

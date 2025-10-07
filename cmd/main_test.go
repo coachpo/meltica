@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/coachpo/meltica/core"
-	numeric "github.com/coachpo/meltica/exchanges/shared/infra/numeric"
+	"github.com/coachpo/meltica/exchanges/shared/infra/numeric"
 )
 
 func TestPrecisionFormatterUsesInstrumentScales(t *testing.T) {
@@ -68,7 +68,7 @@ func TestBuildDefaultSubscriptionsIncludesAvailableSymbols(t *testing.T) {
 			if !req.Book {
 				t.Fatalf("expected BTC-USDT to include order book subscription")
 			}
-			if req.Config.DepthLevels <= 0 {
+			if req.Config.BookDepthLevels <= 0 {
 				t.Fatalf("expected depth levels to be configured")
 			}
 			if req.Config.UpdateInterval != defaultBookLogInterval {

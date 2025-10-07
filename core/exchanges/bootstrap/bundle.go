@@ -14,22 +14,20 @@ type TransportBundle struct {
 	wsInfra    coretransport.StreamClient
 }
 
-// BuildTransportBundle creates a complete transport bundle using the provided factories and configs.
-// The restCfg and wsCfg should be exchange-specific configuration structs.
+// BuildTransportBundle creates a complete transport bundle using the provided factories and unified config.
 func BuildTransportBundle(
 	transports TransportFactories,
 	routers RouterFactories,
-	restCfg interface{},
-	wsCfg interface{},
+	cfg TransportConfig,
 ) *TransportBundle {
 	var restClient coretransport.RESTClient
 	var wsClient coretransport.StreamClient
 
 	if transports.NewRESTClient != nil {
-		restClient = transports.NewRESTClient(restCfg)
+		restClient = transports.NewRESTClient(cfg)
 	}
 	if transports.NewWSClient != nil {
-		wsClient = transports.NewWSClient(wsCfg)
+		wsClient = transports.NewWSClient(cfg)
 	}
 
 	var restRouter interface{}

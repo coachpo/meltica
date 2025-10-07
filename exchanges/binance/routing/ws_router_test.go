@@ -134,18 +134,13 @@ func TestWSRouterSubscribePrivateUsesStreamClient(t *testing.T) {
 }
 
 func TestWSRouterCloseClosesStreamClient(t *testing.T) {
+	// WSRouter.Close() no longer closes the infrastructure client directly.
+	// The infrastructure client is managed by the TransportBundle.
+	// This test now verifies that Close() returns without error.
 	deps := &stubDeps{}
 	streamClient := &mocks.StreamClient{}
-	var closed bool
-	streamClient.CloseFunc = func() error {
-		closed = true
-		return nil
-	}
 	router := NewWSRouter(streamClient, deps)
 	if err := router.Close(); err != nil {
 		t.Fatalf("close returned error: %v", err)
-	}
-	if !closed {
-		t.Fatalf("expected stream client close to be invoked")
 	}
 }

@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"context"
-	"flag"
 	"fmt"
 	"log"
 	"math/big"
@@ -16,11 +15,11 @@ import (
 	"time"
 
 	"github.com/coachpo/meltica/core"
-	registry "github.com/coachpo/meltica/core/registry"
+	"github.com/coachpo/meltica/core/registry"
 	corestreams "github.com/coachpo/meltica/core/streams"
 	coretopics "github.com/coachpo/meltica/core/topics"
 	binanceplugin "github.com/coachpo/meltica/exchanges/binance/plugin"
-	numeric "github.com/coachpo/meltica/exchanges/shared/infra/numeric"
+	"github.com/coachpo/meltica/exchanges/shared/infra/numeric"
 )
 
 const (
@@ -33,16 +32,10 @@ const (
 	defaultTickerInterval    = 500 * time.Millisecond
 )
 
-var (
-	flagSymbols   = flag.String("symbols", "", "comma separated canonical symbols to subscribe (defaults include BTC/ETH/BNB/XRP/SOL/DOGE vs USDT)")
-	flagPause     = flag.String("pause", "", "comma separated canonical symbols to pause at startup")
-	flagNoControl = flag.Bool("no-control", false, "disable interactive control prompt")
-)
-
 // SubscriptionConfig defines symbol-level tuning for market data streams.
 type SubscriptionConfig struct {
-	DepthLevels    int
-	UpdateInterval time.Duration
+	BookDepthLevels int
+	UpdateInterval  time.Duration
 }
 
 // SymbolSubscriptionRequest describes desired subscription behaviour for a symbol.
@@ -122,14 +115,10 @@ type marketEvent struct {
 	Message string
 }
 
-type marketCommand interface{}
-
 type marketSubscribeCommand struct {
 	Topics     []string
 	BookSymbol string
 }
-
-type marketUnsubscribeCommand struct{}
 
 // MarketManager manages concurrent market data streams
 type MarketManager struct {
@@ -549,16 +538,16 @@ func normalizeRequest(req SymbolSubscriptionRequest) SymbolSubscriptionRequest {
 		req.Ticker = true
 		req.Book = true
 	}
-	if req.Config.DepthLevels < 0 {
-		req.Config.DepthLevels = 0
+	if req.Config.BookDepthLevels < 0 {
+		req.Config.BookDepthLevels = 0
 	}
 	return req
 }
 
 func mergeConfig(existing, incoming SubscriptionConfig) SubscriptionConfig {
 	result := existing
-	if incoming.DepthLevels != 0 {
-		result.DepthLevels = incoming.DepthLevels
+	if incoming.BookDepthLevels != 0 {
+		result.BookDepthLevels = incoming.BookDepthLevels
 	}
 	if incoming.UpdateInterval != 0 {
 		result.UpdateInterval = incoming.UpdateInterval
@@ -661,7 +650,7 @@ func (m *MarketManager) handleOrderBookSnapshots(ctx context.Context, symbol str
 				Topic:   coretopics.Book(bookCopy.Symbol),
 				Payload: &bookCopy,
 				Time:    bookCopy.Time,
-				Message: fmt.Sprintf("depth=%d interval=%s", cfg.DepthLevels, cfg.UpdateInterval),
+				Message: fmt.Sprintf("depth=%d interval=%s", cfg.BookDepthLevels, cfg.UpdateInterval),
 			})
 		case err, ok := <-errs:
 			if !ok {
@@ -743,8 +732,6 @@ func (m *MarketManager) emit(evt marketEvent) {
 }
 
 func main() {
-	flag.Parse()
-
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
@@ -792,20 +779,10 @@ func main() {
 		log.Println("market event stream closed")
 	}()
 
-	// Determine subscription set and apply any startup controls
-	subscribeSymbols := parseSymbolList(*flagSymbols)
-	requests := buildDefaultSubscriptions(canonicalSymbol, subscribeSymbols, instruments)
+	// Determine subscription set for the default USDT markets
+	defaultSymbols := []string{"BTC-USDT", "ETH-USDT", "BNB-USDT", "XRP-USDT", "SOL-USDT", "DOGE-USDT"}
+	requests := buildDefaultSubscriptions(canonicalSymbol, defaultSymbols, instruments)
 	manager.SubscribeSymbols(requests...)
-	if paused := parseSymbolList(*flagPause); len(paused) > 0 {
-		manager.PauseSymbols(paused...)
-	}
-	if shouldStartControlPrompt(*flagNoControl) {
-		catalog := sortedSymbolsFromInstruments(instruments)
-		if len(catalog) == 0 {
-			catalog = append(catalog, canonicalSymbol)
-		}
-		go startControlPrompt(ctx, cancel, manager, catalog)
-	}
 
 	<-ctx.Done()
 	fmt.Println("Stopping order book monitor...")
@@ -930,13 +907,13 @@ func buildDefaultSubscriptions(primary string, symbols []string, instruments map
 		}
 		if symbol == primary || (primary == "" && idx == 0) {
 			req.Book = true
-			req.Config.DepthLevels = 2
+			req.Config.BookDepthLevels = 2
 			req.Config.UpdateInterval = defaultBookLogInterval
 		}
 		requests = append(requests, req)
 	}
 	if len(requests) == 0 && primary != "" {
-		req := SymbolSubscriptionRequest{Symbol: primary, Trades: true, Ticker: true, Book: true, Config: SubscriptionConfig{DepthLevels: 1, UpdateInterval: defaultBookLogInterval}}
+		req := SymbolSubscriptionRequest{Symbol: primary, Trades: true, Ticker: true, Book: true, Config: SubscriptionConfig{BookDepthLevels: 1, UpdateInterval: defaultBookLogInterval}}
 		if len(instruments) == 0 {
 			requests = append(requests, req)
 		} else if _, ok := instruments[primary]; ok {
@@ -1008,26 +985,26 @@ func (p *eventProcessor) handle(evt marketEvent) {
 			log.Printf("trade event payload mismatch: %#v", evt.Payload)
 			return
 		}
-		symbol := resolveEventSymbol(trade.Symbol, evt.Topic)
-		log.Printf("[WS] trade topic=%s price=%s qty=%s at=%s",
-			evt.Topic,
-			p.formatter.price(symbol, trade.Price),
-			p.formatter.quantity(symbol, trade.Quantity),
-			trade.Time.Format(time.RFC3339Nano),
-		)
+		// symbol := resolveEventSymbol(trade.Symbol, evt.Topic)
+		// log.Printf("[WS] trade topic=%s price=%s qty=%s at=%s",
+		// 	evt.Topic,
+		// 	p.formatter.price(symbol, trade.Price),
+		// 	p.formatter.quantity(symbol, trade.Quantity),
+		// 	trade.Time.Format(time.RFC3339Nano),
+		// )
 	case marketEventTicker:
 		ticker, ok := evt.Payload.(*corestreams.TickerEvent)
 		if !ok || ticker == nil {
 			log.Printf("ticker event payload mismatch: %#v", evt.Payload)
 			return
 		}
-		symbol := resolveEventSymbol(ticker.Symbol, evt.Topic)
-		log.Printf("[WS] ticker topic=%s bid=%s ask=%s at=%s",
-			evt.Topic,
-			p.formatter.price(symbol, ticker.Bid),
-			p.formatter.price(symbol, ticker.Ask),
-			ticker.Time.Format(time.RFC3339Nano),
-		)
+		// symbol := resolveEventSymbol(ticker.Symbol, evt.Topic)
+		// log.Printf("[WS] ticker topic=%s bid=%s ask=%s at=%s",
+		// 	evt.Topic,
+		// 	p.formatter.price(symbol, ticker.Bid),
+		// 	p.formatter.price(symbol, ticker.Ask),
+		// 	ticker.Time.Format(time.RFC3339Nano),
+		// )
 	case marketEventBook:
 		book, ok := evt.Payload.(*corestreams.BookEvent)
 		if !ok || book == nil {
@@ -1041,8 +1018,8 @@ func (p *eventProcessor) handle(evt marketEvent) {
 			if cfg.UpdateInterval > 0 {
 				interval = cfg.UpdateInterval
 			}
-			if cfg.DepthLevels > 0 {
-				depth = cfg.DepthLevels
+			if cfg.BookDepthLevels > 0 {
+				depth = cfg.BookDepthLevels
 			}
 		}
 		last := p.lastBookLogs[symbol]
@@ -1165,7 +1142,7 @@ func executeUserCommand(cmd userCommand, manager *MarketManager, cancel context.
 				sub.Trades,
 				sub.Ticker,
 				sub.Book,
-				sub.Config.DepthLevels,
+				sub.Config.BookDepthLevels,
 				sub.Config.UpdateInterval,
 				status,
 			)
@@ -1233,7 +1210,7 @@ func executeUserCommand(cmd userCommand, manager *MarketManager, cancel context.
 			req := SymbolSubscriptionRequest{Symbol: sym, Trades: true, Ticker: true}
 			if i == 0 {
 				req.Book = true
-				req.Config.DepthLevels = 2
+				req.Config.BookDepthLevels = 2
 				req.Config.UpdateInterval = defaultBookLogInterval
 			} else {
 				req.Config.UpdateInterval = defaultTickerInterval

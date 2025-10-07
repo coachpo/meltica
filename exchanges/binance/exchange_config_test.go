@@ -5,11 +5,10 @@ import (
 	"testing"
 
 	"github.com/coachpo/meltica/config"
+	"github.com/coachpo/meltica/core/exchanges/bootstrap"
 	corestreams "github.com/coachpo/meltica/core/streams"
 	coretransport "github.com/coachpo/meltica/core/transport"
 	"github.com/coachpo/meltica/errs"
-	"github.com/coachpo/meltica/exchanges/binance/infra/rest"
-	"github.com/coachpo/meltica/exchanges/binance/infra/ws"
 	bnrouting "github.com/coachpo/meltica/exchanges/binance/routing"
 	routingrest "github.com/coachpo/meltica/exchanges/shared/routing"
 )
@@ -23,12 +22,12 @@ type resourceTracker struct {
 	routerCloses int
 }
 
-func (rt *resourceTracker) newRESTClient(rest.Config) coretransport.RESTClient {
+func (rt *resourceTracker) newRESTClient(bootstrap.TransportConfig) coretransport.RESTClient {
 	rt.restOpens++
 	return &mockRESTClient{tracker: rt}
 }
 
-func (rt *resourceTracker) newStreamClient(ws.Config) coretransport.StreamClient {
+func (rt *resourceTracker) newStreamClient(bootstrap.TransportConfig) coretransport.StreamClient {
 	rt.streamOpens++
 	return &mockStreamClient{tracker: rt}
 }

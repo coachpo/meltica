@@ -20,11 +20,22 @@ func defaultConstructionParams() *bootstrap.ConstructionParams {
 	params := bootstrap.NewConstructionParams()
 
 	params.Transports = bootstrap.TransportFactories{
-		NewRESTClient: func(cfg interface{}) coretransport.RESTClient {
-			return rest.NewClient(cfg.(rest.Config))
+		NewRESTClient: func(cfg bootstrap.TransportConfig) coretransport.RESTClient {
+			return rest.NewClient(rest.Config{
+				APIKey:         cfg.APIKey,
+				Secret:         cfg.Secret,
+				SpotBaseURL:    cfg.SpotBaseURL,
+				LinearBaseURL:  cfg.LinearBaseURL,
+				InverseBaseURL: cfg.InverseBaseURL,
+				Timeout:        cfg.HTTPTimeout,
+			})
 		},
-		NewWSClient: func(cfg interface{}) coretransport.StreamClient {
-			return ws.NewClient(cfg.(ws.Config))
+		NewWSClient: func(cfg bootstrap.TransportConfig) coretransport.StreamClient {
+			return ws.NewClient(ws.Config{
+				PublicURL:        cfg.PublicURL,
+				PrivateURL:       cfg.PrivateURL,
+				HandshakeTimeout: cfg.HandshakeTimeout,
+			})
 		},
 	}
 
@@ -41,19 +52,17 @@ func defaultConstructionParams() *bootstrap.ConstructionParams {
 }
 
 // WithRESTClientFactory sets a custom REST client factory.
-func WithRESTClientFactory(factory func(rest.Config) coretransport.RESTClient) Option {
+func WithRESTClientFactory(factory func(bootstrap.TransportConfig) coretransport.RESTClient) Option {
 	return func(params *bootstrap.ConstructionParams) {
 		if factory != nil {
-			params.Transports.NewRESTClient = func(cfg interface{}) coretransport.RESTClient {
-				return factory(cfg.(rest.Config))
-			}
+			params.Transports.NewRESTClient = factory
 		}
 	}
 }
 
 // WithRESTClient sets a pre-configured REST client.
 func WithRESTClient(client coretransport.RESTClient) Option {
-	return WithRESTClientFactory(func(rest.Config) coretransport.RESTClient { return client })
+	return WithRESTClientFactory(func(bootstrap.TransportConfig) coretransport.RESTClient { return client })
 }
 
 // WithRESTRouterFactory sets a custom REST router factory.
@@ -73,19 +82,17 @@ func WithRESTRouter(router routingrest.RESTDispatcher) Option {
 }
 
 // WithWSClientFactory sets a custom WebSocket client factory.
-func WithWSClientFactory(factory func(ws.Config) coretransport.StreamClient) Option {
+func WithWSClientFactory(factory func(bootstrap.TransportConfig) coretransport.StreamClient) Option {
 	return func(params *bootstrap.ConstructionParams) {
 		if factory != nil {
-			params.Transports.NewWSClient = func(cfg interface{}) coretransport.StreamClient {
-				return factory(cfg.(ws.Config))
-			}
+			params.Transports.NewWSClient = factory
 		}
 	}
 }
 
 // WithWSClient sets a pre-configured WebSocket client.
 func WithWSClient(client coretransport.StreamClient) Option {
-	return WithWSClientFactory(func(ws.Config) coretransport.StreamClient { return client })
+	return WithWSClientFactory(func(bootstrap.TransportConfig) coretransport.StreamClient { return client })
 }
 
 // WithWSRouterFactory sets a custom WebSocket router factory.
