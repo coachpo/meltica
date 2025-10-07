@@ -43,7 +43,7 @@ func TestCanonicalTopicRoundTrip(t *testing.T) {
 	}{
 		{TopicTrade, "btc-usdt", "mkt.trade:BTC-USDT", false},
 		{TopicTicker, "ETH-usdt", "mkt.ticker:ETH-USDT", false},
-		{TopicBookDelta, "bnb-usdt", "book.delta:BNB-USDT", false},
+		{TopicBookDelta, "bnb-usdt", "mkt.book.delta:BNB-USDT", false},
 		{TopicUserOrder, "ada-usdt", "user.order:ADA-USDT", false},
 		{TopicUserBalance, "", "user.balance", false},
 		{TopicUserBalance, "ignored", "user.balance:IGNORED", false},

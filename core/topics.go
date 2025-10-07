@@ -12,7 +12,7 @@ type Topic string
 const (
 	TopicTrade       Topic = "mkt.trade"
 	TopicTicker      Topic = "mkt.ticker"
-	TopicBookDelta   Topic = "book.delta"
+	TopicBookDelta   Topic = "mkt.book.delta"
 	TopicUserOrder   Topic = "user.order"
 	TopicUserBalance Topic = "user.balance"
 )
