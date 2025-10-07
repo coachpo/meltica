@@ -2,14 +2,12 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"math/big"
 	"os"
 	"os/signal"
-	"runtime"
-	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -22,547 +20,103 @@ import (
 )
 
 const (
-	fallbackPriceScale       = 2
-	fallbackQuantityScale    = 6
-	defaultBookLogInterval   = 100 * time.Millisecond
-	maxTopicsPerSubscription = 200
-	eventBufferSize          = 1024
-	minEventWorkers          = 2
+	defaultSymbolList     = "BTC-USDT,ETH-USDT,BNB-USDT"
+	fallbackPriceScale    = 2
+	fallbackQuantityScale = 6
 )
 
-// SubscriptionConfig defines symbol-level tuning for market data streams.
-type SubscriptionConfig struct {
-	BookDepthLevels int
-	UpdateInterval  time.Duration
+func main() {
+	symbolsFlag := flag.String("symbols", defaultSymbolList, "Comma separated canonical symbols (e.g. BTC-USDT,ETH-USDT)")
+	includeBook := flag.Bool("book", false, "Subscribe to order book deltas in addition to trades and tickers")
+	flag.Parse()
+
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer cancel()
+
+	exchange, err := registry.Resolve(binanceplugin.Name)
+	if err != nil {
+		log.Fatalf("resolve exchange: %v", err)
+	}
+	defer exchange.Close()
+
+	symbols := selectSymbols(*symbolsFlag)
+	if len(symbols) == 0 {
+		log.Fatalf("no symbols provided")
+	}
+
+	if err := run(ctx, exchange, symbols, *includeBook); err != nil {
+		log.Fatalf("market data error: %v", err)
+	}
 }
 
-// SymbolSubscriptionRequest describes desired subscription behaviour for a symbol.
-type SymbolSubscriptionRequest struct {
-	Symbol string
-	Trades bool
-	Ticker bool
-	Book   bool
-	Config SubscriptionConfig
-}
-
-type symbolSubscription struct {
-	Symbol string
-	Trades bool
-	Ticker bool
-	Book   bool
-	Config SubscriptionConfig
-	Paused bool
-}
-
-type bookFeed struct {
-	cancel context.CancelFunc
-	cfg    SubscriptionConfig
-}
-
-type controlState struct {
-	lastMenu []string
-	lastKind userCommandKind
-}
-
-func (s *controlState) setMenu(kind userCommandKind, options []string) {
-	copySlice := append([]string(nil), options...)
-	s.lastMenu = copySlice
-	s.lastKind = kind
-}
-
-type userCommandKind int
-
-const (
-	commandUnknown userCommandKind = iota
-	commandHelp
-	commandList
-	commandPause
-	commandResume
-	commandSubscribe
-	commandUnsubscribe
-	commandQuit
-)
-
-type userCommand struct {
-	kind    userCommandKind
-	symbols []string
-	raw     string
-}
-
-type marketEventKind string
-
-const (
-	marketEventTrade  marketEventKind = "trade"
-	marketEventTicker marketEventKind = "ticker"
-	marketEventBook   marketEventKind = "book"
-	marketEventError  marketEventKind = "error"
-	marketEventSystem marketEventKind = "system"
-)
-
-type marketEvent struct {
-	Kind    marketEventKind
-	Topic   string
-	Payload interface{}
-	Err     error
-	Time    time.Time
-	Message string
-}
-
-type marketSubscribeCommand struct {
-	Topics     []string
-	BookSymbol string
-}
-
-// MarketManager manages concurrent market data streams
-type MarketManager struct {
-	exchange   core.Exchange
-	orderBooks orderBookProvider
-	ws         core.WebsocketParticipant
-	events     chan marketEvent
-	wg         sync.WaitGroup
-	mu         sync.RWMutex
-	cancel     context.CancelFunc
-	ctx        context.Context
-
-	// Active subscriptions
-	subs      []core.Subscription
-	bookFeeds map[string]*bookFeed
-	symbols   map[string]*symbolSubscription
-	refreshCh chan struct{}
-}
-
-type orderBookProvider interface {
-	OrderBookSnapshots(ctx context.Context, symbol string) (<-chan corestreams.BookEvent, <-chan error, error)
-}
-
-func NewMarketManager(exchange core.Exchange) (*MarketManager, error) {
+func run(ctx context.Context, exchange core.Exchange, symbols []string, withBook bool) error {
 	wsParticipant, ok := exchange.(core.WebsocketParticipant)
 	if !ok {
-		return nil, fmt.Errorf("exchange %s does not expose websocket access", exchange.Name())
+		return fmt.Errorf("exchange %s does not expose websocket access", exchange.Name())
 	}
-	orderBook, _ := exchange.(orderBookProvider)
-	return &MarketManager{
-		exchange:   exchange,
-		ws:         wsParticipant,
-		orderBooks: orderBook,
-		events:     make(chan marketEvent, eventBufferSize),
-		bookFeeds:  make(map[string]*bookFeed),
-		symbols:    make(map[string]*symbolSubscription),
-	}, nil
-}
 
-func (m *MarketManager) Start(ctx context.Context) {
-	m.ctx, m.cancel = context.WithCancel(ctx)
-	m.refreshCh = make(chan struct{}, 1)
+	instruments := loadInstrumentCache(ctx, exchange)
+	formatter := newPrecisionFormatter(instruments)
 
-	// Start the event router
-	m.wg.Add(1)
-	go m.eventRouter(m.ctx)
-
-	// Coordinate subscription rebuilds asynchronously
-	m.wg.Add(1)
-	go m.subscriptionCoordinator(m.ctx)
-}
-
-func (m *MarketManager) Stop() {
-	m.mu.Lock()
-	if m.cancel != nil {
-		m.cancel()
-		m.cancel = nil
+	topics := buildTopics(symbols)
+	if len(topics) == 0 {
+		return fmt.Errorf("no topics to subscribe")
 	}
-	m.cleanupSubscriptions()
-	if m.refreshCh != nil {
-		close(m.refreshCh)
-		m.refreshCh = nil
+
+	sub, err := wsParticipant.WS().SubscribePublic(ctx, topics...)
+	if err != nil {
+		return fmt.Errorf("subscribe public: %w", err)
 	}
-	m.mu.Unlock()
-	m.wg.Wait()
-	close(m.events)
-}
+	defer sub.Close()
 
-func (m *MarketManager) Events() <-chan marketEvent {
-	return m.events
-}
+	fmt.Printf("Subscribed to %d topics:\n", len(topics))
+	for _, topic := range topics {
+		fmt.Printf("  %s\n", topic)
+	}
 
-func (m *MarketManager) Subscribe(cmd marketSubscribeCommand) {
-	reqs := make(map[string]*SymbolSubscriptionRequest)
-	for _, topic := range cmd.Topics {
-		topicID, symbol, err := core.ParseTopic(topic)
-		if err != nil {
-			log.Printf("ignoring invalid topic %q: %v", topic, err)
-			continue
-		}
-		symbol = normalizeSymbol(symbol)
-		if symbol == "" {
-			continue
-		}
-		req, ok := reqs[symbol]
-		if !ok {
-			req = &SymbolSubscriptionRequest{Symbol: symbol}
-			reqs[symbol] = req
-		}
-		switch topicID {
-		case core.TopicTrade:
-			req.Trades = true
-		case core.TopicTicker:
-			req.Ticker = true
-		case core.TopicBookDelta:
-			req.Book = true
+	var bookWG sync.WaitGroup
+	if withBook {
+		if obs, ok := exchange.(orderBookSubscriber); ok {
+			startOrderBookFeeds(ctx, &bookWG, obs, formatter, symbols)
+		} else {
+			log.Printf("exchange %s does not provide applied order book snapshots", exchange.Name())
 		}
 	}
-	if book := normalizeSymbol(cmd.BookSymbol); book != "" {
-		req, ok := reqs[book]
-		if !ok {
-			req = &SymbolSubscriptionRequest{Symbol: book}
-			reqs[book] = req
-		}
-		req.Book = true
-	}
-	if len(reqs) == 0 {
-		return
-	}
-	reqSlice := make([]SymbolSubscriptionRequest, 0, len(reqs))
-	for _, req := range reqs {
-		reqSlice = append(reqSlice, *req)
-	}
-	m.SubscribeSymbols(reqSlice...)
-	m.emit(marketEvent{
-		Kind:    marketEventSystem,
-		Message: fmt.Sprintf("subscribed topics=%v book=%s", cmd.Topics, cmd.BookSymbol),
-	})
-}
+	defer bookWG.Wait()
 
-func (m *MarketManager) Unsubscribe() {
-	active := m.ActiveSubscriptions()
-	if len(active) == 0 {
-		return
-	}
-	symbols := make([]string, 0, len(active))
-	for _, sub := range active {
-		symbols = append(symbols, sub.Symbol)
-	}
-	m.UnsubscribeSymbols(symbols...)
-	m.emit(marketEvent{Kind: marketEventSystem, Message: "unsubscribed"})
-}
+	msgCh := sub.C()
+	errCh := sub.Err()
 
-func (m *MarketManager) cleanupSubscriptions() {
-	for _, sub := range m.subs {
-		if sub != nil {
-			_ = sub.Close()
-		}
-	}
-	m.subs = nil
-	for symbol, feed := range m.bookFeeds {
-		if feed != nil && feed.cancel != nil {
-			feed.cancel()
-		}
-		delete(m.bookFeeds, symbol)
-	}
-}
-
-func (m *MarketManager) subscriptionCoordinator(ctx context.Context) {
-	defer m.wg.Done()
 	for {
 		select {
 		case <-ctx.Done():
-			return
-		case _, ok := <-m.refreshCh:
+			return nil
+		case err, ok := <-errCh:
 			if !ok {
-				return
+				return nil
 			}
-			m.rebuildSubscriptions()
-		}
-	}
-}
-
-func (m *MarketManager) rebuildSubscriptions() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	if m.ctx == nil {
-		return
-	}
-
-	topics := m.collectActiveTopicsLocked()
-	m.resetWebSocketSubscriptionsLocked()
-	if len(topics) > 0 {
-		for _, batch := range chunkTopics(topics, maxTopicsPerSubscription) {
-			m.startWebSocketSubscriptionLocked(batch)
-		}
-	}
-	m.syncBookFeedsLocked()
-}
-
-func (m *MarketManager) collectActiveTopicsLocked() []string {
-	if len(m.symbols) == 0 {
-		return nil
-	}
-	topics := make([]string, 0, len(m.symbols)*3)
-	for symbol, sub := range m.symbols {
-		if sub.Paused {
-			continue
-		}
-		if sub.Trades {
-			topics = append(topics, core.MustCanonicalTopic(core.TopicTrade, symbol))
-		}
-		if sub.Ticker {
-			topics = append(topics, core.MustCanonicalTopic(core.TopicTicker, symbol))
-		}
-	}
-	return topics
-}
-
-func (m *MarketManager) resetWebSocketSubscriptionsLocked() {
-	for _, sub := range m.subs {
-		if sub != nil {
-			_ = sub.Close()
-		}
-	}
-	m.subs = nil
-}
-
-func (m *MarketManager) startWebSocketSubscriptionLocked(topics []string) {
-	if len(topics) == 0 {
-		return
-	}
-	ctx := m.ctx
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	sub, err := m.ws.WS().SubscribePublic(ctx, topics...)
-	if err != nil {
-		m.emit(marketEvent{Kind: marketEventError, Message: "subscribe public", Err: err})
-		log.Printf("failed to subscribe topics %v: %v", topics, err)
-		return
-	}
-	m.subs = append(m.subs, sub)
-	m.wg.Add(1)
-	go m.handleWebSocketMessages(ctx, sub.C(), sub.Err())
-	log.Printf("subscribed %d topics", len(topics))
-}
-
-func (m *MarketManager) syncBookFeedsLocked() {
-	needed := make(map[string]SubscriptionConfig)
-	for symbol, sub := range m.symbols {
-		if sub.Paused || !sub.Book {
-			continue
-		}
-		needed[symbol] = sub.Config
-	}
-	for symbol, feed := range m.bookFeeds {
-		cfg, ok := needed[symbol]
-		if !ok || feed.cfg != cfg {
-			if feed.cancel != nil {
-				feed.cancel()
+			if err != nil {
+				return fmt.Errorf("subscription error: %w", err)
 			}
-			delete(m.bookFeeds, symbol)
+		case msg, ok := <-msgCh:
+			if !ok {
+				return nil
+			}
+			printMessage(msg, formatter)
 		}
 	}
-	for symbol, cfg := range needed {
-		if _, ok := m.bookFeeds[symbol]; ok {
-			continue
-		}
-		m.startOrderBookFeedLocked(symbol, cfg)
-	}
+
+	sub.Close()
+	bookWG.Wait()
+	return nil
 }
 
-func (m *MarketManager) startOrderBookFeedLocked(symbol string, cfg SubscriptionConfig) {
-	if m.orderBooks == nil {
-		m.events <- marketEvent{Kind: marketEventError, Message: "order book snapshots not supported"}
-		return
+func selectSymbols(raw string) []string {
+	symbols := parseSymbolList(raw)
+	if len(symbols) > 0 {
+		return symbols
 	}
-	baseCtx := m.ctx
-	if baseCtx == nil {
-		baseCtx = context.Background()
-	}
-	ctx, cancel := context.WithCancel(baseCtx)
-	snapshots, errs, err := m.orderBooks.OrderBookSnapshots(ctx, symbol)
-	if err != nil {
-		cancel()
-		m.events <- marketEvent{Kind: marketEventError, Message: "order book initialization", Err: err}
-		return
-	}
-	m.bookFeeds[symbol] = &bookFeed{cancel: cancel, cfg: cfg}
-	m.wg.Add(1)
-	go m.handleOrderBookSnapshots(ctx, symbol, cfg, snapshots, errs)
-	log.Printf("started order book feed for %s", symbol)
-}
-
-func (m *MarketManager) queueRefreshLocked() {
-	if m.refreshCh == nil {
-		return
-	}
-	select {
-	case m.refreshCh <- struct{}{}:
-	default:
-	}
-}
-
-func chunkTopics(topics []string, size int) [][]string {
-	if len(topics) == 0 {
-		return nil
-	}
-	if size <= 0 || len(topics) <= size {
-		return [][]string{topics}
-	}
-	chunks := make([][]string, 0, (len(topics)+size-1)/size)
-	for start := 0; start < len(topics); start += size {
-		end := start + size
-		if end > len(topics) {
-			end = len(topics)
-		}
-		chunk := make([]string, end-start)
-		copy(chunk, topics[start:end])
-		chunks = append(chunks, chunk)
-	}
-	return chunks
-}
-
-func (m *MarketManager) SubscribeSymbols(reqs ...SymbolSubscriptionRequest) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	for _, raw := range reqs {
-		req := normalizeRequest(raw)
-		if req.Symbol == "" {
-			continue
-		}
-		existing, ok := m.symbols[req.Symbol]
-		if !ok {
-			existing = &symbolSubscription{Symbol: req.Symbol}
-			m.symbols[req.Symbol] = existing
-			log.Printf("adding subscription %s trades=%t ticker=%t book=%t", req.Symbol, req.Trades, req.Ticker, req.Book)
-		} else {
-			log.Printf("updating subscription %s trades=%t ticker=%t book=%t", req.Symbol, req.Trades, req.Ticker, req.Book)
-		}
-		existing.Trades = req.Trades
-		existing.Ticker = req.Ticker
-		existing.Book = req.Book
-		existing.Config = mergeConfig(existing.Config, req.Config)
-		existing.Paused = false
-	}
-	m.queueRefreshLocked()
-}
-
-func (m *MarketManager) UpdateSymbols(reqs ...SymbolSubscriptionRequest) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	for _, raw := range reqs {
-		req := normalizeRequest(raw)
-		if req.Symbol == "" {
-			continue
-		}
-		if existing, ok := m.symbols[req.Symbol]; ok {
-			existing.Trades = req.Trades || existing.Trades
-			existing.Ticker = req.Ticker || existing.Ticker
-			existing.Book = req.Book || existing.Book
-			existing.Config = mergeConfig(existing.Config, req.Config)
-			log.Printf("updated config for %s: %+v", req.Symbol, existing.Config)
-		}
-	}
-	m.queueRefreshLocked()
-}
-
-func (m *MarketManager) UnsubscribeSymbols(symbols ...string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	for _, sym := range symbols {
-		key := normalizeSymbol(sym)
-		if key == "" {
-			continue
-		}
-		if _, ok := m.symbols[key]; ok {
-			delete(m.symbols, key)
-			log.Printf("removed subscription %s", key)
-		}
-	}
-	m.queueRefreshLocked()
-}
-
-func (m *MarketManager) PauseSymbols(symbols ...string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	for _, sym := range symbols {
-		key := normalizeSymbol(sym)
-		if sub, ok := m.symbols[key]; ok && !sub.Paused {
-			sub.Paused = true
-			log.Printf("paused subscription %s", key)
-		}
-	}
-	m.queueRefreshLocked()
-}
-
-func (m *MarketManager) ResumeSymbols(symbols ...string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	for _, sym := range symbols {
-		key := normalizeSymbol(sym)
-		if sub, ok := m.symbols[key]; ok && sub.Paused {
-			sub.Paused = false
-			log.Printf("resumed subscription %s", key)
-		}
-	}
-	m.queueRefreshLocked()
-}
-
-func (m *MarketManager) ActiveSubscriptions() []symbolSubscription {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	out := make([]symbolSubscription, 0, len(m.symbols))
-	for _, sub := range m.symbols {
-		out = append(out, *sub)
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Symbol < out[j].Symbol })
-	return out
-}
-
-func (m *MarketManager) SubscriptionConfig(symbol string) (SubscriptionConfig, bool) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	if sub, ok := m.symbols[normalizeSymbol(symbol)]; ok {
-		return sub.Config, true
-	}
-	return SubscriptionConfig{}, false
-}
-
-func normalizeRequest(req SymbolSubscriptionRequest) SymbolSubscriptionRequest {
-	req.Symbol = normalizeSymbol(req.Symbol)
-	if !req.Trades && !req.Ticker && !req.Book {
-		req.Trades = true
-		req.Ticker = true
-		req.Book = true
-	}
-	if req.Config.BookDepthLevels < 0 {
-		req.Config.BookDepthLevels = 0
-	}
-	return req
-}
-
-func mergeConfig(existing, incoming SubscriptionConfig) SubscriptionConfig {
-	result := existing
-	if incoming.BookDepthLevels != 0 {
-		result.BookDepthLevels = incoming.BookDepthLevels
-	}
-	if incoming.UpdateInterval != 0 {
-		result.UpdateInterval = incoming.UpdateInterval
-	}
-	return result
-}
-
-func normalizeSymbol(symbol string) string {
-	return strings.ToUpper(strings.TrimSpace(symbol))
-}
-
-func containsSymbol(list []string, target string) bool {
-	target = normalizeSymbol(target)
-	if target == "" {
-		return false
-	}
-	for _, item := range list {
-		if normalizeSymbol(item) == target {
-			return true
-		}
-	}
-	return false
+	return parseSymbolList(defaultSymbolList)
 }
 
 func parseSymbolList(raw string) []string {
@@ -570,8 +124,8 @@ func parseSymbolList(raw string) []string {
 		return nil
 	}
 	parts := strings.Split(raw, ",")
-	result := make([]string, 0, len(parts))
 	seen := make(map[string]struct{}, len(parts))
+	out := make([]string, 0, len(parts))
 	for _, part := range parts {
 		symbol := normalizeSymbol(part)
 		if symbol == "" {
@@ -581,362 +135,99 @@ func parseSymbolList(raw string) []string {
 			continue
 		}
 		seen[symbol] = struct{}{}
-		result = append(result, symbol)
+		out = append(out, symbol)
 	}
-	return result
+	return out
 }
 
-func (m *MarketManager) handleWebSocketMessages(ctx context.Context, msgCh <-chan core.Message, errCh <-chan error) {
-	defer m.wg.Done()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case msg, ok := <-msgCh:
-			if !ok {
-				m.handleWSFailure(nil)
-				return
-			}
-			m.handleWSMessage(msg)
-		case err, ok := <-errCh:
-			if !ok {
-				m.handleWSFailure(nil)
-				return
-			}
-			if err != nil {
-				m.handleWSFailure(err)
-			}
+func buildTopics(symbols []string) []string {
+	topics := make([]string, 0, len(symbols)*2)
+	for _, symbol := range symbols {
+		canonical := normalizeSymbol(symbol)
+		if canonical == "" {
+			continue
 		}
+		topics = append(topics,
+			core.MustCanonicalTopic(core.TopicTrade, canonical),
+			core.MustCanonicalTopic(core.TopicTicker, canonical),
+		)
 	}
+	return topics
 }
 
-func (m *MarketManager) handleWSFailure(err error) {
-	if err != nil {
-		log.Printf("websocket subscription error: %v", err)
-		m.emit(marketEvent{Kind: marketEventError, Message: "websocket subscription error", Err: err})
-	} else {
-		log.Printf("websocket subscription closed; scheduling resubscription")
-	}
-	m.mu.Lock()
-	m.queueRefreshLocked()
-	m.mu.Unlock()
-}
-
-func (m *MarketManager) handleOrderBookSnapshots(ctx context.Context, symbol string, cfg SubscriptionConfig, snapshots <-chan corestreams.BookEvent, errs <-chan error) {
-	defer m.wg.Done()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case book, ok := <-snapshots:
-			if !ok {
-				return
-			}
-			bookCopy := book
-			if bookCopy.Symbol == "" {
-				bookCopy.Symbol = symbol
-			}
-			m.emit(marketEvent{
-				Kind:    marketEventBook,
-				Topic:   core.MustCanonicalTopic(core.TopicBookDelta, bookCopy.Symbol),
-				Payload: &bookCopy,
-				Time:    bookCopy.Time,
-				Message: fmt.Sprintf("depth=%d interval=%s", cfg.BookDepthLevels, cfg.UpdateInterval),
-			})
-		case err, ok := <-errs:
-			if !ok {
-				return
-			}
-			if err != nil {
-				m.emit(marketEvent{
-					Kind:    marketEventError,
-					Message: "order book snapshot error",
-					Err:     err,
-				})
-			}
-		}
-	}
-}
-
-func (m *MarketManager) handleWSMessage(msg core.Message) {
+func printMessage(msg core.Message, formatter precisionFormatter) {
 	switch evt := msg.Parsed.(type) {
 	case *corestreams.TradeEvent:
-		m.emit(marketEvent{
-			Kind:    marketEventTrade,
-			Topic:   msg.Topic,
-			Payload: evt,
-			Time:    evt.Time,
-		})
+		fmt.Printf("[%s] TRADE  %s qty=%s price=%s\n",
+			formatTime(evt.Time),
+			evt.Symbol,
+			formatter.quantity(evt.Symbol, evt.Quantity),
+			formatter.price(evt.Symbol, evt.Price),
+		)
 	case *corestreams.TickerEvent:
-		m.emit(marketEvent{
-			Kind:    marketEventTicker,
-			Topic:   msg.Topic,
-			Payload: evt,
-			Time:    evt.Time,
-		})
+		fmt.Printf("[%s] TICKER %s bid=%s ask=%s\n",
+			formatTime(evt.Time),
+			evt.Symbol,
+			formatter.price(evt.Symbol, evt.Bid),
+			formatter.price(evt.Symbol, evt.Ask),
+		)
 	case *corestreams.BookEvent:
-		m.emit(marketEvent{
-			Kind:    marketEventBook,
-			Topic:   msg.Topic,
-			Payload: evt,
-			Time:    evt.Time,
-		})
+		fmt.Printf("[%s] BOOK   %s bids=%s asks=%s depth=%d/%d\n",
+			formatTime(evt.Time),
+			evt.Symbol,
+			describeTopLevel(formatter, evt.Symbol, evt.Bids),
+			describeTopLevel(formatter, evt.Symbol, evt.Asks),
+			len(evt.Bids),
+			len(evt.Asks),
+		)
 	default:
-		m.emit(marketEvent{
-			Kind:    marketEventSystem,
-			Topic:   msg.Topic,
-			Message: fmt.Sprintf("unhandled message route=%s content=%s", msg.Event, msg.Raw),
-			Time:    msg.At,
-		})
+		if len(msg.Raw) > 0 {
+			fmt.Printf("[%s] EVENT  topic=%s route=%s raw=%s\n",
+				formatTime(msg.At),
+				msg.Topic,
+				msg.Event,
+				string(msg.Raw),
+			)
+		} else {
+			fmt.Printf("[%s] EVENT  topic=%s\n",
+				formatTime(msg.At),
+				msg.Topic,
+			)
+		}
 	}
 }
 
-func (m *MarketManager) eventRouter(ctx context.Context) {
-	defer m.wg.Done()
-
-	// This goroutine just ensures we properly close the events channel
-	// when the context is cancelled
-	<-ctx.Done()
+func describeTopLevel(formatter precisionFormatter, symbol string, levels []core.BookDepthLevel) string {
+	if len(levels) == 0 {
+		return "-"
+	}
+	level := levels[0]
+	return fmt.Sprintf("%s@%s",
+		formatter.quantity(symbol, level.Qty),
+		formatter.price(symbol, level.Price),
+	)
 }
 
-func (m *MarketManager) emit(evt marketEvent) {
-	if m.ctx != nil {
-		select {
-		case <-m.ctx.Done():
-			return
-		default:
-		}
+func formatDecimal(r *big.Rat, scale int) string {
+	if r == nil {
+		return "0"
 	}
-	select {
-	case m.events <- evt:
-	default:
-		if m.ctx != nil {
-			select {
-			case <-m.ctx.Done():
-				return
-			default:
-			}
-		}
-		// Drop event if channel is full to prevent blocking
-		log.Printf("event channel full, dropping event: %v", evt.Kind)
+	formatted := numeric.Format(r, scale)
+	if formatted == "" {
+		return "0"
 	}
+	return formatted
 }
 
-func main() {
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer cancel()
-
-	fmt.Println("Starting Binance Order Book Management Validation...")
-
-	exchange, err := registry.Resolve(binanceplugin.Name)
-	if err != nil {
-		log.Fatalf("failed to create Binance exchange: %v", err)
+func formatTime(t time.Time) string {
+	if t.IsZero() {
+		return time.Now().UTC().Format(time.RFC3339Nano)
 	}
-	defer exchange.Close()
-
-	manager, err := NewMarketManager(exchange)
-	if err != nil {
-		log.Fatalf("exchange does not satisfy runtime requirements: %v", err)
-	}
-	manager.Start(ctx)
-	managerStarted := true
-	defer func() {
-		if managerStarted {
-			manager.Stop()
-		}
-	}()
-
-	instruments := loadInstrumentCache(ctx, exchange)
-	formatter := newPrecisionFormatter(instruments)
-	defaultSymbols := []string{"BTC-USDT", "ETH-USDT", "BNB-USDT", "XRP-USDT", "SOL-USDT", "DOGE-USDT"}
-	nativeSymbols := make(map[string]string, len(defaultSymbols))
-	fmt.Println("Subscribing to markets (canonical -> native):")
-	seenSymbols := make(map[string]struct{}, len(defaultSymbols))
-	for _, canonical := range defaultSymbols {
-		symbol := normalizeSymbol(canonical)
-		if symbol == "" {
-			continue
-		}
-		if _, ok := seenSymbols[symbol]; ok {
-			continue
-		}
-		seenSymbols[symbol] = struct{}{}
-		resolved, err := core.NativeSymbol(binanceplugin.Name, symbol)
-		if err != nil {
-			log.Printf("failed to resolve native symbol for %s: %v", symbol, err)
-			resolved = symbol
-		}
-		nativeSymbols[symbol] = resolved
-		fmt.Printf("  %s -> %s\n", symbol, resolved)
-	}
-
-	processor := newEventProcessor(manager, formatter, nativeSymbols)
-
-	events := manager.Events()
-	workerCtx, workerCancel := context.WithCancel(ctx)
-	defer workerCancel()
-
-	workerCount := runtime.NumCPU()
-	if workerCount < minEventWorkers {
-		workerCount = minEventWorkers
-	}
-
-	var eventsWG sync.WaitGroup
-	var once sync.Once
-	logClosed := func() {
-		once.Do(func() { log.Println("market event stream closed") })
-	}
-
-	for i := 0; i < workerCount; i++ {
-		eventsWG.Add(1)
-		go func() {
-			defer eventsWG.Done()
-			for {
-				select {
-				case <-workerCtx.Done():
-					return
-				case evt, ok := <-events:
-					if !ok {
-						logClosed()
-						return
-					}
-					processor.handle(evt)
-				}
-			}
-		}()
-	}
-
-	// Determine subscription set for the default USDT markets
-	requests := buildDefaultSubscriptions(defaultSymbols, instruments)
-	manager.SubscribeSymbols(requests...)
-
-	<-ctx.Done()
-	fmt.Println("Stopping order book monitor...")
-	manager.Stop()
-	managerStarted = false
-	workerCancel()
-	eventsWG.Wait()
+	return t.UTC().Format(time.RFC3339Nano)
 }
 
-type bookLevel struct {
-	price *big.Rat
-	qty   *big.Rat
-}
-
-func topLevels(levels []core.BookDepthLevel, limit int, desc bool) []bookLevel {
-	filtered := make([]bookLevel, 0, len(levels))
-	for _, level := range levels {
-		if level.Price == nil || level.Qty == nil || level.Qty.Sign() == 0 {
-			continue
-		}
-		filtered = append(filtered, bookLevel{
-			price: new(big.Rat).Set(level.Price),
-			qty:   new(big.Rat).Set(level.Qty),
-		})
-	}
-	sort.Slice(filtered, func(i, j int) bool {
-		cmp := filtered[i].price.Cmp(filtered[j].price)
-		if desc {
-			return cmp > 0
-		}
-		return cmp < 0
-	})
-	if len(filtered) > limit {
-		filtered = filtered[:limit]
-	}
-	return filtered
-}
-
-func resolveEventSymbol(explicit, topic string) string {
-	if explicit != "" {
-		return explicit
-	}
-	if topic == "" {
-		return ""
-	}
-	_, symbol, ok := strings.Cut(topic, ":")
-	if !ok {
-		return ""
-	}
-	return symbol
-}
-
-func loadInstrumentCache(ctx context.Context, exchange core.Exchange) map[string]core.Instrument {
-	cache := make(map[string]core.Instrument)
-	appendInstruments := func(label string, insts []core.Instrument, err error) {
-		if err != nil {
-			log.Printf("load %s instruments: %v", label, err)
-			return
-		}
-		for _, inst := range insts {
-			cache[inst.Symbol] = inst
-		}
-	}
-	if spot, ok := exchange.(core.SpotParticipant); ok {
-		if api := spot.Spot(ctx); api != nil {
-			insts, err := api.Instruments(ctx)
-			appendInstruments("spot", insts, err)
-		}
-	}
-	if linear, ok := exchange.(core.LinearFuturesParticipant); ok {
-		if api := linear.LinearFutures(ctx); api != nil {
-			insts, err := api.Instruments(ctx)
-			appendInstruments("linear futures", insts, err)
-		}
-	}
-	if inverse, ok := exchange.(core.InverseFuturesParticipant); ok {
-		if api := inverse.InverseFutures(ctx); api != nil {
-			insts, err := api.Instruments(ctx)
-			appendInstruments("inverse futures", insts, err)
-		}
-	}
-	return cache
-}
-
-func buildDefaultSubscriptions(symbols []string, instruments map[string]core.Instrument) []SymbolSubscriptionRequest {
-	defaultCandidates := []string{
-		"BTC-USDT",
-		"ETH-USDT",
-		"BNB-USDT",
-		"XRP-USDT",
-		"SOL-USDT",
-		"DOGE-USDT",
-	}
-	candidates := defaultCandidates
-	if len(symbols) > 0 {
-		candidates = symbols
-	}
-	seen := make(map[string]struct{})
-	requests := make([]SymbolSubscriptionRequest, 0, len(candidates))
-	for _, candidate := range candidates {
-		symbol := normalizeSymbol(candidate)
-		if symbol == "" {
-			continue
-		}
-		if _, ok := seen[symbol]; ok {
-			continue
-		}
-		seen[symbol] = struct{}{}
-		if len(instruments) > 0 {
-			if _, ok := instruments[symbol]; !ok {
-				continue
-			}
-		}
-		req := SymbolSubscriptionRequest{
-			Symbol: symbol,
-			Trades: true,
-			Ticker: true,
-			Book:   true,
-			Config: SubscriptionConfig{
-				BookDepthLevels: 2,
-				UpdateInterval:  defaultBookLogInterval,
-			},
-		}
-		requests = append(requests, req)
-	}
-	return requests
+func normalizeSymbol(symbol string) string {
+	return strings.ToUpper(strings.TrimSpace(symbol))
 }
 
 type instrumentPrecision struct {
@@ -951,14 +242,17 @@ type precisionFormatter struct {
 func newPrecisionFormatter(instruments map[string]core.Instrument) precisionFormatter {
 	scales := make(map[string]instrumentPrecision, len(instruments))
 	for symbol, inst := range instruments {
-		scales[symbol] = instrumentPrecision{priceScale: inst.PriceScale, qtyScale: inst.QtyScale}
+		scales[normalizeSymbol(symbol)] = instrumentPrecision{
+			priceScale: inst.PriceScale,
+			qtyScale:   inst.QtyScale,
+		}
 	}
 	return precisionFormatter{scales: scales}
 }
 
 func (pf precisionFormatter) price(symbol string, value *big.Rat) string {
 	scale := fallbackPriceScale
-	if info, ok := pf.scales[symbol]; ok && info.priceScale > 0 {
+	if info, ok := pf.scales[normalizeSymbol(symbol)]; ok && info.priceScale > 0 {
 		scale = info.priceScale
 	}
 	return formatDecimal(value, scale)
@@ -966,270 +260,112 @@ func (pf precisionFormatter) price(symbol string, value *big.Rat) string {
 
 func (pf precisionFormatter) quantity(symbol string, value *big.Rat) string {
 	scale := fallbackQuantityScale
-	if info, ok := pf.scales[symbol]; ok && info.qtyScale > 0 {
+	if info, ok := pf.scales[normalizeSymbol(symbol)]; ok && info.qtyScale > 0 {
 		scale = info.qtyScale
 	}
 	return formatDecimal(value, scale)
 }
 
-func formatDecimal(r *big.Rat, scale int) string {
-	if r == nil {
-		return "0"
-	}
-	formatted := numeric.Format(r, scale)
-	if formatted == "" {
-		return "0"
-	}
-	return formatted
-}
+func loadInstrumentCache(ctx context.Context, exchange core.Exchange) map[string]core.Instrument {
+	cache := make(map[string]core.Instrument)
 
-type eventProcessor struct {
-	manager       *MarketManager
-	formatter     precisionFormatter
-	bookMu        sync.Mutex
-	lastBookLogs  map[string]time.Time
-	nativeSymbols map[string]string
-}
-
-func newEventProcessor(manager *MarketManager, formatter precisionFormatter, nativeSymbols map[string]string) *eventProcessor {
-	copySymbols := make(map[string]string, len(nativeSymbols))
-	for canonical, native := range nativeSymbols {
-		copySymbols[canonical] = native
-	}
-	return &eventProcessor{
-		manager:       manager,
-		formatter:     formatter,
-		lastBookLogs:  make(map[string]time.Time),
-		nativeSymbols: copySymbols,
-	}
-}
-
-func (p *eventProcessor) nativeSymbol(symbol string) string {
-	canonical := normalizeSymbol(symbol)
-	if canonical == "" {
-		return ""
-	}
-	if p.nativeSymbols != nil {
-		if native, ok := p.nativeSymbols[canonical]; ok && native != "" {
-			return native
-		}
-	}
-	return canonical
-}
-
-func (p *eventProcessor) handle(evt marketEvent) {
-	switch evt.Kind {
-	case marketEventTrade:
-		trade, ok := evt.Payload.(*corestreams.TradeEvent)
-		if !ok || trade == nil {
-			log.Printf("trade event payload mismatch: %#v", evt.Payload)
+	appendInstruments := func(insts []core.Instrument, err error) {
+		if err != nil {
+			log.Printf("load instruments: %v", err)
 			return
 		}
-		canonical := resolveEventSymbol(trade.Symbol, evt.Topic)
-		native := p.nativeSymbol(canonical)
-		log.Printf("[WS] trade topic=%s canonical=%s native=%s price=%s qty=%s at=%s",
-			evt.Topic,
-			canonical,
-			native,
-			p.formatter.price(canonical, trade.Price),
-			p.formatter.quantity(canonical, trade.Quantity),
-			trade.Time.Format(time.RFC3339Nano),
-		)
-	case marketEventTicker:
-		ticker, ok := evt.Payload.(*corestreams.TickerEvent)
-		if !ok || ticker == nil {
-			log.Printf("ticker event payload mismatch: %#v", evt.Payload)
-			return
+		for _, inst := range insts {
+			cache[normalizeSymbol(inst.Symbol)] = inst
 		}
-		canonical := resolveEventSymbol(ticker.Symbol, evt.Topic)
-		native := p.nativeSymbol(canonical)
-		log.Printf("[WS] ticker topic=%s canonical=%s native=%s bid=%s ask=%s at=%s",
-			evt.Topic,
-			canonical,
-			native,
-			p.formatter.price(canonical, ticker.Bid),
-			p.formatter.price(canonical, ticker.Ask),
-			ticker.Time.Format(time.RFC3339Nano),
-		)
-	case marketEventBook:
-		book, ok := evt.Payload.(*corestreams.BookEvent)
-		if !ok || book == nil {
-			log.Printf("book event payload mismatch: %#v", evt.Payload)
-			return
-		}
-		symbol := resolveEventSymbol(book.Symbol, evt.Topic)
-		interval := defaultBookLogInterval
-		depth := 1
-		if cfg, ok := p.manager.SubscriptionConfig(symbol); ok {
-			if cfg.UpdateInterval > 0 {
-				interval = cfg.UpdateInterval
-			}
-			if cfg.BookDepthLevels > 0 {
-				depth = cfg.BookDepthLevels
-			}
-		}
-		p.bookMu.Lock()
-		last := p.lastBookLogs[symbol]
-		if !last.IsZero() && time.Since(last) < interval {
-			p.bookMu.Unlock()
-			return
-		}
-		p.lastBookLogs[symbol] = time.Now()
-		p.bookMu.Unlock()
-		bids := topLevels(book.Bids, depth, true)
-		asks := topLevels(book.Asks, depth, false)
-		native := p.nativeSymbol(symbol)
-		log.Printf("[WS] book topic=%s canonical=%s native=%s depth=%d bids=%d asks=%d bidLevels=%s askLevels=%s at=%s",
-			evt.Topic,
-			symbol,
-			native,
-			depth,
-			len(book.Bids),
-			len(book.Asks),
-			formatBookLevels(symbol, bids, p.formatter),
-			formatBookLevels(symbol, asks, p.formatter),
-			book.Time.Format(time.RFC3339Nano),
-		)
-	case marketEventError:
-		if evt.Err != nil {
-			log.Printf("market stream error: %v", evt.Err)
-		} else {
-			log.Printf("market stream error: %s", evt.Message)
-		}
-	case marketEventSystem:
-		if evt.Message != "" {
-			log.Printf("market stream: %s", evt.Message)
-		}
-	default:
-		log.Printf("unhandled market event kind=%s topic=%s", evt.Kind, evt.Topic)
 	}
+
+	if spot, ok := exchange.(core.SpotParticipant); ok {
+		if api := spot.Spot(ctx); api != nil {
+			appendInstruments(api.Instruments(ctx))
+		}
+	}
+	if linear, ok := exchange.(core.LinearFuturesParticipant); ok {
+		if api := linear.LinearFutures(ctx); api != nil {
+			appendInstruments(api.Instruments(ctx))
+		}
+	}
+	if inverse, ok := exchange.(core.InverseFuturesParticipant); ok {
+		if api := inverse.InverseFutures(ctx); api != nil {
+			appendInstruments(api.Instruments(ctx))
+		}
+	}
+	return cache
 }
 
-func formatBookLevels(symbol string, levels []bookLevel, formatter precisionFormatter) string {
-	if len(levels) == 0 {
-		return "-"
-	}
-	parts := make([]string, len(levels))
-	for i, level := range levels {
-		parts[i] = fmt.Sprintf("%s@%s", formatter.quantity(symbol, level.qty), formatter.price(symbol, level.price))
-	}
-	return strings.Join(parts, " | ")
+type orderBookSubscriber interface {
+	OrderBookSnapshots(ctx context.Context, symbol string) (<-chan corestreams.BookEvent, <-chan error, error)
 }
 
-func parseControlCommand(input string) userCommand {
-	cmd := userCommand{raw: strings.TrimSpace(input)}
-	if cmd.raw == "" {
-		return cmd
-	}
-	parts := strings.Fields(cmd.raw)
-	action := strings.ToLower(parts[0])
-	symbols := make([]string, 0, len(parts)-1)
-	for _, part := range parts[1:] {
-		token := strings.TrimSpace(part)
-		if token == "" {
-			continue
-		}
-		symbol := normalizeSymbol(token)
+func startOrderBookFeeds(
+	ctx context.Context,
+	wg *sync.WaitGroup,
+	subscriber orderBookSubscriber,
+	formatter precisionFormatter,
+	symbols []string,
+) {
+	for _, symbol := range symbols {
+		symbol := normalizeSymbol(symbol)
 		if symbol == "" {
-			if _, err := strconv.Atoi(token); err == nil {
-				symbols = append(symbols, token)
+			continue
+		}
+
+		wg.Add(1)
+		go func(sym string) {
+			defer wg.Done()
+
+			feedCtx, cancel := context.WithCancel(ctx)
+			defer cancel()
+
+			events, errs, err := subscriber.OrderBookSnapshots(feedCtx, sym)
+			if err != nil {
+				log.Printf("order book feed %s: %v", sym, err)
+				return
 			}
-			continue
-		}
-		if containsSymbol(symbols, symbol) {
-			continue
-		}
-		symbols = append(symbols, symbol)
-	}
-	cmd.symbols = symbols
-	switch action {
-	case "help", "h", "?":
-		cmd.kind = commandHelp
-	case "list", "ls":
-		cmd.kind = commandList
-	case "pause":
-		if len(symbols) > 0 {
-			cmd.kind = commandPause
-		}
-	case "resume":
-		if len(symbols) > 0 {
-			cmd.kind = commandResume
-		}
-	case "unsubscribe", "unsub":
-		if len(symbols) > 0 {
-			cmd.kind = commandUnsubscribe
-		}
-	case "subscribe", "sub":
-		if len(symbols) > 0 {
-			cmd.kind = commandSubscribe
-		}
-	case "quit", "exit", "q":
-		cmd.kind = commandQuit
-	default:
-		cmd.kind = commandUnknown
-	}
-	return cmd
-}
 
-func makeSymbolSet(symbols []string) map[string]struct{} {
-	set := make(map[string]struct{}, len(symbols))
-	for _, sym := range symbols {
-		set[normalizeSymbol(sym)] = struct{}{}
-	}
-	return set
-}
-
-func makeSymbolSetFromSubs(subs []symbolSubscription) map[string]struct{} {
-	set := make(map[string]struct{}, len(subs))
-	for _, sub := range subs {
-		set[normalizeSymbol(sub.Symbol)] = struct{}{}
-	}
-	return set
-}
-
-func filterAvailableSymbols(catalog []string, active []symbolSubscription) []string {
-	activeSet := makeSymbolSetFromSubs(active)
-	out := make([]string, 0, len(catalog))
-	for _, sym := range catalog {
-		key := normalizeSymbol(sym)
-		if _, ok := activeSet[key]; ok {
-			continue
-		}
-		out = append(out, key)
-	}
-	return out
-}
-
-func resolveCommandSymbols(inputs []string, kind userCommandKind, state *controlState, allowed map[string]struct{}) []string {
-	resolved := make([]string, 0, len(inputs))
-	seen := make(map[string]struct{}, len(inputs))
-	for _, raw := range inputs {
-		token := strings.TrimSpace(raw)
-		if token == "" {
-			continue
-		}
-		candidate := ""
-		if idx, err := strconv.Atoi(token); err == nil && state != nil && state.lastKind == kind {
-			if idx >= 1 && idx <= len(state.lastMenu) {
-				candidate = state.lastMenu[idx-1]
+			eventCh := events
+			errCh := errs
+			for {
+				select {
+				case <-feedCtx.Done():
+					return
+				case evt, ok := <-eventCh:
+					if !ok {
+						eventCh = nil
+						if errCh == nil {
+							return
+						}
+						continue
+					}
+					printBookSnapshot(evt, formatter)
+				case err, ok := <-errCh:
+					if !ok {
+						errCh = nil
+						if eventCh == nil {
+							return
+						}
+						continue
+					}
+					if err != nil {
+						log.Printf("order book feed %s error: %v", sym, err)
+					}
+				}
 			}
-		}
-		if candidate == "" {
-			candidate = normalizeSymbol(token)
-		}
-		if candidate == "" {
-			continue
-		}
-		if len(allowed) > 0 {
-			if _, ok := allowed[candidate]; !ok {
-				continue
-			}
-		}
-		if _, ok := seen[candidate]; ok {
-			continue
-		}
-		seen[candidate] = struct{}{}
-		resolved = append(resolved, candidate)
+		}(symbol)
 	}
-	return resolved
+}
+
+func printBookSnapshot(evt corestreams.BookEvent, formatter precisionFormatter) {
+	fmt.Printf("[%s] BOOK   %s bids=%s asks=%s depth=%d/%d snapshot\n",
+		formatTime(evt.Time),
+		evt.Symbol,
+		describeTopLevel(formatter, evt.Symbol, evt.Bids),
+		describeTopLevel(formatter, evt.Symbol, evt.Asks),
+		len(evt.Bids),
+		len(evt.Asks),
+	)
 }
