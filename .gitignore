@@ -25,11 +25,8 @@
 # ...even if they are in subdirectories
 !*/
 
-# Protocol vectors and schemas
-!protocol/vectors/*.json
-!protocol/schemas/*.json
-# Test data
-!*/test/testdata/*.json
+# Testdata
+!*_snapshots.json
 
 # Github Actions
 !.github/workflows/ci.yml

@@ -10,8 +10,8 @@ import (
 	corestreams "github.com/coachpo/meltica/core/streams"
 	"github.com/coachpo/meltica/exchanges/binance/infra/rest"
 	"github.com/coachpo/meltica/exchanges/binance/internal"
-	"github.com/coachpo/meltica/exchanges/shared/infra/numeric"
 	routingrest "github.com/coachpo/meltica/exchanges/shared/routing"
+	"github.com/coachpo/meltica/internal/numeric"
 )
 
 type spotAPI struct{ x *Exchange }

@@ -9,8 +9,8 @@ import (
 
 	"github.com/coachpo/meltica/core"
 	"github.com/coachpo/meltica/exchanges/binance/internal"
-	"github.com/coachpo/meltica/exchanges/shared/infra/numeric"
 	routingrest "github.com/coachpo/meltica/exchanges/shared/routing"
+	"github.com/coachpo/meltica/internal/numeric"
 )
 
 type futuresEndpoints struct {

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/coachpo/meltica/exchanges/shared/infra/numeric"
+	"github.com/coachpo/meltica/internal/numeric"
 )
 
 func TestBuildTickerFromBidAsk(t *testing.T) {

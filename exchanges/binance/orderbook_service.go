@@ -14,8 +14,8 @@ import (
 	"github.com/coachpo/meltica/exchanges/binance/infra/rest"
 	"github.com/coachpo/meltica/exchanges/binance/internal"
 	bnrouting "github.com/coachpo/meltica/exchanges/binance/routing"
-	"github.com/coachpo/meltica/exchanges/shared/infra/numeric"
 	routingrest "github.com/coachpo/meltica/exchanges/shared/routing"
+	"github.com/coachpo/meltica/internal/numeric"
 )
 
 // OrderBookService is a Level-3 service that manages order book state

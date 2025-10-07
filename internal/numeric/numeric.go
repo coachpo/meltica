@@ -40,7 +40,7 @@ func Format(r *big.Rat, scale int) string {
 }
 
 // Parse converts a decimal string into a rational number.
-// On failure it returns (nil, false).
+// On failure, it returns (nil, false).
 func Parse(s string) (*big.Rat, bool) {
 	s = strings.TrimSpace(s)
 	if s == "" {

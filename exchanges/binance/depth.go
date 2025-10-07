@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/coachpo/meltica/core"
-	"github.com/coachpo/meltica/exchanges/shared/infra/numeric"
+	"github.com/coachpo/meltica/internal/numeric"
 )
 
 func parseDepthLevels(pairs [][]interface{}) []core.BookDepthLevel {
