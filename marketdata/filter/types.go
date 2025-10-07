@@ -7,27 +7,45 @@ import (
 	corestreams "github.com/coachpo/meltica/core/streams"
 )
 
+// ChannelType classifies the communication channel for interactions.
+type ChannelType string
+
+const (
+	ChannelPublicWS  ChannelType = "public_ws"
+	ChannelPrivateWS ChannelType = "private_ws"
+	ChannelREST      ChannelType = "rest"
+	ChannelHybrid    ChannelType = "hybrid"
+)
+
 // EventKind classifies canonical market-data events that flow through the filter pipeline.
 type EventKind string
 
 const (
-	EventKindUnknown EventKind = "unknown"
-	EventKindBook    EventKind = "book"
-	EventKindTrade   EventKind = "trade"
-	EventKindTicker  EventKind = "ticker"
-	EventKindVWAP    EventKind = "vwap"
+	EventKindUnknown     EventKind = "unknown"
+	EventKindBook        EventKind = "book"
+	EventKindTrade       EventKind = "trade"
+	EventKindTicker      EventKind = "ticker"
+	EventKindVWAP        EventKind = "vwap"
+	EventKindAccount     EventKind = "account"
+	EventKindOrder       EventKind = "order"
+	EventKindRestResponse EventKind = "rest_response"
 )
 
 // EventEnvelope wraps a normalized event emitted by the filter pipeline.
 type EventEnvelope struct {
 	Kind      EventKind
+	Channel   ChannelType
 	Symbol    string
 	Timestamp time.Time
+	CorrelationID string
 
-	Book   *corestreams.BookEvent
-	Trade  *corestreams.TradeEvent
-	Ticker *corestreams.TickerEvent
-	Stats  *AnalyticsEvent
+	Book          *corestreams.BookEvent
+	Trade         *corestreams.TradeEvent
+	Ticker        *corestreams.TickerEvent
+	Stats         *AnalyticsEvent
+	AccountEvent  *AccountEvent
+	OrderEvent    *OrderEvent
+	RestResponse  *RestResponse
 }
 
 // AnalyticsEvent contains derived metrics computed by the filter pipeline.
@@ -37,10 +55,58 @@ type AnalyticsEvent struct {
 	TradeCount int64
 }
 
+// AccountEvent represents account-related events from private streams.
+type AccountEvent struct {
+	Symbol    string
+	Balance   *big.Rat
+	Available *big.Rat
+	Locked    *big.Rat
+}
+
+// OrderEvent represents order-related events from private streams.
+type OrderEvent struct {
+	Symbol     string
+	OrderID    string
+	Side       string
+	Price      *big.Rat
+	Quantity   *big.Rat
+	Status     string
+	Type       string
+	TimeInForce string
+}
+
+// RestResponse represents a REST API response.
+type RestResponse struct {
+	RequestID   string
+	Method      string
+	Path        string
+	StatusCode  int
+	Body        interface{}
+	Error       error
+}
+
 // Observer receives callbacks for events and errors flowing through the filter pipeline.
 type Observer interface {
 	OnEvent(EventEnvelope)
 	OnError(error)
+}
+
+// InteractionRequest represents a single interaction with an exchange.
+type InteractionRequest struct {
+	Channel     ChannelType
+	Symbol      string
+	Method      string
+	Path        string
+	Payload     interface{}
+	CorrelationID string
+	AuthContext *AuthContext
+}
+
+// AuthContext contains authentication information for private interactions.
+type AuthContext struct {
+	APIKey    string
+	Secret    string
+	ListenKey string
 }
 
 // FilterRequest declares the desired feeds and filter policies for a session.
@@ -62,6 +128,12 @@ type FilterRequest struct {
 
 	// EnableVWAP toggles generation of running VWAP analytics events.
 	EnableVWAP bool
+
+	// EnablePrivate enables private stream subscriptions (account, orders).
+	EnablePrivate bool
+
+	// RESTRequests contains REST API calls to be executed through the pipeline.
+	RESTRequests []InteractionRequest
 
 	// Observer receives event/error callbacks after reliability handling.
 	Observer Observer

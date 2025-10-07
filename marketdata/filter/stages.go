@@ -4,241 +4,12 @@ import (
 	"context"
 	"fmt"
 	"math/big"
-	"sync"
 	"time"
 
 	"github.com/coachpo/meltica/core"
 	corestreams "github.com/coachpo/meltica/core/streams"
 )
 
-func newSourceStage(
-	adapter Adapter,
-	req FilterRequest,
-	withBooks bool,
-	withTrades bool,
-	withTickers bool,
-) Stage {
-	if adapter == nil {
-		return NewStageFunc("source", func(ctx context.Context, input StageResult) StageResult {
-			events := make(chan EventEnvelope)
-			errors := make(chan error)
-			close(events)
-			close(errors)
-			return StageResult{Events: events, Errors: errors}
-		})
-	}
-
-	if !withBooks && !withTrades && !withTickers {
-		return nil
-	}
-
-	return NewStageFunc("source", func(ctx context.Context, input StageResult) StageResult {
-		events := make(chan EventEnvelope)
-		errors := make(chan error, 16)
-
-		var (
-			bookSources   []BookSource
-			tradeSources  []TradeSource
-			tickerSources []TickerSource
-			err           error
-		)
-
-		if withBooks {
-			bookSources, err = adapter.BookSources(ctx, req.Symbols)
-			if err != nil {
-				go func() {
-					defer close(events)
-					defer close(errors)
-					select {
-					case errors <- err:
-					case <-ctx.Done():
-					}
-				}()
-				return StageResult{Events: events, Errors: errors}
-			}
-		}
-		if withTrades {
-			tradeSources, err = adapter.TradeSources(ctx, req.Symbols)
-			if err != nil {
-				go func() {
-					defer close(events)
-					defer close(errors)
-					select {
-					case errors <- err:
-					case <-ctx.Done():
-					}
-				}()
-				return StageResult{Events: events, Errors: errors}
-			}
-		}
-		if withTickers {
-			tickerSources, err = adapter.TickerSources(ctx, req.Symbols)
-			if err != nil {
-				go func() {
-					defer close(events)
-					defer close(errors)
-					select {
-					case errors <- err:
-					case <-ctx.Done():
-					}
-				}()
-				return StageResult{Events: events, Errors: errors}
-			}
-		}
-
-		totalSources := len(bookSources) + len(tradeSources) + len(tickerSources)
-		if totalSources == 0 {
-			close(events)
-			close(errors)
-			return StageResult{Events: events, Errors: errors}
-		}
-
-		var wg sync.WaitGroup
-		go func() {
-			defer close(events)
-			defer close(errors)
-
-			for _, src := range bookSources {
-				source := src
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
-					eventCh := source.Events
-					errCh := source.Errors
-					for eventCh != nil || errCh != nil {
-						select {
-						case <-ctx.Done():
-							return
-						case evt, ok := <-eventCh:
-							if !ok {
-								eventCh = nil
-								continue
-							}
-							book := evt
-							envelope := EventEnvelope{
-								Kind:      EventKindBook,
-								Symbol:    source.Symbol,
-								Timestamp: book.Time,
-								Book:      &book,
-							}
-							select {
-							case events <- envelope:
-							case <-ctx.Done():
-								return
-							}
-						case err, ok := <-errCh:
-							if !ok {
-								errCh = nil
-								continue
-							}
-							if err != nil {
-								select {
-								case errors <- err:
-								case <-ctx.Done():
-									return
-								}
-							}
-						}
-					}
-				}()
-			}
-
-			for _, src := range tradeSources {
-				source := src
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
-					eventCh := source.Events
-					errCh := source.Errors
-					for eventCh != nil || errCh != nil {
-						select {
-						case <-ctx.Done():
-							return
-						case evt, ok := <-eventCh:
-							if !ok {
-								eventCh = nil
-								continue
-							}
-							trade := evt
-							envelope := EventEnvelope{
-								Kind:      EventKindTrade,
-								Symbol:    source.Symbol,
-								Timestamp: trade.Time,
-								Trade:     &trade,
-							}
-							select {
-							case events <- envelope:
-							case <-ctx.Done():
-								return
-							}
-						case err, ok := <-errCh:
-							if !ok {
-								errCh = nil
-								continue
-							}
-							if err != nil {
-								select {
-								case errors <- err:
-								case <-ctx.Done():
-									return
-								}
-							}
-						}
-					}
-				}()
-			}
-
-			for _, src := range tickerSources {
-				source := src
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
-					eventCh := source.Events
-					errCh := source.Errors
-					for eventCh != nil || errCh != nil {
-						select {
-						case <-ctx.Done():
-							return
-						case evt, ok := <-eventCh:
-							if !ok {
-								eventCh = nil
-								continue
-							}
-							ticker := evt
-							envelope := EventEnvelope{
-								Kind:      EventKindTicker,
-								Symbol:    source.Symbol,
-								Timestamp: ticker.Time,
-								Ticker:    &ticker,
-							}
-							select {
-							case events <- envelope:
-							case <-ctx.Done():
-								return
-							}
-						case err, ok := <-errCh:
-							if !ok {
-								errCh = nil
-								continue
-							}
-							if err != nil {
-								select {
-								case errors <- err:
-								case <-ctx.Done():
-									return
-								}
-							}
-						}
-					}
-				}()
-			}
-
-			wg.Wait()
-		}()
-
-		return StageResult{Events: events, Errors: errors}
-	})
-}
 
 func newSamplingStage(interval time.Duration) Stage {
 	return NewStageFunc("sampling", func(ctx context.Context, input StageResult) StageResult {
@@ -370,8 +141,8 @@ func newNormalizeStage() Stage {
 		if input.Events == nil {
 			return input
 		}
-		events := make(chan EventEnvelope)
-		errors := make(chan error, 1)
+		events := make(chan EventEnvelope, 128)
+		errors := make(chan error, 16)
 		eventSource := input.Events
 		errorSource := input.Errors
 
@@ -387,7 +158,8 @@ func newNormalizeStage() Stage {
 						eventSource = nil
 						continue
 					}
-					if evt.Symbol == "" {
+					// Allow REST responses without symbols (account info, etc.)
+					if evt.Symbol == "" && evt.Kind != EventKindRestResponse {
 						continue
 					}
 					if evt.Timestamp.IsZero() {

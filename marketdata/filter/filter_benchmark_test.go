@@ -9,6 +9,47 @@ import (
 	"github.com/coachpo/meltica/marketdata/filter"
 )
 
+type stubAdapter struct {
+	capabilities  filter.Capabilities
+	bookSources   []filter.BookSource
+	tradeSources  []filter.TradeSource
+	tickerSources []filter.TickerSource
+}
+
+func (s *stubAdapter) Capabilities() filter.Capabilities {
+	return s.capabilities
+}
+
+func (s *stubAdapter) BookSources(ctx context.Context, symbols []string) ([]filter.BookSource, error) {
+	return s.bookSources, nil
+}
+
+func (s *stubAdapter) TradeSources(ctx context.Context, symbols []string) ([]filter.TradeSource, error) {
+	return s.tradeSources, nil
+}
+
+func (s *stubAdapter) TickerSources(ctx context.Context, symbols []string) ([]filter.TickerSource, error) {
+	return s.tickerSources, nil
+}
+
+func (s *stubAdapter) PrivateSources(ctx context.Context, auth *filter.AuthContext) ([]filter.PrivateSource, error) {
+	return nil, nil
+}
+
+func (s *stubAdapter) ExecuteREST(ctx context.Context, req filter.InteractionRequest) (<-chan filter.EventEnvelope, <-chan error, error) {
+	events := make(chan filter.EventEnvelope)
+	close(events)
+	errors := make(chan error)
+	close(errors)
+	return events, errors, nil
+}
+
+func (s *stubAdapter) InitPrivateSession(ctx context.Context, auth *filter.AuthContext) error {
+	return nil
+}
+
+func (s *stubAdapter) Close() {}
+
 func BenchmarkPipeline(b *testing.B) {
 	run := func(name string, req filter.FilterRequest) {
 		b.Run(name, func(b *testing.B) {
@@ -33,7 +74,7 @@ func BenchmarkPipeline(b *testing.B) {
 					},
 				}
 
-				coord := filter.NewCoordinator(adapter)
+				coord := filter.NewCoordinator(adapter, nil)
 				stream, err := coord.Stream(ctx, req)
 				if err != nil {
 					b.Fatalf("stream: %v", err)

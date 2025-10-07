@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/coachpo/meltica/core"
 	corestreams "github.com/coachpo/meltica/core/streams"
@@ -18,10 +19,20 @@ type publicSubscriber interface {
 	SubscribePublic(ctx context.Context, topics ...string) (core.Subscription, error)
 }
 
+type privateSubscriber interface {
+	SubscribePrivate(ctx context.Context, topics ...string) (core.Subscription, error)
+}
+
+type restExecutor interface {
+	Dispatch(ctx context.Context, msg interface{}, result interface{}) error
+}
+
 // Adapter implements filter.Adapter for Binance.
 type Adapter struct {
 	orderBooks orderBookSubscriber
 	ws         publicSubscriber
+	privateWS  privateSubscriber
+	restRouter restExecutor
 }
 
 // NewAdapter constructs a Binance filter adapter.
@@ -35,12 +46,27 @@ func NewAdapter(orderBooks orderBookSubscriber, ws publicSubscriber) (*Adapter, 
 	}, nil
 }
 
+// NewAdapterWithPrivate constructs a Binance filter adapter with private capabilities.
+func NewAdapterWithPrivate(orderBooks orderBookSubscriber, ws publicSubscriber, privateWS privateSubscriber, restRouter restExecutor) (*Adapter, error) {
+	if orderBooks == nil && ws == nil && privateWS == nil && restRouter == nil {
+		return nil, fmt.Errorf("binance filter: no feed providers available")
+	}
+	return &Adapter{
+		orderBooks: orderBooks,
+		ws:         ws,
+		privateWS:  privateWS,
+		restRouter: restRouter,
+	}, nil
+}
+
 // Capabilities declares supported feeds.
 func (a *Adapter) Capabilities() filter.Capabilities {
 	return filter.Capabilities{
-		Books:   a.orderBooks != nil,
-		Trades:  a.ws != nil,
-		Tickers: a.ws != nil,
+		Books:         a.orderBooks != nil,
+		Trades:        a.ws != nil,
+		Tickers:       a.ws != nil,
+		PrivateStreams: a.privateWS != nil,
+		RESTEndpoints:  a.restRouter != nil,
 	}
 }
 
@@ -214,9 +240,161 @@ func (a *Adapter) TickerSources(ctx context.Context, symbols []string) ([]filter
 	return sources, nil
 }
 
+// PrivateSources subscribes to private account and order streams.
+func (a *Adapter) PrivateSources(ctx context.Context, auth *filter.AuthContext) ([]filter.PrivateSource, error) {
+	if a.privateWS == nil {
+		return nil, nil
+	}
+
+	sources := make([]filter.PrivateSource, 0, 2) // account + orders
+
+	// Subscribe to account updates
+	accountEvents := make(chan filter.EventEnvelope, 32)
+	accountErrors := make(chan error, 1)
+
+	go a.forwardPrivateEvents(ctx, "account", accountEvents, accountErrors)
+
+	sources = append(sources, filter.PrivateSource{
+		Kind:   filter.EventKindAccount,
+		Events: accountEvents,
+		Errors: accountErrors,
+	})
+
+	// Subscribe to order updates
+	orderEvents := make(chan filter.EventEnvelope, 32)
+	orderErrors := make(chan error, 1)
+
+	go a.forwardPrivateEvents(ctx, "orders", orderEvents, orderErrors)
+
+	sources = append(sources, filter.PrivateSource{
+		Kind:   filter.EventKindOrder,
+		Events: orderEvents,
+		Errors: orderErrors,
+	})
+
+	return sources, nil
+}
+
+// ExecuteREST executes REST API calls through the filter pipeline.
+func (a *Adapter) ExecuteREST(ctx context.Context, req filter.InteractionRequest) (<-chan filter.EventEnvelope, <-chan error, error) {
+	if a.restRouter == nil {
+		return nil, nil, fmt.Errorf("REST router not available")
+	}
+
+	events := make(chan filter.EventEnvelope, 1)
+	errors := make(chan error, 1)
+
+	go func() {
+		defer close(events)
+		defer close(errors)
+
+		// Execute REST call
+		var result interface{}
+		err := a.restRouter.Dispatch(ctx, req, &result)
+
+		if err != nil {
+			select {
+			case errors <- err:
+			case <-ctx.Done():
+			}
+			return
+		}
+
+		// Create response envelope
+		envelope := filter.EventEnvelope{
+			Kind:           filter.EventKindRestResponse,
+			Channel:        filter.ChannelREST,
+			Symbol:         req.Symbol,
+			Timestamp:      time.Now(),
+			CorrelationID:  req.CorrelationID,
+			RestResponse: &filter.RestResponse{
+				RequestID:  req.CorrelationID,
+				Method:     req.Method,
+				Path:       req.Path,
+				StatusCode: 200,
+				Body:       result,
+			},
+		}
+
+		select {
+		case events <- envelope:
+		case <-ctx.Done():
+		}
+	}()
+
+	return events, errors, nil
+}
+
+// InitPrivateSession initializes private session with authentication.
+func (a *Adapter) InitPrivateSession(ctx context.Context, auth *filter.AuthContext) error {
+	// Binance private streams are managed by the router, no explicit initialization needed
+	return nil
+}
+
 // Close releases exchange resources.
 func (a *Adapter) Close() {
 	// Adapter relies on exchange lifecycle managed elsewhere.
+}
+
+func (a *Adapter) forwardPrivateEvents(ctx context.Context, streamType string, events chan<- filter.EventEnvelope, errors chan<- error) {
+	defer close(events)
+	defer close(errors)
+
+	sub, err := a.privateWS.SubscribePrivate(ctx)
+	if err != nil {
+		select {
+		case errors <- fmt.Errorf("subscribe private %s: %w", streamType, err):
+		case <-ctx.Done():
+		}
+		return
+	}
+	defer sub.Close()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case _, ok := <-sub.C():
+			if !ok {
+				return
+			}
+
+			// Parse private message and create envelope
+			envelope := filter.EventEnvelope{
+				Channel:   filter.ChannelPrivateWS,
+				Timestamp: time.Now(),
+			}
+
+			// TODO: Parse Binance private stream messages and populate appropriate event fields
+			// For now, we'll create a placeholder envelope
+			switch streamType {
+			case "account":
+				envelope.Kind = filter.EventKindAccount
+				// envelope.AccountEvent = parseAccountEvent(msg)
+			case "orders":
+				envelope.Kind = filter.EventKindOrder
+				// envelope.OrderEvent = parseOrderEvent(msg)
+			}
+
+			select {
+			case events <- envelope:
+			case <-ctx.Done():
+				return
+			}
+
+		case err, ok := <-sub.Err():
+			if !ok {
+				return
+			}
+			if err != nil {
+				select {
+				case errors <- err:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}
+	}
 }
 
 func uniqueSymbols(symbols []string) []string {

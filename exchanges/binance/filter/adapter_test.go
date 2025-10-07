@@ -70,7 +70,7 @@ func TestBinanceAdapterWithFixtures(t *testing.T) {
 	}
 	defer adapter.Close()
 
-	coordinator := mdfilter.NewCoordinator(adapter)
+	coordinator := mdfilter.NewCoordinator(adapter, nil)
 	defer coordinator.Close()
 
 	symbols := []string{"BTC-USDT", "ETH-USDT"}

@@ -12,11 +12,13 @@ type StageFactory func(ctx context.Context, req FilterRequest, adapter Adapter) 
 // Coordinator orchestrates the lifecycle of a filter pipeline.
 type Coordinator struct {
 	adapter Adapter
+	auth    *AuthContext
 }
 
 // NewCoordinator creates a coordinator backed by the provided adapter.
-func NewCoordinator(adapter Adapter) *Coordinator {
-	return &Coordinator{adapter: adapter}
+// Authentication context can be provided for private streams and REST requests.
+func NewCoordinator(adapter Adapter, auth *AuthContext) *Coordinator {
+	return &Coordinator{adapter: adapter, auth: auth}
 }
 
 // Stream builds and runs a pipeline for the supplied request.
@@ -58,12 +60,8 @@ func (c *Coordinator) buildStages(ctx context.Context, req FilterRequest) ([]Sta
 	cache := newSnapshotCache(req.EnableSnapshots)
 
 	if c.adapter != nil {
-		caps := c.adapter.Capabilities()
-		includeBooks := req.Feeds.Books && caps.Books
-		includeTrades := req.Feeds.Trades && caps.Trades
-		includeTickers := req.Feeds.Tickers && caps.Tickers
-
-		if stage := newSourceStage(c.adapter, req, includeBooks, includeTrades, includeTickers); stage != nil {
+		// Use multi-source stage for all channel types
+		if stage := multiSourceStage(c.adapter, req, c.auth); stage != nil {
 			stages = append(stages, stage, newNormalizeStage())
 
 			if throttle := newThrottleStage(req.MinEmitInterval); throttle != nil {
@@ -96,7 +94,7 @@ func (c *Coordinator) buildStages(ctx context.Context, req FilterRequest) ([]Sta
 
 func (c *Coordinator) validateRequest(req FilterRequest) error {
 	if c.adapter == nil {
-		if req.Feeds.Books || req.Feeds.Trades || req.Feeds.Tickers {
+		if req.Feeds.Books || req.Feeds.Trades || req.Feeds.Tickers || req.EnablePrivate || len(req.RESTRequests) > 0 {
 			return fmt.Errorf("filter: adapter unavailable")
 		}
 		return nil
@@ -113,8 +111,20 @@ func (c *Coordinator) validateRequest(req FilterRequest) error {
 	if req.Feeds.Tickers && !caps.Tickers {
 		missing = append(missing, "tickers")
 	}
+	if req.EnablePrivate && !caps.PrivateStreams {
+		missing = append(missing, "private_streams")
+	}
+	if len(req.RESTRequests) > 0 && !caps.RESTEndpoints {
+		missing = append(missing, "rest_endpoints")
+	}
 	if len(missing) > 0 {
 		return fmt.Errorf("filter: adapter missing capabilities: %s", strings.Join(missing, ", "))
 	}
+
+	// Validate auth context for private streams
+	if req.EnablePrivate && c.auth == nil {
+		return fmt.Errorf("filter: authentication required for private streams")
+	}
+
 	return nil
 }

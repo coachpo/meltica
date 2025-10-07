@@ -6,11 +6,13 @@ import (
 	corestreams "github.com/coachpo/meltica/core/streams"
 )
 
-// Capabilities describes which feeds an adapter can provide.
+// Capabilities describes which feeds and channels an adapter can provide.
 type Capabilities struct {
-	Books   bool
-	Trades  bool
-	Tickers bool
+	Books         bool
+	Trades        bool
+	Tickers       bool
+	PrivateStreams bool
+	RESTEndpoints  bool
 }
 
 // Adapter exposes exchange-specific feed sourcing to the filter pipeline.
@@ -19,6 +21,13 @@ type Adapter interface {
 	BookSources(ctx context.Context, symbols []string) ([]BookSource, error)
 	TradeSources(ctx context.Context, symbols []string) ([]TradeSource, error)
 	TickerSources(ctx context.Context, symbols []string) ([]TickerSource, error)
+
+	// Multi-channel capabilities
+	PrivateSources(ctx context.Context, auth *AuthContext) ([]PrivateSource, error)
+	ExecuteREST(ctx context.Context, req InteractionRequest) (<-chan EventEnvelope, <-chan error, error)
+
+	// Lifecycle hooks
+	InitPrivateSession(ctx context.Context, auth *AuthContext) error
 	Close()
 }
 
@@ -40,5 +49,12 @@ type TradeSource struct {
 type TickerSource struct {
 	Symbol string
 	Events <-chan corestreams.TickerEvent
+	Errors <-chan error
+}
+
+// PrivateSource represents a subscription to private stream events.
+type PrivateSource struct {
+	Kind   EventKind
+	Events <-chan EventEnvelope
 	Errors <-chan error
 }

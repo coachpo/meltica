@@ -57,17 +57,24 @@ Implements the domain and business logic.
 ## **Level 4 – Filter Layer**
 
 **Purpose:**
-Creates exchange-agnostic market-data pipelines that orchestrate Level 3 services, apply policy filters, and expose normalized streams to downstream clients.
+Creates exchange-agnostic market-data pipelines that orchestrate Level 3 services, apply policy filters, and expose normalized streams to downstream clients. Acts as a channel-agnostic façade that orchestrates all exchange interactions (public market data, private websocket topics, and REST request/response flows).
 
 **Responsibilities:**
-- Coordinates feed sourcing across exchanges via adapters that expose declared capabilities.
-- Normalizes events into canonical envelopes (symbol, timestamp, payload) regardless of exchange-specific quirks.
+- Coordinates multi-channel sourcing across exchanges via adapters that expose declared capabilities (public feeds, private streams, REST endpoints).
+- Normalizes events into canonical envelopes (symbol, timestamp, payload, channel context) regardless of exchange-specific quirks.
 - Applies filter policies such as throttling, deduplication, enrichment, aggregation, and selective fan-out.
 - Manages lifecycle concerns for feed pipelines: context propagation, retries, error fan-in, and graceful teardown.
 - Provides a single facade for interactive CLIs and services to consume filtered market data without touching Level 3 primitives directly.
+- Orchestrates authentication context for private streams and correlation IDs for REST request/response tracking.
+
+**Channel Types:**
+- `public_ws` – Public WebSocket streams (order books, trades, tickers)
+- `private_ws` – Private WebSocket streams (account updates, order events)
+- `rest` – REST API request/response flows
+- `hybrid` – Mixed channel workflows
 
 **Stage Catalog:**
-- `Source` – multiplexes exchange-native feed channels (books, trades, tickers) into canonical event envelopes.
+- `MultiSource` – multiplexes mixed channel sources (public feeds, private streams, REST requests) into canonical event envelopes with channel context.
 - `Normalize` – enforces canonical symbol casing, guarantees timestamps, and prepares events for downstream policy stages.
 - `Throttle` – enforces minimum emit intervals per symbol/kind to prevent overload from bursty feeds.
 - `Aggregate` – trims order-book depth, updates snapshot caches, and prepares derived data for observers.
@@ -79,10 +86,11 @@ Creates exchange-agnostic market-data pipelines that orchestrate Level 3 service
 
 ### Registering Filter Adapters & Stages
 
-1. Implement the `marketdata/filter.Adapter` interface inside the exchange plugin. Declare supported feeds via `Capabilities()` and surface channel-based sources for each feed type you expose (`BookSources`, `TradeSources`, `TickerSources`). The adapter should translate Level 3 services (for example, Binance `OrderBookService.Subscribe`) into canonical channels of `corestreams` events.
-2. Wire the adapter into consumers (such as `cmd/market_data`) by instantiating `filter.NewCoordinator(adapter)` and issuing a `FilterRequest`. The coordinator will validate capabilities before building the stage pipeline.
-3. To extend filtering behaviour, create a new `filter.Stage` (via `filter.NewStageFunc`) that transforms, enriches, or routes `EventEnvelope` streams. Update the coordinator’s stage builder to insert the new stage where appropriate or conditionally add it based on `FilterRequest` flags.
-4. Add integration tests that exercise the adapter with recorded fixtures to ensure stage orchestration remains stable, and unit tests for any new stages to verify ordering, error propagation, and cancellation semantics.
+1. Implement the `marketdata/filter.Adapter` interface inside the exchange plugin. Declare supported capabilities via `Capabilities()` including public feeds (`Books`, `Trades`, `Tickers`), private streams (`PrivateStreams`), and REST endpoints (`RESTEndpoints`).
+2. Surface channel-based sources for each feed type (`BookSources`, `TradeSources`, `TickerSources`, `PrivateSources`) and implement REST execution (`ExecuteREST`). The adapter should translate Level 3 services into canonical channels of `corestreams` events and `EventEnvelope` streams.
+3. Wire the adapter into consumers (such as `cmd/market_data`) by instantiating `filter.NewInteractionFacade(adapter, auth)` and using high-level methods (`SubscribePublic`, `SubscribePrivate`, `FetchREST`). For advanced use cases, use `filter.NewCoordinator(adapter, auth)` directly.
+4. To extend filtering behaviour, create a new `filter.Stage` (via `filter.NewStageFunc`) that transforms, enriches, or routes `EventEnvelope` streams. Update the coordinator's stage builder to insert the new stage where appropriate or conditionally add it based on `FilterRequest` flags.
+5. Add integration tests that exercise the adapter with recorded fixtures to ensure stage orchestration remains stable, and unit tests for any new stages to verify ordering, error propagation, and cancellation semantics.
 
 ---
 
@@ -183,3 +191,77 @@ The following files have been removed and their functionality consolidated:
 - More maintainable message parsing via stream registry
 - Unified configuration reduces coupling between REST and WebSocket setup
 - Easier to extend with new stream types
+
+---
+
+## **Multi-Channel Level-4 Architecture (Latest)**
+
+### **Overview**
+The Level-4 Filter Layer has been elevated to a channel-agnostic façade that orchestrates all exchange interactions:
+- **Public WebSocket** streams (order books, trades, tickers)
+- **Private WebSocket** streams (account updates, order events)
+- **REST API** request/response flows
+- **Mixed channel** workflows combining multiple interaction types
+
+### **Key Components**
+
+**InteractionFacade**
+- High-level client API: `SubscribePublic()`, `SubscribePrivate()`, `FetchREST()`
+- Manages authentication context and correlation IDs
+- Provides backward compatibility with existing public feed usage
+
+**Multi-Source Stage**
+- Orchestrates mixed channel sources concurrently
+- Handles different lifecycle patterns (streaming vs request/response)
+- Preserves channel context throughout the pipeline
+
+**Enhanced Adapter Interface**
+- `Capabilities()` declares support for PrivateStreams and RESTEndpoints
+- `PrivateSources()` provides private stream event channels
+- `ExecuteREST()` handles REST request/response flows
+- `InitPrivateSession()` manages authentication for private streams
+
+**Event Envelope Extensions**
+- `Channel` field identifies source (public_ws, private_ws, rest)
+- `CorrelationID` tracks request/response pairs
+- Extended `EventKind` (Account, Order, RestResponse)
+- New payload types (AccountEvent, OrderEvent, RestResponse)
+
+### **Usage Examples**
+
+```go
+// Public market data only (existing usage)
+facade := filter.NewInteractionFacade(adapter, nil)
+stream, err := facade.SubscribePublic(ctx, []string{"BTC-USDT"},
+    filter.WithBooks(), filter.WithTrades())
+
+// Private account streams
+facade := filter.NewInteractionFacade(adapter, auth)
+stream, err := facade.SubscribePrivate(ctx)
+
+// REST API calls
+requests := []filter.InteractionRequest{
+    filter.GetAccountInfo("req-1"),
+    filter.GetOpenOrders("BTC-USDT", "req-2"),
+}
+stream, err := facade.FetchREST(ctx, requests)
+
+// Mixed workflow
+coordinator := filter.NewCoordinator(adapter, auth)
+req := filter.FilterRequest{
+    Symbols: []string{"BTC-USDT"},
+    Feeds: filter.FeedSelection{Books: true, Trades: true},
+    EnablePrivate: true,
+    RESTRequests: []filter.InteractionRequest{
+        filter.GetAccountInfo("mixed-req-1"),
+    },
+}
+stream, err := coordinator.Stream(ctx, req)
+```
+
+### **Benefits**
+- **Unified Interface**: Clients interact only with Level-4, eliminating direct REST calls or private WS usage
+- **Channel Context**: Events carry source channel information for proper handling
+- **Request Tracking**: Correlation IDs enable request/response pairing
+- **Flexible Orchestration**: Mixed workflows combine streaming and request/response patterns
+- **Backward Compatible**: Existing public feed usage continues unchanged

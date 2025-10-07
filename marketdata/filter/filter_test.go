@@ -12,30 +12,6 @@ import (
 	"github.com/coachpo/meltica/marketdata/filter"
 )
 
-type stubAdapter struct {
-	capabilities  filter.Capabilities
-	bookSources   []filter.BookSource
-	tradeSources  []filter.TradeSource
-	tickerSources []filter.TickerSource
-}
-
-func (s *stubAdapter) Capabilities() filter.Capabilities {
-	return s.capabilities
-}
-
-func (s *stubAdapter) BookSources(ctx context.Context, symbols []string) ([]filter.BookSource, error) {
-	return s.bookSources, nil
-}
-
-func (s *stubAdapter) TradeSources(ctx context.Context, symbols []string) ([]filter.TradeSource, error) {
-	return s.tradeSources, nil
-}
-
-func (s *stubAdapter) TickerSources(ctx context.Context, symbols []string) ([]filter.TickerSource, error) {
-	return s.tickerSources, nil
-}
-
-func (s *stubAdapter) Close() {}
 
 func TestCoordinatorBookStream(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -54,7 +30,7 @@ func TestCoordinatorBookStream(t *testing.T) {
 		},
 	}
 
-	coordinator := filter.NewCoordinator(adapter)
+	coordinator := filter.NewCoordinator(adapter, nil)
 	defer coordinator.Close()
 
 	stream, err := coordinator.Stream(ctx, filter.FilterRequest{
@@ -105,7 +81,7 @@ func TestCoordinatorPropagatesErrors(t *testing.T) {
 		},
 	}
 
-	coordinator := filter.NewCoordinator(adapter)
+	coordinator := filter.NewCoordinator(adapter, nil)
 	defer coordinator.Close()
 
 	stream, err := coordinator.Stream(ctx, filter.FilterRequest{
@@ -160,7 +136,7 @@ func TestAggregationTrimsBookDepthAndSnapshots(t *testing.T) {
 		},
 	}
 
-	coordinator := filter.NewCoordinator(adapter)
+	coordinator := filter.NewCoordinator(adapter, nil)
 	defer coordinator.Close()
 
 	stream, err := coordinator.Stream(ctx, filter.FilterRequest{
@@ -212,7 +188,7 @@ func TestThrottleSkipsRapidEvents(t *testing.T) {
 		},
 	}
 
-	coordinator := filter.NewCoordinator(adapter)
+	coordinator := filter.NewCoordinator(adapter, nil)
 	defer coordinator.Close()
 
 	stream, err := coordinator.Stream(ctx, filter.FilterRequest{
@@ -225,19 +201,22 @@ func TestThrottleSkipsRapidEvents(t *testing.T) {
 	}
 	defer stream.Close()
 
+	// First event should be emitted
 	select {
 	case <-stream.Events:
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for throttled event")
 	}
 
+	// Second event should be throttled (not emitted within the interval)
 	select {
 	case evt, ok := <-stream.Events:
 		if ok {
-			t.Fatalf("expected throttled channel to close, got %+v", evt)
+			t.Fatalf("expected second event to be throttled, got %+v", evt)
 		}
-	case <-time.After(time.Second):
-		t.Fatal("expected channel closure")
+		// Channel closed - this is acceptable with multi-source stage
+	case <-time.After(100 * time.Millisecond):
+		// No event received - throttling worked correctly
 	}
 }
 
@@ -269,7 +248,7 @@ func TestObserverReceivesCallbacks(t *testing.T) {
 
 	observer := &countingObserver{}
 
-	coordinator := filter.NewCoordinator(adapter)
+	coordinator := filter.NewCoordinator(adapter, nil)
 	defer coordinator.Close()
 
 	stream, err := coordinator.Stream(ctx, filter.FilterRequest{
@@ -281,6 +260,11 @@ func TestObserverReceivesCallbacks(t *testing.T) {
 		t.Fatalf("stream: %v", err)
 	}
 	defer stream.Close()
+
+	// With multi-source stage, channels don't close immediately
+	// So we'll use a timeout to consume events
+	timeout := time.NewTimer(2 * time.Second)
+	defer timeout.Stop()
 
 	for {
 		select {
@@ -294,6 +278,10 @@ func TestObserverReceivesCallbacks(t *testing.T) {
 			} else if !ok {
 				stream.Errors = nil
 			}
+		case <-timeout.C:
+			// Timeout reached, stop waiting
+			stream.Events = nil
+			stream.Errors = nil
 		}
 		if stream.Events == nil && stream.Errors == nil {
 			break
@@ -326,7 +314,7 @@ func TestVWAPStageEmitsAnalytics(t *testing.T) {
 		},
 	}
 
-	coordinator := filter.NewCoordinator(adapter)
+	coordinator := filter.NewCoordinator(adapter, nil)
 	defer coordinator.Close()
 
 	stream, err := coordinator.Stream(ctx, filter.FilterRequest{
@@ -397,7 +385,7 @@ func TestCoordinatorPassThroughTradeTicker(t *testing.T) {
 		},
 	}
 
-	coordinator := filter.NewCoordinator(adapter)
+	coordinator := filter.NewCoordinator(adapter, nil)
 	defer coordinator.Close()
 
 	stream, err := coordinator.Stream(ctx, filter.FilterRequest{

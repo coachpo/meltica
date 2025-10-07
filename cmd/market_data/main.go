@@ -24,7 +24,7 @@ const (
 	defaultSymbolList     = "BTC-USDT,ETH-USDT,BNB-USDT"
 	fallbackPriceScale    = 2
 	fallbackQuantityScale = 6
-	defaultBookDepth      = 5
+	defaultBookDepth      = 500
 )
 
 func main() {
@@ -59,16 +59,16 @@ func run(ctx context.Context, exchange core.Exchange, symbols []string, withBook
 	formatter := newPrecisionFormatter(instruments)
 
 	var (
-		filterCoordinator *mdfilter.Coordinator
-		filterStream      mdfilter.FilterStream
-		err               error
+		filterFacade *mdfilter.InteractionFacade
+		filterStream mdfilter.FilterStream
+		err          error
 	)
-	filterCoordinator, filterStream, err = startMarketFilter(ctx, exchange, symbols, withBook, bookDepth, minEmit, enableVWAP)
+	filterFacade, filterStream, err = startMarketFilter(ctx, exchange, symbols, withBook, bookDepth, minEmit, enableVWAP)
 	if err != nil {
 		return fmt.Errorf("start filter: %w", err)
 	}
 	defer filterStream.Close()
-	defer filterCoordinator.Close()
+	defer filterFacade.Close()
 
 	fmt.Printf("Streaming %d symbols: trades & tickers", len(symbols))
 	if withBook {
@@ -315,44 +315,49 @@ func startMarketFilter(
 	bookDepth int,
 	minEmit time.Duration,
 	enableVWAP bool,
-) (*mdfilter.Coordinator, mdfilter.FilterStream, error) {
-	adapter, err := resolveFilterAdapter(exchange)
+) (*mdfilter.InteractionFacade, mdfilter.FilterStream, error) {
+	adapter, auth, err := resolveFilterAdapter(exchange)
 	if err != nil {
 		return nil, mdfilter.FilterStream{}, err
 	}
 
-	req := mdfilter.FilterRequest{
-		Symbols: symbols,
-		Feeds: mdfilter.FeedSelection{
-			Books:   includeBook,
-			Trades:  true,
-			Tickers: true,
-		},
-		BookDepth:       bookDepth,
-		EnableSnapshots: true,
-		EnableVWAP:      enableVWAP,
-		MinEmitInterval: minEmit,
+	facade := mdfilter.NewInteractionFacade(adapter, auth)
+
+	// Build options for public subscription
+	var options []mdfilter.PublicOption
+	if includeBook {
+		options = append(options, mdfilter.WithBooks())
+	}
+	options = append(options, mdfilter.WithTrades(), mdfilter.WithTickers())
+	if bookDepth > 0 {
+		options = append(options, mdfilter.WithBookDepth(bookDepth))
+	}
+	if minEmit > 0 {
+		options = append(options, mdfilter.WithMinEmitInterval(minEmit))
+	}
+	options = append(options, mdfilter.WithSnapshots())
+	if enableVWAP {
+		options = append(options, mdfilter.WithVWAP())
 	}
 
-	coordinator := mdfilter.NewCoordinator(adapter)
-	stream, err := coordinator.Stream(ctx, req)
+	stream, err := facade.SubscribePublic(ctx, symbols, options...)
 	if err != nil {
-		coordinator.Close()
+		facade.Close()
 		return nil, mdfilter.FilterStream{}, err
 	}
-	return coordinator, stream, nil
+	return facade, stream, nil
 }
 
-func resolveFilterAdapter(exchange core.Exchange) (mdfilter.Adapter, error) {
+func resolveFilterAdapter(exchange core.Exchange) (mdfilter.Adapter, *mdfilter.AuthContext, error) {
 	switch exchange.Name() {
 	case string(binanceplugin.Name):
 		return buildBinanceFilterAdapter(exchange)
 	default:
-		return nil, fmt.Errorf("exchange %s does not expose a filter adapter", exchange.Name())
+		return nil, nil, fmt.Errorf("exchange %s does not expose a filter adapter", exchange.Name())
 	}
 }
 
-func buildBinanceFilterAdapter(exchange core.Exchange) (mdfilter.Adapter, error) {
+func buildBinanceFilterAdapter(exchange core.Exchange) (mdfilter.Adapter, *mdfilter.AuthContext, error) {
 	var orderBooks interface {
 		OrderBookSnapshots(ctx context.Context, symbol string) (<-chan corestreams.BookEvent, <-chan error, error)
 	}
@@ -367,15 +372,65 @@ func buildBinanceFilterAdapter(exchange core.Exchange) (mdfilter.Adapter, error)
 		ws = participant.WS()
 	}
 
-	if orderBooks == nil && ws == nil {
-		return nil, fmt.Errorf("exchange %s does not expose required feeds", exchange.Name())
+	// Check for private capabilities
+	var privateWS interface {
+		SubscribePrivate(ctx context.Context, topics ...string) (core.Subscription, error)
+	}
+	var restRouter interface {
+		Dispatch(ctx context.Context, msg interface{}, result interface{}) error
 	}
 
-	adapter, err := binancel4.NewAdapter(orderBooks, ws)
-	if err != nil {
-		return nil, err
+	// Try to extract private capabilities from the exchange
+	if privateParticipant, ok := exchange.(interface {
+		PrivateWS() core.WS
+	}); ok {
+		privateWS = privateParticipant.PrivateWS()
 	}
-	return adapter, nil
+
+	if restParticipant, ok := exchange.(interface {
+		RESTRouter() interface{}
+	}); ok {
+		if router := restParticipant.RESTRouter(); router != nil {
+			if r, ok := router.(interface {
+				Dispatch(ctx context.Context, msg interface{}, result interface{}) error
+			}); ok {
+				restRouter = r
+			}
+		}
+	}
+
+	// Build auth context if credentials are available
+	var auth *mdfilter.AuthContext
+	if creds, ok := exchange.(interface {
+		Credentials() (string, string)
+	}); ok {
+		apiKey, secret := creds.Credentials()
+		if apiKey != "" && secret != "" {
+			auth = &mdfilter.AuthContext{
+				APIKey: apiKey,
+				Secret: secret,
+			}
+		}
+	}
+
+	if orderBooks == nil && ws == nil && privateWS == nil && restRouter == nil {
+		return nil, nil, fmt.Errorf("exchange %s does not expose required feeds", exchange.Name())
+	}
+
+	var adapter mdfilter.Adapter
+	var err error
+
+	// Use enhanced adapter if private capabilities are available
+	if privateWS != nil || restRouter != nil {
+		adapter, err = binancel4.NewAdapterWithPrivate(orderBooks, ws, privateWS, restRouter)
+	} else {
+		adapter, err = binancel4.NewAdapter(orderBooks, ws)
+	}
+
+	if err != nil {
+		return nil, nil, err
+	}
+	return adapter, auth, nil
 }
 
 func printBookSnapshot(evt corestreams.BookEvent, formatter precisionFormatter) {
