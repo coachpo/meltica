@@ -18,7 +18,6 @@ import (
 	"github.com/coachpo/meltica/core/registry"
 	corestreams "github.com/coachpo/meltica/core/streams"
 	binanceplugin "github.com/coachpo/meltica/exchanges/binance/plugin"
-	bnrouting "github.com/coachpo/meltica/exchanges/binance/routing"
 	"github.com/coachpo/meltica/exchanges/shared/infra/numeric"
 )
 
@@ -188,7 +187,7 @@ func (m *MarketManager) Events() <-chan marketEvent {
 func (m *MarketManager) Subscribe(cmd marketSubscribeCommand) {
 	reqs := make(map[string]*SymbolSubscriptionRequest)
 	for _, topic := range cmd.Topics {
-		kind, symbol, err := bnrouting.Parse(topic)
+		topicID, symbol, err := core.ParseTopic(topic)
 		if err != nil {
 			log.Printf("ignoring invalid topic %q: %v", topic, err)
 			continue
@@ -202,12 +201,12 @@ func (m *MarketManager) Subscribe(cmd marketSubscribeCommand) {
 			req = &SymbolSubscriptionRequest{Symbol: symbol}
 			reqs[symbol] = req
 		}
-		switch kind {
-		case bnrouting.StreamKindTrade:
+		switch topicID {
+		case core.TopicTrade:
 			req.Trades = true
-		case bnrouting.StreamKindTicker:
+		case core.TopicTicker:
 			req.Ticker = true
-		case bnrouting.StreamKindBookDelta:
+		case core.TopicBookDelta:
 			req.Book = true
 		}
 	}
@@ -304,10 +303,10 @@ func (m *MarketManager) collectActiveTopicsLocked() []string {
 			continue
 		}
 		if sub.Trades {
-			topics = append(topics, bnrouting.Trade(symbol))
+			topics = append(topics, core.MustCanonicalTopic(core.TopicTrade, symbol))
 		}
 		if sub.Ticker {
-			topics = append(topics, bnrouting.Ticker(symbol))
+			topics = append(topics, core.MustCanonicalTopic(core.TopicTicker, symbol))
 		}
 	}
 	return topics
@@ -641,7 +640,7 @@ func (m *MarketManager) handleOrderBookSnapshots(ctx context.Context, symbol str
 			}
 			m.emit(marketEvent{
 				Kind:    marketEventBook,
-				Topic:   bnrouting.OrderBook(bookCopy.Symbol),
+				Topic:   core.MustCanonicalTopic(core.TopicBookDelta, bookCopy.Symbol),
 				Payload: &bookCopy,
 				Time:    bookCopy.Time,
 				Message: fmt.Sprintf("depth=%d interval=%s", cfg.BookDepthLevels, cfg.UpdateInterval),

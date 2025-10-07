@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/coachpo/meltica/core"
 	corestreams "github.com/coachpo/meltica/core/streams"
 	coretransport "github.com/coachpo/meltica/core/transport"
 	"github.com/coachpo/meltica/exchanges/binance/internal"
@@ -139,16 +140,19 @@ func buildStreamsForTopics(topics []string, deps WSDependencies) ([]string, erro
 		if err != nil {
 			return nil, err
 		}
-		channelID := kind.String()
-		if instrument == "" {
-			streams = append(streams, channelID)
-			continue
-		}
-		native, err := deps.NativeSymbol(instrument)
+		nativeChannel, err := deps.NativeTopic(kind)
 		if err != nil {
 			return nil, err
 		}
-		streams = append(streams, strings.ToLower(native)+"@"+channelID)
+		if !core.TopicRequiresSymbol(kind) || instrument == "" {
+			streams = append(streams, nativeChannel)
+			continue
+		}
+		nativeSymbol, err := deps.NativeSymbol(instrument)
+		if err != nil {
+			return nil, err
+		}
+		streams = append(streams, strings.ToLower(nativeSymbol)+"@"+nativeChannel)
 	}
 	return streams, nil
 }

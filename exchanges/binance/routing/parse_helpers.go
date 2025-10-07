@@ -21,7 +21,7 @@ func parseTradeEvent(msg *RoutedMessage, rec *struct {
 	if symbol == "" {
 		return internal.Exchange("ws trade: missing symbol")
 	}
-	msg.Topic = topicForSymbol(StreamKindTrade, symbol)
+	msg.Topic = topicForSymbol(core.TopicTrade, symbol)
 	msg.Route = corestreams.RouteTradeUpdate
 	price, _ := numeric.Parse(rec.Price.String())
 	qty, _ := numeric.Parse(rec.Qty.String())
@@ -44,7 +44,7 @@ func parseTickerEvent(msg *RoutedMessage, rec *struct {
 	if symbol == "" {
 		return internal.Exchange("ws ticker: missing symbol")
 	}
-	msg.Topic = topicForSymbol(StreamKindTicker, symbol)
+	msg.Topic = topicForSymbol(core.TopicTicker, symbol)
 	msg.Route = corestreams.RouteTickerUpdate
 	bid, _ := numeric.Parse(rec.BidPrice.String())
 	ask, _ := numeric.Parse(rec.AskPrice.String())
@@ -107,7 +107,7 @@ func parseOrderUpdateEvent(msg *RoutedMessage, payload []byte) error {
 	filled, _ := numeric.Parse(ou.Order.FilledQty.String())
 	avg, _ := numeric.Parse(ou.Order.AvgPrice.String())
 	msg.Route = corestreams.RouteOrderUpdate
-	msg.Topic = topicForSymbol(StreamKindOrder, ou.Order.Symbol)
+	msg.Topic = topicForSymbol(core.TopicUserOrder, ou.Order.Symbol)
 	msg.Parsed = &corestreams.OrderEvent{
 		Symbol:    ou.Order.Symbol,
 		OrderID:   fmt.Sprintf("%d", ou.Order.ID),
@@ -124,7 +124,7 @@ func parseBalanceUpdateEvent(msg *RoutedMessage, payload []byte, event string) e
 	msg.Route = corestreams.RouteBalanceSnapshot
 
 	switch event {
-	case "outboundAccountPosition":
+	case accountSnapshotEvent:
 		var oap struct {
 			EventTime int64 `json:"E"`
 			Balances  []struct {

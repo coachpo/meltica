@@ -16,17 +16,19 @@ import (
 	routingrest "github.com/coachpo/meltica/exchanges/shared/routing"
 )
 
+const exchangeName core.ExchangeName = "binance"
+
 type Exchange struct {
 	name string
 
-	transportBundle *bootstrap.TransportBundle
-	symbolSvc       *symbolService
-	listenKeySvc    *listenKeyService
-	orderBookSvc    *OrderBookService
-	transportFactories   bootstrap.TransportFactories
-	routerFactories      bootstrap.RouterFactories
-	cfg                  config.Settings
-	cfgMutex             sync.Mutex
+	transportBundle    *bootstrap.TransportBundle
+	symbolSvc          *symbolService
+	listenKeySvc       *listenKeyService
+	orderBookSvc       *OrderBookService
+	transportFactories bootstrap.TransportFactories
+	routerFactories    bootstrap.RouterFactories
+	cfg                config.Settings
+	cfgMutex           sync.Mutex
 
 	// Symbol refresh controls
 	symbolRefreshInterval time.Duration
@@ -81,13 +83,13 @@ func newExchangeWithFactories(settings config.Settings, transports bootstrap.Tra
 	restRouter := bundle.Router().(routingrest.RESTDispatcher)
 	symbolSvc := newSymbolService(restRouter)
 	listenKeySvc := newListenKeyService(restRouter)
-	wsDeps := newWSDependencies(symbolSvc, listenKeySvc, nil)
+	wsDeps := newWSDependencies(exchangeName, symbolSvc, listenKeySvc, nil)
 	bundle.SetWS(routers.NewWSRouter(bundle.WSInfra(), wsDeps))
 
 	orderBookSvc := newOrderBookService(bundle.WS().(wsRouter), restRouter, symbolSvc)
 
 	x := &Exchange{
-		name:                  "binance",
+		name:                  string(exchangeName),
 		transportBundle:       bundle,
 		symbolSvc:             symbolSvc,
 		listenKeySvc:          listenKeySvc,
@@ -138,7 +140,7 @@ func (x *Exchange) UpdateConfig(opts ...config.Option) error {
 	restRouter := transportBundle.Router().(routingrest.RESTDispatcher)
 	symbolSvc := newSymbolService(restRouter)
 	listenKeySvc := newListenKeyService(restRouter)
-	wsDeps := newWSDependencies(symbolSvc, listenKeySvc, nil)
+	wsDeps := newWSDependencies(exchangeName, symbolSvc, listenKeySvc, nil)
 	transportBundle.SetWS(x.routerFactories.NewWSRouter(transportBundle.WSInfra(), wsDeps))
 
 	orderBookSvc := newOrderBookService(transportBundle.WS().(wsRouter), restRouter, symbolSvc)

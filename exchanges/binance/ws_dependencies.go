@@ -3,15 +3,17 @@ package binance
 import (
 	"context"
 
+	"github.com/coachpo/meltica/core"
 	corestreams "github.com/coachpo/meltica/core/streams"
 	"github.com/coachpo/meltica/exchanges/binance/internal"
 )
 
 // wsDependencies implements the routing WSDependencies interface without depending on Exchange.
 type wsDependencies struct {
-	symbols    *symbolService
-	listenKeys *listenKeyService
-	depths     depthSnapshotProvider
+	symbols      *symbolService
+	listenKeys   *listenKeyService
+	depths       depthSnapshotProvider
+	exchangeName core.ExchangeName
 }
 
 // depthSnapshotProvider is an interface for fetching order book snapshots.
@@ -19,8 +21,8 @@ type depthSnapshotProvider interface {
 	Snapshot(ctx context.Context, symbol string, limit int) (corestreams.BookEvent, int64, error)
 }
 
-func newWSDependencies(symbols *symbolService, listenKeys *listenKeyService, depths depthSnapshotProvider) *wsDependencies {
-	return &wsDependencies{symbols: symbols, listenKeys: listenKeys, depths: depths}
+func newWSDependencies(name core.ExchangeName, symbols *symbolService, listenKeys *listenKeyService, depths depthSnapshotProvider) *wsDependencies {
+	return &wsDependencies{symbols: symbols, listenKeys: listenKeys, depths: depths, exchangeName: name}
 }
 
 func (d *wsDependencies) CanonicalSymbol(binanceSymbol string) (string, error) {
@@ -35,6 +37,13 @@ func (d *wsDependencies) NativeSymbol(canonical string) (string, error) {
 		return "", internal.Exchange("symbol service unavailable")
 	}
 	return d.symbols.nativeForMarkets(context.Background(), canonical)
+}
+
+func (d *wsDependencies) NativeTopic(topic core.Topic) (string, error) {
+	if d.exchangeName == "" {
+		return "", internal.Exchange("topic translator unavailable")
+	}
+	return core.NativeTopic(d.exchangeName, topic)
 }
 
 func (d *wsDependencies) CreateListenKey(ctx context.Context) (string, error) {

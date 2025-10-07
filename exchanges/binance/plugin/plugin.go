@@ -23,6 +23,7 @@ func Register() {
 				return nil, err
 			}
 			core.RegisterSymbolTranslator(Name, binance.NewSymbolTranslator(x))
+			core.RegisterTopicTranslator(Name, binance.NewTopicTranslator())
 			return x, nil
 		})
 	})

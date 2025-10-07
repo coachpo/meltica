@@ -182,9 +182,9 @@ if err != nil {
 
 ```go
 mapper := infratopics.NewMapper(infratopics.MappingConfig{
-    ProtocolToExchange: map[string]string{bnrouting.StreamKindTrade.String(): "trade"},
+    ProtocolToExchange: map[string]string{string(core.TopicTrade): "trade"},
 })
-channel := mapper.ExchangeChannelID(bnrouting.StreamKindTrade.String())
+channel := mapper.ExchangeChannelID(string(core.TopicTrade))
 ```
 
 ## Exchange Interface

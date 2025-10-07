@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/coachpo/meltica/core"
 	corestreams "github.com/coachpo/meltica/core/streams"
 	"github.com/coachpo/meltica/core/streams/mocks"
 	coretransport "github.com/coachpo/meltica/core/transport"
@@ -21,6 +22,23 @@ func (d *stubDeps) CanonicalSymbol(binanceSymbol string) (string, error) {
 
 func (d *stubDeps) NativeSymbol(canonical string) (string, error) {
 	return strings.ReplaceAll(strings.ToUpper(canonical), "-", ""), nil
+}
+
+func (d *stubDeps) NativeTopic(topic core.Topic) (string, error) {
+	switch topic {
+	case core.TopicTrade:
+		return "trade", nil
+	case core.TopicTicker:
+		return "ticker", nil
+	case core.TopicBookDelta:
+		return "depth@100ms", nil
+	case core.TopicUserOrder:
+		return "order", nil
+	case core.TopicUserBalance:
+		return "balance", nil
+	default:
+		return "", core.ErrNotSupported
+	}
 }
 
 func (d *stubDeps) CreateListenKey(ctx context.Context) (string, error) {

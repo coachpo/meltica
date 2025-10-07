@@ -3,6 +3,7 @@ package routing
 import (
 	"context"
 
+	"github.com/coachpo/meltica/core"
 	corestreams "github.com/coachpo/meltica/core/streams"
 	coretransport "github.com/coachpo/meltica/core/transport"
 )
@@ -12,6 +13,7 @@ type WSDependencies interface {
 	corestreams.OrderBookSnapshotProvider
 	CanonicalSymbol(binanceSymbol string) (string, error)
 	NativeSymbol(canonical string) (string, error)
+	NativeTopic(topic core.Topic) (string, error)
 	CreateListenKey(ctx context.Context) (string, error)
 	KeepAliveListenKey(ctx context.Context, key string) error
 	CloseListenKey(ctx context.Context, key string) error
