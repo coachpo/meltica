@@ -22,10 +22,10 @@ import (
 )
 
 const (
-	defaultSymbolList     = "BTC-USDT,ETH-USDT,BNB-USDT"
+	defaultSymbolList     = "BTC-USDT,ETH-USDT,BNB-USDT,SOL-USDT,PEPE-USDT,DOGE-USDT,CAKE-USDT,XRP-USDT,ADA-USDT,BROCCOLI714-USDT"
 	fallbackPriceScale    = 2
 	fallbackQuantityScale = 6
-	defaultBookDepth      = 500
+	defaultBookDepth      = 50
 )
 
 func main() {
