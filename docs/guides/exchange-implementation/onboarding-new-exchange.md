@@ -83,7 +83,7 @@ func NewWithSettings(settings config.Settings) (*Exchange, error) {
 **Goal:** Actually talk to the exchange.
 1. Map REST endpoints (tickers, balances, orders) using the shared REST router and `core/transport` contracts.
 2. Map WebSocket streams using the shared WS router patterns and implement `core/transport.StreamClient` and `core/streams` routing helpers.
-3. Normalize data into Meltica core types (`core/streams` structs, topics from `core/topics`).
+3. Normalize data into Meltica core types (`core/streams` structs) and surface topic builders in your exchange's routing package (for example `exchanges/binance/routing`).
 4. Reuse numeric helpers from `exchanges/shared/infra/numeric`.
 
 ## Step 9 – Update Docs And Tests

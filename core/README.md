@@ -1,6 +1,6 @@
 # Core Package
 
-The `core` package defines the canonical exchange abstraction and shared domain models for the Meltica SDK. The types exported here form the stable protocol surface that all concrete exchange adapters must implement. The abstractions cover REST (spot + futures), WebSocket events, canonical topic helpers, and utility primitives shared across adapters.
+The `core` package defines the canonical exchange abstraction and shared domain models for the Meltica SDK. The types exported here form the stable protocol surface that all concrete exchange adapters must implement. The abstractions cover REST (spot + futures), WebSocket events, and utility primitives shared across adapters.
 
 ## Overview
 
@@ -16,7 +16,7 @@ This package provides a unified interface for cryptocurrency exchange operations
 
 ## Subpackages
 
-- `ws`: WebSocket domain helpers, including canonical topics, channel mappers, and normalized event types
+- `ws`: WebSocket domain helpers, including channel mappers and normalized event types
 
 ## Core Types
 
@@ -162,13 +162,15 @@ type BalanceEvent struct {
 }
 ```
 
-### WebSocket Topics (`core/topics`)
+### WebSocket Topics
 
-`core/topics` provides canonical topic helpers used across the platform.
+Exchange adapters expose topic helpers from their routing packages. For example, the Binance adapter keeps its builders and parser in `exchanges/binance/routing`:
 
 ```go
-topic := topics.Trade("BTC-USDT")
-channel, symbol, err := topics.Parse(topic)
+import bnrouting "github.com/coachpo/meltica/exchanges/binance/routing"
+
+topic := bnrouting.Trade("BTC-USDT")
+kind, symbol, err := bnrouting.Parse(topic)
 if err != nil {
     log.Fatalf("invalid topic: %v", err)
 }
@@ -179,8 +181,10 @@ if err != nil {
 `exchanges/shared/infra/topics` exposes channel mapping helpers for exchange adapters.
 
 ```go
-mapper := infratopics.NewMapper(infratopics.MappingConfig{ProtocolToExchange: map[string]string{topics.TopicTrade: "trade"}})
-channel := mapper.ExchangeChannelID(topics.TopicTrade)
+mapper := infratopics.NewMapper(infratopics.MappingConfig{
+    ProtocolToExchange: map[string]string{bnrouting.StreamKindTrade.String(): "trade"},
+})
+channel := mapper.ExchangeChannelID(bnrouting.StreamKindTrade.String())
 ```
 
 ## Exchange Interface

@@ -2,7 +2,7 @@
 
 ## Overview
 
-The system now uses a unified approach for order book data processing. All order book updates are converted to complete snapshots and published under the `book` topic, regardless of whether the provider sends incremental updates or full snapshots.
+The system now uses a unified approach for order book data processing. All order book updates are converted to complete snapshots and published under the order book topic exposed by each exchange routing package (for Binance this is `bnrouting.Orderbook`), regardless of whether the provider sends incremental updates or full snapshots.
 
 ## Key Implementation Details
 
@@ -47,14 +47,13 @@ When implementing additional exchanges, follow these patterns:
 
 ### 3. Topic Structure
 
-Order book data uses the unified topic system from `core/topics`:
+Order book data uses the topic helpers defined in each exchange's routing package. For Binance the helpers live in `exchanges/binance/routing`:
 
 ```go
-// Canonical topic for order book data
-const TopicBook = "book"
+import bnrouting "github.com/coachpo/meltica/exchanges/binance/routing"
 
 // Create order book topic for a symbol
-func Book(symbol string) string { return TopicBook + ":" + symbol }
+topic := bnrouting.Orderbook("BTC-USDT")
 ```
 
 ### 4. Event Structure
@@ -83,10 +82,10 @@ type DepthEvent struct {
 ### Subscribing to Order Book Data
 
 ```go
-import "github.com/coachpo/meltica/core/topics"
+import bnrouting "github.com/coachpo/meltica/exchanges/binance/routing"
 
 // Subscribe to order book updates for BTC-USDT
-topic := topics.Book("BTC-USDT") // Returns "book:BTC-USDT"
+topic := bnrouting.Orderbook("BTC-USDT")
 ```
 
 ### Processing Order Book Events

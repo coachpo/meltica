@@ -24,12 +24,12 @@
    - Attach raw JSON to the message `Raw` field.
 
 3) **Topic System**
-   - Use the unified topic system from `core/topics`:
+   - Expose topic builders from your exchange's routing package (see `exchanges/binance/routing` for a reference implementation):
      ```go
-     import "github.com/coachpo/meltica/core/topics"
-     
+     import bnrouting "github.com/coachpo/meltica/exchanges/binance/routing"
+
      // Subscribe to trades for BTC-USDT
-     topic := topics.Trade("BTC-USDT") // Returns "trade:BTC-USDT"
+     topic := bnrouting.Trade("BTC-USDT")
      ```
 
 4) **Ordering & gaps**
