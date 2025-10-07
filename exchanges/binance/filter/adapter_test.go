@@ -36,7 +36,7 @@ func newFixtureSubscriber(fixtures []corestreams.BookEvent) *fixtureSubscriber {
 	return &fixtureSubscriber{events: evts}
 }
 
-func (f *fixtureSubscriber) OrderBookSnapshots(ctx context.Context, symbol string) (<-chan corestreams.BookEvent, <-chan error, error) {
+func (f *fixtureSubscriber) BookSnapshots(ctx context.Context, symbol string) (<-chan corestreams.BookEvent, <-chan error, error) {
 	symbol = normalize(symbol)
 	events := make(chan corestreams.BookEvent, len(f.events[symbol]))
 	errs := make(chan error, 1)

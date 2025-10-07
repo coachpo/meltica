@@ -127,7 +127,7 @@ type PublicConfig struct {
 // PublicOption configures public stream subscriptions.
 type PublicOption func(*PublicConfig)
 
-// WithBooks enables order book subscriptions.
+// WithBooks enables book subscriptions.
 func WithBooks() PublicOption {
 	return func(c *PublicConfig) {
 		c.Books = true
@@ -148,7 +148,7 @@ func WithTickers() PublicOption {
 	}
 }
 
-// WithBookDepth sets the maximum depth for order books.
+// WithBookDepth sets the maximum depth for books.
 func WithBookDepth(depth int) PublicOption {
 	return func(c *PublicConfig) {
 		c.BookDepth = depth
@@ -315,8 +315,8 @@ func PlaceOrder(symbol, correlationID string, orderData interface{}) Interaction
 	}
 }
 
-// GetOrderBookSnapshot creates a request to fetch order book snapshot.
-func GetOrderBookSnapshot(symbol, correlationID string, limit int) InteractionRequest {
+// GetBookSnapshot creates a request to fetch book snapshot.
+func GetBookSnapshot(symbol, correlationID string, limit int) InteractionRequest {
 	params := map[string]string{
 		"symbol": symbol,
 	}
@@ -378,7 +378,7 @@ func (f *InteractionFacade) SyncSnapshotThenStream(
 	var snapshotRequests []InteractionRequest
 	for _, symbol := range symbols {
 		snapshotRequests = append(snapshotRequests,
-			GetOrderBookSnapshot(symbol, fmt.Sprintf("snapshot-%s", symbol), 100))
+			GetBookSnapshot(symbol, fmt.Sprintf("snapshot-%s", symbol), 100))
 	}
 
 	// Execute snapshot requests

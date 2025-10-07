@@ -10,7 +10,7 @@ import (
 
 // WSDependencies exposes the exchange hooks required by the websocket routing layer.
 type WSDependencies interface {
-	corestreams.OrderBookSnapshotProvider
+	corestreams.BookSnapshotProvider
 	CanonicalSymbol(binanceSymbol string) (string, error)
 	NativeSymbol(canonical string) (string, error)
 	NativeTopic(topic core.Topic) (string, error)

@@ -12,8 +12,8 @@ import (
 	"github.com/coachpo/meltica/pipeline"
 )
 
-type orderBookSubscriber interface {
-	OrderBookSnapshots(ctx context.Context, symbol string) (<-chan corestreams.BookEvent, <-chan error, error)
+type bookSubscriber interface {
+	BookSnapshots(ctx context.Context, symbol string) (<-chan corestreams.BookEvent, <-chan error, error)
 }
 
 type publicSubscriber interface {
@@ -30,7 +30,7 @@ type restExecutor interface {
 
 // Adapter implements filter.Adapter for Binance.
 type Adapter struct {
-	orderBooks orderBookSubscriber
+	books      bookSubscriber
 	ws         publicSubscriber
 	privateWS  privateSubscriber
 	restRouter restExecutor
@@ -39,23 +39,23 @@ type Adapter struct {
 }
 
 // NewAdapter constructs a Binance filter adapter.
-func NewAdapter(orderBooks orderBookSubscriber, ws publicSubscriber) (*Adapter, error) {
-	if orderBooks == nil && ws == nil {
+func NewAdapter(books bookSubscriber, ws publicSubscriber) (*Adapter, error) {
+	if books == nil && ws == nil {
 		return nil, fmt.Errorf("binance filter: no feed providers available")
 	}
 	return &Adapter{
-		orderBooks: orderBooks,
-		ws:         ws,
+		books: books,
+		ws:    ws,
 	}, nil
 }
 
 // NewAdapterWithPrivate constructs a Binance filter adapter with private capabilities.
-func NewAdapterWithPrivate(orderBooks orderBookSubscriber, ws publicSubscriber, privateWS privateSubscriber, restRouter restExecutor) (*Adapter, error) {
-	if orderBooks == nil && ws == nil && privateWS == nil && restRouter == nil {
+func NewAdapterWithPrivate(books bookSubscriber, ws publicSubscriber, privateWS privateSubscriber, restRouter restExecutor) (*Adapter, error) {
+	if books == nil && ws == nil && privateWS == nil && restRouter == nil {
 		return nil, fmt.Errorf("binance filter: no feed providers available")
 	}
 	return &Adapter{
-		orderBooks: orderBooks,
+		books:      books,
 		ws:         ws,
 		privateWS:  privateWS,
 		restRouter: restRouter,
@@ -63,8 +63,8 @@ func NewAdapterWithPrivate(orderBooks orderBookSubscriber, ws publicSubscriber, 
 }
 
 // NewAdapterWithREST constructs a Binance filter adapter with REST capabilities using a bridge.
-func NewAdapterWithREST(orderBooks orderBookSubscriber, ws publicSubscriber, privateWS privateSubscriber, restRouter routing.RESTDispatcher) (*Adapter, error) {
-	if orderBooks == nil && ws == nil && privateWS == nil && restRouter == nil {
+func NewAdapterWithREST(books bookSubscriber, ws publicSubscriber, privateWS privateSubscriber, restRouter routing.RESTDispatcher) (*Adapter, error) {
+	if books == nil && ws == nil && privateWS == nil && restRouter == nil {
 		return nil, fmt.Errorf("binance filter: no feed providers available")
 	}
 
@@ -80,7 +80,7 @@ func NewAdapterWithREST(orderBooks orderBookSubscriber, ws publicSubscriber, pri
 	}
 
 	return &Adapter{
-		orderBooks: orderBooks,
+		books:      books,
 		ws:         ws,
 		privateWS:  privateWS,
 		restRouter: bridge,
@@ -92,7 +92,7 @@ func NewAdapterWithREST(orderBooks orderBookSubscriber, ws publicSubscriber, pri
 // Capabilities declares supported feeds.
 func (a *Adapter) Capabilities() pipeline.Capabilities {
 	return pipeline.Capabilities{
-		Books:          a.orderBooks != nil,
+		Books:          a.books != nil,
 		Trades:         a.ws != nil,
 		Tickers:        a.ws != nil,
 		PrivateStreams: a.privateWS != nil,
@@ -100,9 +100,9 @@ func (a *Adapter) Capabilities() pipeline.Capabilities {
 	}
 }
 
-// BookSources subscribes to order book feeds for the requested symbols.
+// BookSources subscribes to book feeds for the requested symbols.
 func (a *Adapter) BookSources(ctx context.Context, symbols []string) ([]pipeline.BookSource, error) {
-	if a.orderBooks == nil {
+	if a.books == nil {
 		return nil, nil
 	}
 	symbols = uniqueSymbols(symbols)
@@ -111,7 +111,7 @@ func (a *Adapter) BookSources(ctx context.Context, symbols []string) ([]pipeline
 		if symbol == "" {
 			continue
 		}
-		events, errs, err := a.orderBooks.OrderBookSnapshots(ctx, symbol)
+		events, errs, err := a.books.BookSnapshots(ctx, symbol)
 		if err != nil {
 			return nil, err
 		}

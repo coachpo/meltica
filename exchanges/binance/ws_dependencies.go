@@ -16,7 +16,7 @@ type wsDependencies struct {
 	exchangeName core.ExchangeName
 }
 
-// depthSnapshotProvider is an interface for fetching order book snapshots.
+// depthSnapshotProvider is an interface for fetching book snapshots.
 type depthSnapshotProvider interface {
 	Snapshot(ctx context.Context, symbol string, limit int) (corestreams.BookEvent, int64, error)
 }
@@ -67,7 +67,7 @@ func (d *wsDependencies) CloseListenKey(ctx context.Context, key string) error {
 	return d.listenKeys.Close(ctx, key)
 }
 
-func (d *wsDependencies) OrderBookDepthSnapshot(ctx context.Context, symbol string, limit int) (corestreams.BookEvent, int64, error) {
+func (d *wsDependencies) BookDepthSnapshot(ctx context.Context, symbol string, limit int) (corestreams.BookEvent, int64, error) {
 	if d.depths == nil {
 		return corestreams.BookEvent{}, 0, internal.Exchange("depth snapshot service unavailable")
 	}

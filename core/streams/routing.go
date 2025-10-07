@@ -35,6 +35,6 @@ type Subscription interface {
 	Close() error
 }
 
-type OrderBookSnapshotProvider interface {
-	OrderBookDepthSnapshot(ctx context.Context, symbol string, limit int) (BookEvent, int64, error)
+type BookSnapshotProvider interface {
+	BookDepthSnapshot(ctx context.Context, symbol string, limit int) (BookEvent, int64, error)
 }

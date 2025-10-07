@@ -142,7 +142,7 @@ type PipelineRequest struct {
 	Symbols []string
 	Feeds   FeedSelection
 
-	// BookDepth limits the number of order book levels emitted. Values <= 0 keep full depth.
+	// BookDepth limits the number of book levels emitted. Values <= 0 keep full depth.
 	BookDepth int
 
 	// SamplingInterval throttles event emission when set to a non-zero duration.

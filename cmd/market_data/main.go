@@ -30,7 +30,7 @@ const (
 
 func main() {
 	symbolsFlag := flag.String("symbols", defaultSymbolList, "Comma separated canonical symbols (e.g. BTC-USDT,ETH-USDT)")
-	bookDepth := flag.Int("book-depth", defaultBookDepth, "Maximum depth levels per side to display for order books (<=0 keeps full depth)")
+	bookDepth := flag.Int("book-depth", defaultBookDepth, "Maximum depth levels per side to display for books (<=0 keeps full depth)")
 	minEmit := flag.Duration("throttle", 0, "Minimum interval between successive events per symbol/type (e.g. 250ms)")
 	enableVWAP := flag.Bool("enable-vwap", true, "Emit rolling VWAP analytics events for trades")
 	enablePrivate := flag.Bool("private", false, "Enable private stream subscriptions (account, orders)")
@@ -377,13 +377,13 @@ func resolveFilterAdapter(exchange core.Exchange) (mdfilter.Adapter, *mdfilter.A
 
 // TODO study this
 func buildBinanceFilterAdapter(exchange core.Exchange) (mdfilter.Adapter, *mdfilter.AuthContext, error) {
-	var orderBooks interface {
-		OrderBookSnapshots(ctx context.Context, symbol string) (<-chan corestreams.BookEvent, <-chan error, error)
+	var books interface {
+		BookSnapshots(ctx context.Context, symbol string) (<-chan corestreams.BookEvent, <-chan error, error)
 	}
-	if obs, ok := exchange.(interface {
-		OrderBookSnapshots(ctx context.Context, symbol string) (<-chan corestreams.BookEvent, <-chan error, error)
+	if bs, ok := exchange.(interface {
+		BookSnapshots(ctx context.Context, symbol string) (<-chan corestreams.BookEvent, <-chan error, error)
 	}); ok {
-		orderBooks = obs
+		books = bs
 	}
 
 	var ws core.WS
@@ -428,7 +428,7 @@ func buildBinanceFilterAdapter(exchange core.Exchange) (mdfilter.Adapter, *mdfil
 		}
 	}
 
-	if orderBooks == nil && ws == nil && privateWS == nil && restRouter == nil {
+	if books == nil && ws == nil && privateWS == nil && restRouter == nil {
 		return nil, nil, fmt.Errorf("exchange %s does not expose required feeds", exchange.Name())
 	}
 
@@ -437,10 +437,10 @@ func buildBinanceFilterAdapter(exchange core.Exchange) (mdfilter.Adapter, *mdfil
 
 	// Use enhanced adapter with REST capabilities if available
 	if restRouter != nil {
-		adapter, err = binancel4.NewAdapterWithREST(orderBooks, ws, privateWS, restRouter)
+		adapter, err = binancel4.NewAdapterWithREST(books, ws, privateWS, restRouter)
 	} else {
 		// Fall back to basic adapter without REST capabilities
-		adapter, err = binancel4.NewAdapter(orderBooks, ws)
+		adapter, err = binancel4.NewAdapter(books, ws)
 	}
 
 	if err != nil {

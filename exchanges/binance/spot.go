@@ -202,8 +202,8 @@ func (s spotAPI) CancelOrder(ctx context.Context, symbol, id, clientID string) e
 	return router.Dispatch(ctx, msg, nil)
 }
 
-func (s spotAPI) OrderBookDepthSnapshot(ctx context.Context, symbol string, limit int) (corestreams.BookEvent, int64, error) {
-	return s.x.OrderBookDepthSnapshot(ctx, symbol, limit)
+func (s spotAPI) BookDepthSnapshot(ctx context.Context, symbol string, limit int) (corestreams.BookEvent, int64, error) {
+	return s.x.BookDepthSnapshot(ctx, symbol, limit)
 }
 
 func (s spotAPI) lookupInstrument(ctx context.Context, symbol string) core.Instrument {

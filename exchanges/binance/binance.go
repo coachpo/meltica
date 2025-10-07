@@ -24,7 +24,7 @@ type Exchange struct {
 	transportBundle    *bootstrap.TransportBundle
 	symbolSvc          *symbolService
 	listenKeySvc       *listenKeyService
-	orderBookSvc       *OrderBookService
+	bookSvc            *BookService
 	transportFactories bootstrap.TransportFactories
 	routerFactories    bootstrap.RouterFactories
 	cfg                config.Settings
@@ -86,14 +86,14 @@ func newExchangeWithFactories(settings config.Settings, transports bootstrap.Tra
 	wsDeps := newWSDependencies(exchangeName, symbolSvc, listenKeySvc, nil)
 	bundle.SetWS(routers.NewWSRouter(bundle.WSInfra(), wsDeps))
 
-	orderBookSvc := newOrderBookService(bundle.WS().(wsRouter), restRouter, symbolSvc)
+	bookSvc := newBookService(bundle.WS().(wsRouter), restRouter, symbolSvc)
 
 	x := &Exchange{
 		name:                  string(exchangeName),
 		transportBundle:       bundle,
 		symbolSvc:             symbolSvc,
 		listenKeySvc:          listenKeySvc,
-		orderBookSvc:          orderBookSvc,
+		bookSvc:               bookSvc,
 		transportFactories:    transports,
 		routerFactories:       routers,
 		cfg:                   config.Apply(settings),
@@ -143,14 +143,14 @@ func (x *Exchange) UpdateConfig(opts ...config.Option) error {
 	wsDeps := newWSDependencies(exchangeName, symbolSvc, listenKeySvc, nil)
 	transportBundle.SetWS(x.routerFactories.NewWSRouter(transportBundle.WSInfra(), wsDeps))
 
-	orderBookSvc := newOrderBookService(transportBundle.WS().(wsRouter), restRouter, symbolSvc)
+	bookSvc := newBookService(transportBundle.WS().(wsRouter), restRouter, symbolSvc)
 
 	x.cfgMutex.Lock()
 	oldBundle := x.transportBundle
 	x.transportBundle = transportBundle
 	x.symbolSvc = symbolSvc
 	x.listenKeySvc = listenKeySvc
-	x.orderBookSvc = orderBookSvc
+	x.bookSvc = bookSvc
 	x.cfg = newCfg
 	x.cfgMutex.Unlock()
 
@@ -286,18 +286,18 @@ func (x *Exchange) CloseListenKey(ctx context.Context, key string) error {
 	return x.listenKeySvc.Close(ctx, key)
 }
 
-func (x *Exchange) OrderBookDepthSnapshot(ctx context.Context, symbol string, limit int) (corestreams.BookEvent, int64, error) {
-	if x.orderBookSvc == nil {
+func (x *Exchange) BookDepthSnapshot(ctx context.Context, symbol string, limit int) (corestreams.BookEvent, int64, error) {
+	if x.bookSvc == nil {
 		return corestreams.BookEvent{}, 0, internal.Exchange("depth snapshot service unavailable")
 	}
-	return x.orderBookSvc.Snapshot(ctx, symbol, limit)
+	return x.bookSvc.Snapshot(ctx, symbol, limit)
 }
 
-func (x *Exchange) OrderBookSnapshots(ctx context.Context, symbol string) (<-chan corestreams.BookEvent, <-chan error, error) {
-	if x.orderBookSvc == nil {
-		return nil, nil, internal.Exchange("order book service unavailable")
+func (x *Exchange) BookSnapshots(ctx context.Context, symbol string) (<-chan corestreams.BookEvent, <-chan error, error) {
+	if x.bookSvc == nil {
+		return nil, nil, internal.Exchange("book service unavailable")
 	}
-	return x.orderBookSvc.Subscribe(ctx, symbol)
+	return x.bookSvc.Subscribe(ctx, symbol)
 }
 
 func (x *Exchange) timeInForceCode(t core.TimeInForce) string {

@@ -126,8 +126,8 @@ type BookDepthLevel struct {
 	Qty   *big.Rat
 }
 
-// OrderBook captures a depth snapshot in canonical format.
-type OrderBook struct {
+// Book captures a depth snapshot in canonical format.
+type Book struct {
 	Symbol string
 	Bids   []BookDepthLevel
 	Asks   []BookDepthLevel

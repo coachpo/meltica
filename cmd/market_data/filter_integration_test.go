@@ -24,7 +24,7 @@ func (f *fakeExchange) SupportedProtocolVersion() string        { return "1" }
 func (f *fakeExchange) Close() error                            { return nil }
 
 func (f *fakeExchange) WS() core.WS { return f }
-func (f *fakeExchange) OrderBookSnapshots(ctx context.Context, symbol string) (<-chan corestreams.BookEvent, <-chan error, error) {
+func (f *fakeExchange) BookSnapshots(ctx context.Context, symbol string) (<-chan corestreams.BookEvent, <-chan error, error) {
 	events := make(chan corestreams.BookEvent, 1)
 	events <- f.bookEvent
 	close(events)

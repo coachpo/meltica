@@ -105,17 +105,17 @@ type Ticker struct {
 }
 ```
 
-#### OrderBook
+#### Book
 Market depth snapshot:
 ```go
-type OrderBook struct {
+type Book struct {
     Symbol string
-    Bids   []DepthLevel
-    Asks   []DepthLevel
+    Bids   []BookDepthLevel
+    Asks   []BookDepthLevel
     Time   time.Time
 }
 
-type DepthLevel struct {
+type BookDepthLevel struct {
     Price *big.Rat
     Qty   *big.Rat
 }

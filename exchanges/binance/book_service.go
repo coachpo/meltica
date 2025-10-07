@@ -18,39 +18,39 @@ import (
 	"github.com/coachpo/meltica/internal/numeric"
 )
 
-// OrderBookService is a Level-3 service that manages order book state
+// BookService is a Level-3 service that manages book state
 // by consuming raw DepthDelta events from Level 2 routers and provides
 // REST snapshot functionality.
-type OrderBookService struct {
+type BookService struct {
 	router     wsRouter
 	restRouter routingrest.RESTDispatcher
 	mu         sync.RWMutex
-	books      map[string]*OrderBook
+	books      map[string]*Book
 	symbols    *symbolService
 }
 
-func newOrderBookService(router wsRouter, restRouter routingrest.RESTDispatcher, symbols *symbolService) *OrderBookService {
-	return &OrderBookService{
+func newBookService(router wsRouter, restRouter routingrest.RESTDispatcher, symbols *symbolService) *BookService {
+	return &BookService{
 		router:     router,
 		restRouter: restRouter,
-		books:      make(map[string]*OrderBook),
+		books:      make(map[string]*Book),
 		symbols:    symbols,
 	}
 }
 
-// Subscribe subscribes to order book updates for a symbol and returns a channel of BookEvents.
-func (s *OrderBookService) Subscribe(ctx context.Context, symbol string) (<-chan corestreams.BookEvent, <-chan error, error) {
+// Subscribe subscribes to book updates for a symbol and returns a channel of BookEvents.
+func (s *BookService) Subscribe(ctx context.Context, symbol string) (<-chan corestreams.BookEvent, <-chan error, error) {
 	// Subscribe to raw depth delta events
 	sub, err := s.router.SubscribePublic(ctx, bnrouting.OrderBook(symbol))
 	if err != nil {
 		return nil, nil, internal.WrapExchange(err, "subscribe depth stream")
 	}
 
-	// Get or create order book
+	// Get or create book
 	s.mu.Lock()
 	book, exists := s.books[symbol]
 	if !exists {
-		book = &OrderBook{
+		book = &Book{
 			Symbol: symbol,
 			Bids:   make(map[string]*big.Rat),
 			Asks:   make(map[string]*big.Rat),
@@ -67,11 +67,11 @@ func (s *OrderBookService) Subscribe(ctx context.Context, symbol string) (<-chan
 	return events, errs, nil
 }
 
-// processDepthDeltas processes incoming DepthDelta events and maintains order book state.
-func (s *OrderBookService) processDepthDeltas(
+// processDepthDeltas processes incoming DepthDelta events and maintains book state.
+func (s *BookService) processDepthDeltas(
 	ctx context.Context,
 	sub bnrouting.Subscription,
-	book *OrderBook,
+	book *Book,
 	events chan<- corestreams.BookEvent,
 	errs chan<- error,
 	symbol string,
@@ -83,7 +83,7 @@ func (s *OrderBookService) processDepthDeltas(
 	// Buffer for events received before initialization
 	var buffer []*bnrouting.DepthDelta
 
-	// Initialize order book with snapshot
+	// Initialize book with snapshot
 	if err := s.initializeOrderBook(ctx, book, symbol); err != nil {
 		select {
 		case errs <- err:
@@ -170,7 +170,7 @@ func (s *OrderBookService) processDepthDeltas(
 
 // emitSnapshot obtains the current snapshot and performs a non-blocking send.
 // Returns true if the snapshot was successfully delivered, false otherwise.
-func (s *OrderBookService) emitSnapshot(ctx context.Context, book *OrderBook, events chan<- corestreams.BookEvent) bool {
+func (s *BookService) emitSnapshot(ctx context.Context, book *Book, events chan<- corestreams.BookEvent) bool {
 	snapshot := book.GetSnapshot()
 	select {
 	case events <- snapshot:
@@ -182,9 +182,9 @@ func (s *OrderBookService) emitSnapshot(ctx context.Context, book *OrderBook, ev
 	}
 }
 
-// applyDelta applies a DepthDelta to the order book.
-func (s *OrderBookService) applyDelta(
-	book *OrderBook,
+// applyDelta applies a DepthDelta to the book.
+func (s *BookService) applyDelta(
+	book *Book,
 	delta *bnrouting.DepthDelta,
 	errs chan<- error,
 ) {
@@ -204,15 +204,15 @@ func (s *OrderBookService) applyDelta(
 	}
 }
 
-// initializeOrderBook initializes an order book with a snapshot from the REST API.
-func (s *OrderBookService) initializeOrderBook(ctx context.Context, book *OrderBook, symbol string) error {
+// initializeOrderBook initializes an book with a snapshot from the REST API.
+func (s *BookService) initializeOrderBook(ctx context.Context, book *Book, symbol string) error {
 	const maxRetries = 5
 	var lastErr error
 
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		select {
 		case <-ctx.Done():
-			return internal.WrapNetwork(ctx.Err(), "order book initialization cancelled")
+			return internal.WrapNetwork(ctx.Err(), "book initialization cancelled")
 		default:
 		}
 
@@ -222,7 +222,7 @@ func (s *OrderBookService) initializeOrderBook(ctx context.Context, book *OrderB
 
 		if err == nil {
 			book.InitializeFromSnapshot(snapshot, lastUpdateID)
-			log.Printf("Initialized order book for %s (update ID: %d)", symbol, lastUpdateID)
+			log.Printf("Initialized book for %s (update ID: %d)", symbol, lastUpdateID)
 			return nil
 		}
 
@@ -230,19 +230,19 @@ func (s *OrderBookService) initializeOrderBook(ctx context.Context, book *OrderB
 		backoff := time.Duration(attempt+1) * time.Second
 		select {
 		case <-ctx.Done():
-			return internal.WrapNetwork(ctx.Err(), "order book initialization cancelled")
+			return internal.WrapNetwork(ctx.Err(), "book initialization cancelled")
 		case <-time.After(backoff):
 		}
 	}
 
 	if lastErr == nil {
-		lastErr = internal.Exchange("failed to initialize order book")
+		lastErr = internal.Exchange("failed to initialize book")
 	}
 	return lastErr
 }
 
 // Snapshot fetches a REST depth snapshot for the given symbol.
-func (s *OrderBookService) Snapshot(ctx context.Context, symbol string, limit int) (corestreams.BookEvent, int64, error) {
+func (s *BookService) Snapshot(ctx context.Context, symbol string, limit int) (corestreams.BookEvent, int64, error) {
 	if s.restRouter == nil {
 		return corestreams.BookEvent{}, 0, internal.Invalid("depth snapshot: rest router unavailable")
 	}
@@ -290,17 +290,4 @@ func convertDepthLevels(pairs [][]interface{}) []core.BookDepthLevel {
 		levels = append(levels, core.BookDepthLevel{Price: price, Qty: qty})
 	}
 	return levels
-}
-
-// OrderBookSnapshot returns the current snapshot for a symbol if initialized.
-func (s *OrderBookService) OrderBookSnapshot(symbol string) (corestreams.BookEvent, bool) {
-	s.mu.RLock()
-	book, exists := s.books[symbol]
-	s.mu.RUnlock()
-
-	if !exists || !book.Initialized() {
-		return corestreams.BookEvent{}, false
-	}
-
-	return book.GetSnapshot(), true
 }
