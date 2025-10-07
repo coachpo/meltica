@@ -1,4 +1,4 @@
-package filter
+package pipeline
 
 import (
 	"context"
@@ -6,10 +6,10 @@ import (
 	"strings"
 )
 
-// StageFactory constructs a Stage for the given request.
-type StageFactory func(ctx context.Context, req FilterRequest, adapter Adapter) Stage
+// StageFactory constructs a PipelineStep for the given request.
+type StageFactory func(ctx context.Context, req PipelineRequest, adapter Adapter) PipelineStep
 
-// Coordinator orchestrates the lifecycle of a filter pipeline.
+// Coordinator orchestrates the lifecycle of a pipeline.
 type Coordinator struct {
 	adapter Adapter
 	auth    *AuthContext
@@ -22,15 +22,15 @@ func NewCoordinator(adapter Adapter, auth *AuthContext) *Coordinator {
 }
 
 // Stream builds and runs a pipeline for the supplied request.
-func (c *Coordinator) Stream(parent context.Context, req FilterRequest) (FilterStream, error) {
+func (c *Coordinator) Stream(parent context.Context, req PipelineRequest) (PipelineStream, error) {
 	ctx, cancel := context.WithCancel(parent)
 
 	if err := c.validateRequest(req); err != nil {
 		cancel()
-		return FilterStream{}, err
+		return PipelineStream{}, err
 	}
 
-	result := StageResult{}
+	result := PipelineStepResult{}
 	stages, cache := c.buildStages(ctx, req)
 	for _, stage := range stages {
 		if stage == nil {
@@ -39,7 +39,7 @@ func (c *Coordinator) Stream(parent context.Context, req FilterRequest) (FilterS
 		result = stage.Run(ctx, result)
 	}
 
-	stream := FilterStream{
+	stream := PipelineStream{
 		Events: result.Events,
 		Errors: result.Errors,
 		cancel: cancel,
@@ -55,8 +55,8 @@ func (c *Coordinator) Close() {
 	}
 }
 
-func (c *Coordinator) buildStages(ctx context.Context, req FilterRequest) ([]Stage, *snapshotCache) {
-	stages := []Stage{}
+func (c *Coordinator) buildStages(ctx context.Context, req PipelineRequest) ([]PipelineStep, *snapshotCache) {
+	stages := []PipelineStep{}
 	cache := newSnapshotCache(req.EnableSnapshots)
 
 	if c.adapter != nil {
@@ -92,10 +92,10 @@ func (c *Coordinator) buildStages(ctx context.Context, req FilterRequest) ([]Sta
 	return stages, cache
 }
 
-func (c *Coordinator) validateRequest(req FilterRequest) error {
+func (c *Coordinator) validateRequest(req PipelineRequest) error {
 	if c.adapter == nil {
 		if req.Feeds.Books || req.Feeds.Trades || req.Feeds.Tickers || req.EnablePrivate || len(req.RESTRequests) > 0 {
-			return fmt.Errorf("filter: adapter unavailable")
+			return fmt.Errorf("pipeline: adapter unavailable")
 		}
 		return nil
 	}
@@ -118,12 +118,12 @@ func (c *Coordinator) validateRequest(req FilterRequest) error {
 		missing = append(missing, "rest_endpoints")
 	}
 	if len(missing) > 0 {
-		return fmt.Errorf("filter: adapter missing capabilities: %s", strings.Join(missing, ", "))
+		return fmt.Errorf("pipeline: adapter missing capabilities: %s", strings.Join(missing, ", "))
 	}
 
 	// Validate auth context for private streams
 	if req.EnablePrivate && c.auth == nil {
-		return fmt.Errorf("filter: authentication required for private streams")
+		return fmt.Errorf("pipeline: authentication required for private streams")
 	}
 
 	return nil

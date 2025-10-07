@@ -8,7 +8,7 @@ import (
 	"time"
 
 	corestreams "github.com/coachpo/meltica/core/streams"
-	mdfilter "github.com/coachpo/meltica/filter"
+	mdfilter "github.com/coachpo/meltica/pipeline"
 )
 
 // PrivateMessageParser parses Binance private WebSocket messages
@@ -189,70 +189,66 @@ func (p *PrivateMessageParser) ParseBalanceUpdate(raw []byte) (*mdfilter.Account
 }
 
 // ParseMessage parses any Binance private message and returns the appropriate event envelope
-func (p *PrivateMessageParser) ParseMessage(routedMsg corestreams.RoutedMessage) (mdfilter.EventEnvelope, error) {
+func (p *PrivateMessageParser) ParseMessage(routedMsg corestreams.RoutedMessage) (mdfilter.Event, error) {
 	var baseMsg struct {
 		EventType string `json:"e"`
 	}
 
 	if err := json.Unmarshal(routedMsg.Raw, &baseMsg); err != nil {
-		return mdfilter.EventEnvelope{}, fmt.Errorf("failed to parse message type: %w", err)
+		return mdfilter.Event{}, fmt.Errorf("failed to parse message type: %w", err)
 	}
 
-	envelope := mdfilter.EventEnvelope{
-		Channel:   mdfilter.ChannelPrivateWS,
-		Timestamp: routedMsg.At,
+	envelope := mdfilter.Event{
+		Transport: mdfilter.TransportPrivateWS,
+		At:        routedMsg.At,
 	}
 
 	switch baseMsg.EventType {
 	case "outboundAccountPosition":
 		accountEvent, err := p.ParseAccountUpdate(routedMsg.Raw)
 		if err != nil {
-			return mdfilter.EventEnvelope{}, fmt.Errorf("failed to parse account update: %w", err)
+			return mdfilter.Event{}, fmt.Errorf("failed to parse account update: %w", err)
 		}
-		envelope.Kind = mdfilter.EventKindAccount
-		envelope.AccountEvent = accountEvent
 		if accountEvent != nil {
 			envelope.Symbol = accountEvent.Symbol
+			envelope.Payload = mdfilter.AccountPayload{Account: accountEvent}
 		}
 
 	case "executionReport":
 		orderEvent, err := p.ParseOrderUpdate(routedMsg.Raw)
 		if err != nil {
-			return mdfilter.EventEnvelope{}, fmt.Errorf("failed to parse order update: %w", err)
+			return mdfilter.Event{}, fmt.Errorf("failed to parse order update: %w", err)
 		}
-		envelope.Kind = mdfilter.EventKindOrder
-		envelope.OrderEvent = orderEvent
 		if orderEvent != nil {
 			envelope.Symbol = orderEvent.Symbol
+			envelope.Payload = mdfilter.OrderPayload{Order: orderEvent}
 		}
 
 	case "balanceUpdate":
 		accountEvent, err := p.ParseBalanceUpdate(routedMsg.Raw)
 		if err != nil {
-			return mdfilter.EventEnvelope{}, fmt.Errorf("failed to parse balance update: %w", err)
+			return mdfilter.Event{}, fmt.Errorf("failed to parse balance update: %w", err)
 		}
-		envelope.Kind = mdfilter.EventKindAccount
-		envelope.AccountEvent = accountEvent
 		if accountEvent != nil {
 			envelope.Symbol = accountEvent.Symbol
+			envelope.Payload = mdfilter.AccountPayload{Account: accountEvent}
 		}
 
 	default:
-		return mdfilter.EventEnvelope{}, fmt.Errorf("unsupported event type: %s", baseMsg.EventType)
+		return mdfilter.Event{}, fmt.Errorf("unsupported event type: %s", baseMsg.EventType)
 	}
 
 	return envelope, nil
 }
 
 // ParseError handles parsing errors and creates appropriate error envelopes
-func (p *PrivateMessageParser) ParseError(err error, raw []byte) mdfilter.EventEnvelope {
-	return mdfilter.EventEnvelope{
-		Kind:      mdfilter.EventKindUnknown,
-		Channel:   mdfilter.ChannelPrivateWS,
-		Timestamp: time.Now(),
-		RestResponse: &mdfilter.RestResponse{
-			StatusCode: 500,
-			Error:      err,
+func (p *PrivateMessageParser) ParseError(err error, raw []byte) mdfilter.Event {
+	return mdfilter.Event{
+		Transport: mdfilter.TransportPrivateWS,
+		At:        time.Now(),
+		Payload:   mdfilter.UnknownPayload{Detail: err},
+		Metadata: map[string]any{
+			"error": err,
 		},
 	}
 }

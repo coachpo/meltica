@@ -6,7 +6,7 @@ import (
 
 	"github.com/coachpo/meltica/exchanges/binance/infra/rest"
 	"github.com/coachpo/meltica/exchanges/shared/routing"
-	mdfilter "github.com/coachpo/meltica/filter"
+	mdfilter "github.com/coachpo/meltica/pipeline"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -35,7 +35,6 @@ func TestRESTBridge_MapInteractionToREST(t *testing.T) {
 		{
 			name: "spot public request",
 			input: mdfilter.InteractionRequest{
-				Channel:       mdfilter.ChannelREST,
 				Method:        "GET",
 				Path:          "/api/v3/ticker/price?symbol=BTCUSDT",
 				Symbol:        "BTCUSDT",
@@ -53,7 +52,6 @@ func TestRESTBridge_MapInteractionToREST(t *testing.T) {
 		{
 			name: "futures linear private request",
 			input: mdfilter.InteractionRequest{
-				Channel:       mdfilter.ChannelREST,
 				Method:        "POST",
 				Path:          "/fapi/v1/order",
 				Symbol:        "BTCUSDT",
@@ -76,7 +74,6 @@ func TestRESTBridge_MapInteractionToREST(t *testing.T) {
 		{
 			name: "futures inverse request",
 			input: mdfilter.InteractionRequest{
-				Channel:       mdfilter.ChannelREST,
 				Method:        "GET",
 				Path:          "/dapi/v1/ticker/price?symbol=BTCUSD_PERP",
 				Symbol:        "BTCUSD_PERP",
@@ -94,7 +91,6 @@ func TestRESTBridge_MapInteractionToREST(t *testing.T) {
 		{
 			name: "account info request",
 			input: mdfilter.InteractionRequest{
-				Channel:       mdfilter.ChannelREST,
 				Method:        "GET",
 				Path:          "/api/v3/account",
 				CorrelationID: "account-999",
@@ -159,7 +155,6 @@ func TestRESTBridge_Dispatch(t *testing.T) {
 
 		bridge := NewRESTBridge(mockRouter)
 		interactionReq := mdfilter.InteractionRequest{
-			Channel:       mdfilter.ChannelREST,
 			Method:        "GET",
 			Path:          "/api/v3/ticker/price?symbol=BTCUSDT",
 			Symbol:        "BTCUSDT",
@@ -179,9 +174,8 @@ func TestRESTBridge_Dispatch(t *testing.T) {
 	t.Run("router not available", func(t *testing.T) {
 		bridge := NewRESTBridge(nil)
 		interactionReq := mdfilter.InteractionRequest{
-			Channel: mdfilter.ChannelREST,
-			Method:  "GET",
-			Path:    "/api/v3/ticker/price",
+			Method: "GET",
+			Path:   "/api/v3/ticker/price",
 		}
 
 		var result interface{}
@@ -208,7 +202,6 @@ func TestRESTBridge_Dispatch(t *testing.T) {
 
 		// Create an invalid payload that can't be JSON marshaled
 		interactionReq := mdfilter.InteractionRequest{
-			Channel:       mdfilter.ChannelREST,
 			Method:        "POST",
 			Path:          "/api/v3/order",
 			Payload:       make(chan int), // Channels can't be JSON marshaled

@@ -8,8 +8,8 @@ import (
 	"github.com/coachpo/meltica/core"
 	corestreams "github.com/coachpo/meltica/core/streams"
 	binanceplugin "github.com/coachpo/meltica/exchanges/binance/plugin"
-	mdfilter "github.com/coachpo/meltica/filter"
 	"github.com/coachpo/meltica/internal/numeric"
+	mdfilter "github.com/coachpo/meltica/pipeline"
 )
 
 type fakeExchange struct {
@@ -121,9 +121,9 @@ func TestStartMarketFilter(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	coord, stream, err := startMarketFilter(ctx, exch, []string{"BTC-USDT"}, true, defaultBookDepth, 0, true, false)
+	coord, stream, err := startMarketPipeline(ctx, exch, []string{"BTC-USDT"}, defaultBookDepth, 0, true, false)
 	if err != nil {
-		t.Fatalf("startMarketFilter: %v", err)
+		t.Fatalf("startMarketPipeline: %v", err)
 	}
 	defer coord.Close()
 	defer stream.Close()
@@ -136,6 +136,7 @@ func TestStartMarketFilter(t *testing.T) {
 	eventCtx, eventCancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer eventCancel()
 
+loop:
 	for {
 		select {
 		case evt, ok := <-stream.Events:
@@ -143,20 +144,19 @@ func TestStartMarketFilter(t *testing.T) {
 				stream.Events = nil
 				continue
 			}
-			switch evt.Kind {
-			case mdfilter.EventKindTrade:
+			switch payload := evt.Payload.(type) {
+			case mdfilter.TradePayload:
 				receivedTrades++
-			case mdfilter.EventKindTicker:
+			case mdfilter.TickerPayload:
 				receivedTickers++
-			case mdfilter.EventKindBook:
+			case mdfilter.BookPayload:
 				receivedBooks++
-				if evt.Book == nil {
+				if payload.Book == nil {
 					t.Fatal("expected book payload")
 				}
-				// The book only has 10 levels, so it shouldn't be trimmed to 500
 				expectedDepth := 10
-				if len(evt.Book.Bids) != expectedDepth {
-					t.Fatalf("expected book with %d levels, got %d", expectedDepth, len(evt.Book.Bids))
+				if len(payload.Book.Bids) != expectedDepth {
+					t.Fatalf("expected book with %d levels, got %d", expectedDepth, len(payload.Book.Bids))
 				}
 			}
 		case err, ok := <-stream.Errors:
@@ -169,13 +169,12 @@ func TestStartMarketFilter(t *testing.T) {
 			}
 		case <-eventCtx.Done():
 			// Timeout reached, break out of the loop
-			break
+			break loop
 		}
 
-		// Break if we've received all expected events or streams are closed
 		if (receivedTrades >= 1 && receivedTickers >= 1 && receivedBooks >= 1) ||
 			(stream.Events == nil && stream.Errors == nil) {
-			break
+			break loop
 		}
 	}
 
@@ -183,7 +182,7 @@ func TestStartMarketFilter(t *testing.T) {
 		t.Fatalf("unexpected counts trades=%d tickers=%d books=%d", receivedTrades, receivedTickers, receivedBooks)
 	}
 
-	if _, ok := stream.Snapshot(mdfilter.EventKindTrade, "BTC-USDT"); !ok {
-		t.Fatal("expected trade snapshot")
+	if _, ok := stream.LastTradeEvent("BTC-USDT"); !ok {
+		t.Fatal("expected cached trade entry")
 	}
 }

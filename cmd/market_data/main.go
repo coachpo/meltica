@@ -17,8 +17,8 @@ import (
 	binancel4 "github.com/coachpo/meltica/exchanges/binance/filter"
 	binanceplugin "github.com/coachpo/meltica/exchanges/binance/plugin"
 	"github.com/coachpo/meltica/exchanges/shared/routing"
-	mdfilter "github.com/coachpo/meltica/filter"
 	"github.com/coachpo/meltica/internal/numeric"
+	mdfilter "github.com/coachpo/meltica/pipeline"
 )
 
 const (
@@ -30,12 +30,10 @@ const (
 
 func main() {
 	symbolsFlag := flag.String("symbols", defaultSymbolList, "Comma separated canonical symbols (e.g. BTC-USDT,ETH-USDT)")
-	includeBook := flag.Bool("book", false, "Subscribe to order book deltas in addition to trades and tickers")
 	bookDepth := flag.Int("book-depth", defaultBookDepth, "Maximum depth levels per side to display for order books (<=0 keeps full depth)")
-	minEmit := flag.Duration("throttle", 0, "Minimum interval between successive events per symbol/kind (e.g. 250ms)")
+	minEmit := flag.Duration("throttle", 0, "Minimum interval between successive events per symbol/type (e.g. 250ms)")
 	enableVWAP := flag.Bool("enable-vwap", true, "Emit rolling VWAP analytics events for trades")
 	enablePrivate := flag.Bool("private", false, "Enable private stream subscriptions (account, orders)")
-	restEndpoint := flag.String("rest", "", "Execute REST API call (e.g. 'GET /api/v3/account')")
 	flag.Parse()
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -52,37 +50,30 @@ func main() {
 		log.Fatalf("no symbols provided")
 	}
 
-	if err := run(ctx, exchange, symbols, *includeBook, *bookDepth, *minEmit, *enableVWAP, *enablePrivate, *restEndpoint); err != nil {
+	if err := run(ctx, exchange, symbols, *bookDepth, *minEmit, *enableVWAP, *enablePrivate); err != nil {
 		log.Fatalf("market data error: %v", err)
 	}
 }
 
-func run(ctx context.Context, exchange core.Exchange, symbols []string, withBook bool, bookDepth int, minEmit time.Duration, enableVWAP bool, enablePrivate bool, restEndpoint string) error {
+func run(ctx context.Context, exchange core.Exchange, symbols []string, bookDepth int, minEmit time.Duration, enableVWAP bool, enablePrivate bool) error {
 	instruments := loadInstrumentCache(ctx, exchange)
 	formatter := newPrecisionFormatter(instruments)
 
 	var (
-		filterFacade *mdfilter.InteractionFacade
-		filterStream mdfilter.FilterStream
-		err          error
+		interactionFacade *mdfilter.InteractionFacade
+		pipelineStream    mdfilter.PipelineStream
+		err               error
 	)
 
-	// Handle REST API call if specified
-	if restEndpoint != "" {
-		return executeRESTCall(ctx, exchange, restEndpoint)
-	}
-
-	filterFacade, filterStream, err = startMarketFilter(ctx, exchange, symbols, withBook, bookDepth, minEmit, enableVWAP, enablePrivate)
+	interactionFacade, pipelineStream, err = startMarketPipeline(ctx, exchange, symbols, bookDepth, minEmit, enableVWAP, enablePrivate)
 	if err != nil {
 		return fmt.Errorf("start filter: %w", err)
 	}
-	defer filterStream.Close()
-	defer filterFacade.Close()
+	defer pipelineStream.Close()
+	defer interactionFacade.Close()
 
 	fmt.Printf("Streaming %d symbols: trades & tickers", len(symbols))
-	if withBook {
-		fmt.Printf(" + books(depth=%d)", bookDepth)
-	}
+	fmt.Printf(" + books(depth=%d)", bookDepth)
 	if minEmit > 0 {
 		fmt.Printf(" throttle=%s", minEmit)
 	}
@@ -94,8 +85,8 @@ func run(ctx context.Context, exchange core.Exchange, symbols []string, withBook
 	}
 	fmt.Println()
 
-	eventCh := filterStream.Events
-	errCh := filterStream.Errors
+	eventCh := pipelineStream.Events
+	errCh := pipelineStream.Errors
 
 	for {
 		select {
@@ -120,33 +111,33 @@ func run(ctx context.Context, exchange core.Exchange, symbols []string, withBook
 				}
 				continue
 			}
-			switch evt.Kind {
-			case mdfilter.EventKindTrade:
-				if evt.Trade != nil {
-					printTradeEvent(*evt.Trade, formatter)
+			switch payload := evt.Payload.(type) {
+			case mdfilter.TradePayload:
+				if payload.Trade != nil {
+					printTradeEvent(*payload.Trade, formatter)
 				}
-			case mdfilter.EventKindTicker:
-				if evt.Ticker != nil {
-					printTickerEvent(*evt.Ticker, formatter)
+			case mdfilter.TickerPayload:
+				if payload.Ticker != nil {
+					printTickerEvent(*payload.Ticker, formatter)
 				}
-			case mdfilter.EventKindBook:
-				if evt.Book != nil {
-					printBookSnapshot(*evt.Book, formatter)
+			case mdfilter.BookPayload:
+				if payload.Book != nil {
+					printBookSnapshot(*payload.Book, formatter)
 				}
-			case mdfilter.EventKindVWAP:
-				if evt.Stats != nil {
-					printVWAPEvent(*evt.Stats, evt.Timestamp, formatter)
+			case mdfilter.AnalyticsPayload:
+				if payload.Analytics != nil {
+					printVWAPEvent(*payload.Analytics, evt.At, formatter)
 				}
-			case mdfilter.EventKindAccount:
-				if evt.AccountEvent != nil {
-					printAccountEvent(*evt.AccountEvent, formatter)
+			case mdfilter.AccountPayload:
+				if payload.Account != nil {
+					printAccountEvent(*payload.Account, formatter)
 				}
-			case mdfilter.EventKindOrder:
-				if evt.OrderEvent != nil {
-					printOrderEvent(*evt.OrderEvent, formatter)
+			case mdfilter.OrderPayload:
+				if payload.Order != nil {
+					printOrderEvent(*payload.Order, formatter)
 				}
 			default:
-				// ignore unknown event kinds for now
+				// ignore for now
 			}
 		}
 	}
@@ -327,43 +318,40 @@ func loadInstrumentCache(ctx context.Context, exchange core.Exchange) map[string
 	return cache
 }
 
-func startMarketFilter(
+func startMarketPipeline(
 	ctx context.Context,
 	exchange core.Exchange,
 	symbols []string,
-	includeBook bool,
 	bookDepth int,
 	minEmit time.Duration,
 	enableVWAP bool,
 	enablePrivate bool,
-) (*mdfilter.InteractionFacade, mdfilter.FilterStream, error) {
+) (*mdfilter.InteractionFacade, mdfilter.PipelineStream, error) {
 	adapter, auth, err := resolveFilterAdapter(exchange)
 	if err != nil {
-		return nil, mdfilter.FilterStream{}, err
+		return nil, mdfilter.PipelineStream{}, err
 	}
 
 	facade := mdfilter.NewInteractionFacade(adapter, auth)
 
 	// Build options for subscription
 	var options []mdfilter.PublicOption
-	if includeBook {
-		options = append(options, mdfilter.WithBooks())
-	}
-	options = append(options, mdfilter.WithTrades(), mdfilter.WithTickers())
+	options = append(options, mdfilter.WithTrades(), mdfilter.WithTickers(), mdfilter.WithBooks())
 	if bookDepth > 0 {
 		options = append(options, mdfilter.WithBookDepth(bookDepth))
 	}
 	if minEmit > 0 {
 		options = append(options, mdfilter.WithMinEmitInterval(minEmit))
 	}
+	//TODO: explain what is snapshots, and WithSnapshots
 	options = append(options, mdfilter.WithSnapshots())
 	if enableVWAP {
 		options = append(options, mdfilter.WithVWAP())
 	}
 
-	var stream mdfilter.FilterStream
+	var stream mdfilter.PipelineStream
 
-	// Use multi-channel subscription if private is enabled
+	// Use multichannel subscription if private is enabled
 	if enablePrivate && auth != nil {
 		stream, err = facade.MultiChannelStream(ctx, symbols, enablePrivate, options...)
 	} else {
@@ -372,11 +360,12 @@ func startMarketFilter(
 
 	if err != nil {
 		facade.Close()
-		return nil, mdfilter.FilterStream{}, err
+		return nil, mdfilter.PipelineStream{}, err
 	}
 	return facade, stream, nil
 }
 
+// TODO study this
 func resolveFilterAdapter(exchange core.Exchange) (mdfilter.Adapter, *mdfilter.AuthContext, error) {
 	switch exchange.Name() {
 	case string(binanceplugin.Name):
@@ -386,6 +375,7 @@ func resolveFilterAdapter(exchange core.Exchange) (mdfilter.Adapter, *mdfilter.A
 	}
 }
 
+// TODO study this
 func buildBinanceFilterAdapter(exchange core.Exchange) (mdfilter.Adapter, *mdfilter.AuthContext, error) {
 	var orderBooks interface {
 		OrderBookSnapshots(ctx context.Context, symbol string) (<-chan corestreams.BookEvent, <-chan error, error)
@@ -494,59 +484,4 @@ func printOrderEvent(evt mdfilter.OrderEvent, formatter precisionFormatter) {
 		formatter.quantity(evt.Symbol, evt.Quantity),
 		evt.Status,
 	)
-}
-
-func executeRESTCall(ctx context.Context, exchange core.Exchange, endpoint string) error {
-	// Parse the REST endpoint (e.g., "GET /api/v3/account")
-	parts := strings.SplitN(endpoint, " ", 2)
-	if len(parts) != 2 {
-		return fmt.Errorf("invalid REST endpoint format: %s (expected 'METHOD /path')", endpoint)
-	}
-	method := strings.ToUpper(parts[0])
-	path := parts[1]
-
-	adapter, auth, err := resolveFilterAdapter(exchange)
-	if err != nil {
-		return fmt.Errorf("resolve adapter: %w", err)
-	}
-	defer adapter.Close()
-
-	// Create REST request
-	request := mdfilter.InteractionRequest{
-		Channel:     mdfilter.ChannelREST,
-		Method:      method,
-		Path:        path,
-		AuthContext: auth,
-	}
-
-	// For CLI usage, we'll use a simplified synchronous approach
-	// Create a stream and wait for the first response
-	eventCh, errCh, err := adapter.ExecuteREST(ctx, request)
-	if err != nil {
-		return fmt.Errorf("REST request failed: %w", err)
-	}
-
-	// Wait for either an event or an error
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case err := <-errCh:
-		return fmt.Errorf("REST request error: %w", err)
-	case event := <-eventCh:
-		// Print the response
-		fmt.Printf("REST Response:\n")
-		if event.RestResponse != nil {
-			fmt.Printf("  Status: %d\n", event.RestResponse.StatusCode)
-			if event.RestResponse.Error != nil {
-				fmt.Printf("  Error: %v\n", event.RestResponse.Error)
-			}
-			if event.RestResponse.Body != nil {
-				fmt.Printf("  Body: %+v\n", event.RestResponse.Body)
-			}
-		} else {
-			fmt.Printf("  No response data received\n")
-		}
-	}
-
-	return nil
 }

@@ -1,4 +1,4 @@
-package filter_test
+package pipeline
 
 import (
 	"context"
@@ -9,7 +9,6 @@ import (
 
 	"github.com/coachpo/meltica/core"
 	corestreams "github.com/coachpo/meltica/core/streams"
-	"github.com/coachpo/meltica/filter"
 )
 
 func TestCoordinatorBookStream(t *testing.T) {
@@ -23,18 +22,18 @@ func TestCoordinatorBookStream(t *testing.T) {
 	close(errCh)
 
 	adapter := &stubAdapter{
-		capabilities: filter.Capabilities{Books: true},
-		bookSources: []filter.BookSource{
+		capabilities: Capabilities{Books: true},
+		bookSources: []BookSource{
 			{Symbol: "BTC-USDT", Events: bookCh, Errors: errCh},
 		},
 	}
 
-	coordinator := filter.NewCoordinator(adapter, nil)
+	coordinator := NewCoordinator(adapter, nil)
 	defer coordinator.Close()
 
-	stream, err := coordinator.Stream(ctx, filter.FilterRequest{
+	stream, err := coordinator.Stream(ctx, PipelineRequest{
 		Symbols: []string{"BTC-USDT"},
-		Feeds:   filter.FeedSelection{Books: true},
+		Feeds:   FeedSelection{Books: true},
 	})
 	if err != nil {
 		t.Fatalf("stream: %v", err)
@@ -42,21 +41,19 @@ func TestCoordinatorBookStream(t *testing.T) {
 	defer stream.Close()
 
 	select {
-	case envelope, ok := <-stream.Events:
+	case evt, ok := <-stream.Events:
 		if !ok {
 			t.Fatalf("expected event from stream")
 		}
-		if envelope.Kind != filter.EventKindBook {
-			t.Fatalf("expected book event, got %s", envelope.Kind)
+		payload, ok := evt.Payload.(BookPayload)
+		if !ok || payload.Book == nil {
+			t.Fatalf("expected book payload, got %T", evt.Payload)
 		}
-		if envelope.Symbol != "BTC-USDT" {
-			t.Fatalf("expected symbol BTC-USDT, got %s", envelope.Symbol)
+		if evt.Symbol != "BTC-USDT" {
+			t.Fatalf("expected symbol BTC-USDT, got %s", evt.Symbol)
 		}
-		if envelope.Timestamp.IsZero() {
+		if evt.At.IsZero() {
 			t.Fatal("expected normalized timestamp")
-		}
-		if envelope.Book == nil {
-			t.Fatal("expected book payload")
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for book event")
@@ -74,18 +71,18 @@ func TestCoordinatorPropagatesErrors(t *testing.T) {
 	close(errCh)
 
 	adapter := &stubAdapter{
-		capabilities: filter.Capabilities{Books: true},
-		bookSources: []filter.BookSource{
+		capabilities: Capabilities{Books: true},
+		bookSources: []BookSource{
 			{Symbol: "BTC-USDT", Events: bookCh, Errors: errCh},
 		},
 	}
 
-	coordinator := filter.NewCoordinator(adapter, nil)
+	coordinator := NewCoordinator(adapter, nil)
 	defer coordinator.Close()
 
-	stream, err := coordinator.Stream(ctx, filter.FilterRequest{
+	stream, err := coordinator.Stream(ctx, PipelineRequest{
 		Symbols: []string{"BTC-USDT"},
-		Feeds:   filter.FeedSelection{Books: true},
+		Feeds:   FeedSelection{Books: true},
 	})
 	if err != nil {
 		t.Fatalf("stream: %v", err)
@@ -129,18 +126,18 @@ func TestAggregationTrimsBookDepthAndSnapshots(t *testing.T) {
 	close(errCh)
 
 	adapter := &stubAdapter{
-		capabilities: filter.Capabilities{Books: true},
-		bookSources: []filter.BookSource{
+		capabilities: Capabilities{Books: true},
+		bookSources: []BookSource{
 			{Symbol: "BTC-USDT", Events: bookCh, Errors: errCh},
 		},
 	}
 
-	coordinator := filter.NewCoordinator(adapter, nil)
+	coordinator := NewCoordinator(adapter, nil)
 	defer coordinator.Close()
 
-	stream, err := coordinator.Stream(ctx, filter.FilterRequest{
+	stream, err := coordinator.Stream(ctx, PipelineRequest{
 		Symbols:         []string{"BTC-USDT"},
-		Feeds:           filter.FeedSelection{Books: true},
+		Feeds:           FeedSelection{Books: true},
 		BookDepth:       1,
 		EnableSnapshots: true,
 	})
@@ -151,21 +148,24 @@ func TestAggregationTrimsBookDepthAndSnapshots(t *testing.T) {
 
 	select {
 	case evt := <-stream.Events:
-		if evt.Book == nil {
+		payload, ok := evt.Payload.(BookPayload)
+		if !ok || payload.Book == nil {
 			t.Fatal("expected book event")
 		}
-		if len(evt.Book.Bids) != 1 {
-			t.Fatalf("expected 1 bid level, got %d", len(evt.Book.Bids))
+		if len(payload.Book.Bids) != 1 {
+			t.Fatalf("expected 1 bid level, got %d", len(payload.Book.Bids))
 		}
-		if len(evt.Book.Asks) != 1 {
-			t.Fatalf("expected 1 ask level, got %d", len(evt.Book.Asks))
+		if len(payload.Book.Asks) != 1 {
+			t.Fatalf("expected 1 ask level, got %d", len(payload.Book.Asks))
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for aggregated book")
 	}
 
-	if snapshot, ok := stream.Snapshot(filter.EventKindBook, "BTC-USDT"); !ok || snapshot.Book == nil {
-		t.Fatalf("expected snapshot entry")
+	if last, ok := stream.LastBookEvent("BTC-USDT"); !ok {
+		t.Fatalf("expected cached book entry")
+	} else if payload, ok := last.Payload.(BookPayload); !ok || payload.Book == nil {
+		t.Fatalf("expected book payload, got %T", last.Payload)
 	}
 }
 
@@ -181,18 +181,18 @@ func TestThrottleSkipsRapidEvents(t *testing.T) {
 	close(errCh)
 
 	adapter := &stubAdapter{
-		capabilities: filter.Capabilities{Trades: true},
-		tradeSources: []filter.TradeSource{
+		capabilities: Capabilities{Trades: true},
+		tradeSources: []TradeSource{
 			{Symbol: "ETH-USDT", Events: tradeCh, Errors: errCh},
 		},
 	}
 
-	coordinator := filter.NewCoordinator(adapter, nil)
+	coordinator := NewCoordinator(adapter, nil)
 	defer coordinator.Close()
 
-	stream, err := coordinator.Stream(ctx, filter.FilterRequest{
+	stream, err := coordinator.Stream(ctx, PipelineRequest{
 		Symbols:         []string{"ETH-USDT"},
-		Feeds:           filter.FeedSelection{Trades: true},
+		Feeds:           FeedSelection{Trades: true},
 		MinEmitInterval: time.Second,
 	})
 	if err != nil {
@@ -202,7 +202,10 @@ func TestThrottleSkipsRapidEvents(t *testing.T) {
 
 	// First event should be emitted
 	select {
-	case <-stream.Events:
+	case evt := <-stream.Events:
+		if _, ok := evt.Payload.(TradePayload); !ok {
+			t.Fatalf("expected trade payload, got %T", evt.Payload)
+		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for throttled event")
 	}
@@ -213,7 +216,6 @@ func TestThrottleSkipsRapidEvents(t *testing.T) {
 		if ok {
 			t.Fatalf("expected second event to be throttled, got %+v", evt)
 		}
-		// Channel closed - this is acceptable with multi-source stage
 	case <-time.After(100 * time.Millisecond):
 		// No event received - throttling worked correctly
 	}
@@ -224,8 +226,8 @@ type countingObserver struct {
 	errors int
 }
 
-func (o *countingObserver) OnEvent(filter.EventEnvelope) { o.events++ }
-func (o *countingObserver) OnError(error)                { o.errors++ }
+func (o *countingObserver) OnEvent(ClientEvent) { o.events++ }
+func (o *countingObserver) OnError(error)       { o.errors++ }
 
 func TestObserverReceivesCallbacks(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -239,20 +241,20 @@ func TestObserverReceivesCallbacks(t *testing.T) {
 	close(errCh)
 
 	adapter := &stubAdapter{
-		capabilities: filter.Capabilities{Trades: true},
-		tradeSources: []filter.TradeSource{
+		capabilities: Capabilities{Trades: true},
+		tradeSources: []TradeSource{
 			{Symbol: "BTC-USDT", Events: tradeCh, Errors: errCh},
 		},
 	}
 
 	observer := &countingObserver{}
 
-	coordinator := filter.NewCoordinator(adapter, nil)
+	coordinator := NewCoordinator(adapter, nil)
 	defer coordinator.Close()
 
-	stream, err := coordinator.Stream(ctx, filter.FilterRequest{
+	stream, err := coordinator.Stream(ctx, PipelineRequest{
 		Symbols:  []string{"BTC-USDT"},
-		Feeds:    filter.FeedSelection{Trades: true},
+		Feeds:    FeedSelection{Trades: true},
 		Observer: observer,
 	})
 	if err != nil {
@@ -313,18 +315,18 @@ func TestVWAPStageEmitsAnalytics(t *testing.T) {
 	close(errCh)
 
 	adapter := &stubAdapter{
-		capabilities: filter.Capabilities{Trades: true},
-		tradeSources: []filter.TradeSource{
+		capabilities: Capabilities{Trades: true},
+		tradeSources: []TradeSource{
 			{Symbol: "BTC-USDT", Events: tradeCh, Errors: errCh},
 		},
 	}
 
-	coordinator := filter.NewCoordinator(adapter, nil)
+	coordinator := NewCoordinator(adapter, nil)
 	defer coordinator.Close()
 
-	stream, err := coordinator.Stream(ctx, filter.FilterRequest{
+	stream, err := coordinator.Stream(ctx, PipelineRequest{
 		Symbols:    []string{"BTC-USDT"},
-		Feeds:      filter.FeedSelection{Trades: true},
+		Feeds:      FeedSelection{Trades: true},
 		EnableVWAP: true,
 	})
 	if err != nil {
@@ -346,24 +348,23 @@ outer:
 				events = nil
 				continue
 			}
-			if evt.Kind == filter.EventKindVWAP {
-				stats := evt.Stats
-				if stats == nil {
-					t.Fatalf("missing analytics payload")
-				}
-				if stats.TradeCount < targetTrades {
-					continue
-				}
-				if stats.TradeCount > targetTrades {
-					t.Fatalf("unexpected trade count: %d", stats.TradeCount)
-				}
-
-				expected := big.NewRat(400, 3)
-				if stats.VWAP == nil || stats.VWAP.Cmp(expected) != 0 {
-					t.Fatalf("unexpected vwap: got %v want %v", stats.VWAP, expected)
-				}
-				break outer
+			payload, ok := evt.Payload.(AnalyticsPayload)
+			if !ok || payload.Analytics == nil {
+				continue
 			}
+			stats := payload.Analytics
+			if stats.TradeCount < targetTrades {
+				continue
+			}
+			if stats.TradeCount > targetTrades {
+				t.Fatalf("unexpected trade count: %d", stats.TradeCount)
+			}
+
+			expected := big.NewRat(400, 3)
+			if stats.VWAP == nil || stats.VWAP.Cmp(expected) != 0 {
+				t.Fatalf("unexpected vwap: got %v want %v", stats.VWAP, expected)
+			}
+			break outer
 		case err, ok := <-errors:
 			if !ok {
 				errors = nil
@@ -398,24 +399,24 @@ func TestCoordinatorPassThroughTradeTicker(t *testing.T) {
 	close(tickerErr)
 
 	adapter := &stubAdapter{
-		capabilities: filter.Capabilities{
+		capabilities: Capabilities{
 			Trades:  true,
 			Tickers: true,
 		},
-		tradeSources: []filter.TradeSource{
+		tradeSources: []TradeSource{
 			{Symbol: "ETH-USDT", Events: tradeCh, Errors: tradeErr},
 		},
-		tickerSources: []filter.TickerSource{
+		tickerSources: []TickerSource{
 			{Symbol: "BNB-USDT", Events: tickerCh, Errors: tickerErr},
 		},
 	}
 
-	coordinator := filter.NewCoordinator(adapter, nil)
+	coordinator := NewCoordinator(adapter, nil)
 	defer coordinator.Close()
 
-	stream, err := coordinator.Stream(ctx, filter.FilterRequest{
+	stream, err := coordinator.Stream(ctx, PipelineRequest{
 		Symbols: []string{"ETH-USDT", "BNB-USDT"},
-		Feeds: filter.FeedSelection{
+		Feeds: FeedSelection{
 			Trades:  true,
 			Tickers: true,
 		},
@@ -429,25 +430,25 @@ func TestCoordinatorPassThroughTradeTicker(t *testing.T) {
 	timeout := time.NewTimer(time.Second)
 	defer timeout.Stop()
 
-	for receivedTrades == false || receivedTickers == false {
+	for !receivedTrades || !receivedTickers {
 		select {
 		case envelope, ok := <-stream.Events:
 			if !ok {
 				t.Fatalf("expected events before close")
 			}
-			switch envelope.Kind {
-			case filter.EventKindTrade:
-				if envelope.Trade == nil {
+			switch payload := envelope.Payload.(type) {
+			case TradePayload:
+				if payload.Trade == nil {
 					t.Fatalf("expected trade payload")
 				}
 				receivedTrades = true
-			case filter.EventKindTicker:
-				if envelope.Ticker == nil {
+			case TickerPayload:
+				if payload.Ticker == nil {
 					t.Fatalf("expected ticker payload")
 				}
 				receivedTickers = true
 			default:
-				t.Fatalf("unexpected event kind %s", envelope.Kind)
+				t.Fatalf("unexpected event payload %T", payload)
 			}
 		case <-timeout.C:
 			t.Fatal("timed out waiting for trade/ticker events")

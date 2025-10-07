@@ -1,4 +1,4 @@
-package filter
+package pipeline
 
 import (
 	"context"
@@ -10,13 +10,13 @@ import (
 	corestreams "github.com/coachpo/meltica/core/streams"
 )
 
-func newSamplingStage(interval time.Duration) Stage {
-	return NewStageFunc("sampling", func(ctx context.Context, input StageResult) StageResult {
+func newSamplingStage(interval time.Duration) PipelineStep {
+	return NewPipelineStepFunc("sampling", func(ctx context.Context, input PipelineStepResult) PipelineStepResult {
 		if interval <= 0 || input.Events == nil {
 			return input
 		}
 
-		events := make(chan EventEnvelope)
+		events := make(chan ClientEvent)
 		errors := make(chan error, 1)
 		eventSource := input.Events
 		errorSource := input.Errors
@@ -27,7 +27,7 @@ func newSamplingStage(interval time.Duration) Stage {
 			ticker := time.NewTicker(interval)
 			defer ticker.Stop()
 
-			var pending *EventEnvelope
+			var pending *ClientEvent
 			for {
 				select {
 				case <-ctx.Done():
@@ -68,20 +68,20 @@ func newSamplingStage(interval time.Duration) Stage {
 			}
 		}()
 
-		return StageResult{Events: events, Errors: errors}
+		return PipelineStepResult{Events: events, Errors: errors}
 	})
 }
 
-func newThrottleStage(interval time.Duration) Stage {
+func newThrottleStage(interval time.Duration) PipelineStep {
 	if interval <= 0 {
 		return nil
 	}
-	return NewStageFunc("throttle", func(ctx context.Context, input StageResult) StageResult {
+	return NewPipelineStepFunc("throttle", func(ctx context.Context, input PipelineStepResult) PipelineStepResult {
 		if input.Events == nil {
 			return input
 		}
 
-		events := make(chan EventEnvelope)
+		events := make(chan ClientEvent)
 		errors := make(chan error, 1)
 		eventSource := input.Events
 		errorSource := input.Errors
@@ -99,10 +99,11 @@ func newThrottleStage(interval time.Duration) Stage {
 						eventSource = nil
 						continue
 					}
-					key := string(evt.Kind) + "|" + evt.Symbol
-					t := evt.Timestamp
+					key := payloadIdentity(evt.Payload) + "|" + evt.Symbol
+					t := evt.At
 					if t.IsZero() {
 						t = time.Now()
+						evt.At = t
 					}
 					if prev, ok := lastEmit[key]; ok {
 						if t.Sub(prev) < interval {
@@ -131,16 +132,16 @@ func newThrottleStage(interval time.Duration) Stage {
 			}
 		}()
 
-		return StageResult{Events: events, Errors: errors}
+		return PipelineStepResult{Events: events, Errors: errors}
 	})
 }
 
-func newNormalizeStage() Stage {
-	return NewStageFunc("normalize", func(ctx context.Context, input StageResult) StageResult {
+func newNormalizeStage() PipelineStep {
+	return NewPipelineStepFunc("normalize", func(ctx context.Context, input PipelineStepResult) PipelineStepResult {
 		if input.Events == nil {
 			return input
 		}
-		events := make(chan EventEnvelope, 128)
+		events := make(chan ClientEvent, 128)
 		errors := make(chan error, 16)
 		eventSource := input.Events
 		errorSource := input.Errors
@@ -157,12 +158,13 @@ func newNormalizeStage() Stage {
 						eventSource = nil
 						continue
 					}
-					// Allow REST responses without symbols (account info, etc.)
-					if evt.Symbol == "" && evt.Kind != EventKindRestResponse {
-						continue
+					if evt.Symbol == "" {
+						if _, ok := evt.Payload.(RestResponsePayload); !ok {
+							continue
+						}
 					}
-					if evt.Timestamp.IsZero() {
-						evt.Timestamp = time.Now()
+					if evt.At.IsZero() {
+						evt.At = time.Now()
 					}
 					select {
 					case events <- evt:
@@ -185,12 +187,12 @@ func newNormalizeStage() Stage {
 			}
 		}()
 
-		return StageResult{Events: events, Errors: errors}
+		return PipelineStepResult{Events: events, Errors: errors}
 	})
 }
 
-func newReliabilityStage() Stage {
-	return NewStageFunc("reliability", func(ctx context.Context, input StageResult) StageResult {
+func newReliabilityStage() PipelineStep {
+	return NewPipelineStepFunc("reliability", func(ctx context.Context, input PipelineStepResult) PipelineStepResult {
 		if input.Errors == nil {
 			return input
 		}
@@ -216,20 +218,20 @@ func newReliabilityStage() Stage {
 				}
 			}
 		}()
-		return StageResult{Events: events, Errors: errors}
+		return PipelineStepResult{Events: events, Errors: errors}
 	})
 }
 
-func newAggregationStage(cache *snapshotCache, depth int) Stage {
+func newAggregationStage(cache *snapshotCache, depth int) PipelineStep {
 	if cache == nil && depth <= 0 {
 		return nil
 	}
-	return NewStageFunc("aggregate", func(ctx context.Context, input StageResult) StageResult {
+	return NewPipelineStepFunc("aggregate", func(ctx context.Context, input PipelineStepResult) PipelineStepResult {
 		if input.Events == nil && input.Errors == nil {
 			return input
 		}
 
-		events := make(chan EventEnvelope)
+		events := make(chan ClientEvent)
 		errors := make(chan error, 1)
 		eventSource := input.Events
 		errorSource := input.Errors
@@ -246,16 +248,18 @@ func newAggregationStage(cache *snapshotCache, depth int) Stage {
 						eventSource = nil
 						continue
 					}
-					envelope := evt
-					if depth > 0 && envelope.Kind == EventKindBook && envelope.Book != nil {
-						trimmed := trimBookEvent(*envelope.Book, depth)
-						envelope.Book = &trimmed
+					if depth > 0 {
+						if bookPayload, ok := evt.Payload.(BookPayload); ok && bookPayload.Book != nil {
+							trimmed := trimBookEvent(*bookPayload.Book, depth)
+							bookPayload.Book = &trimmed
+							evt.Payload = bookPayload
+						}
 					}
 					if cache != nil {
-						cache.Update(envelope)
+						cache.Update(evt)
 					}
 					select {
-					case events <- envelope:
+					case events <- evt:
 					case <-ctx.Done():
 						return
 					}
@@ -275,20 +279,20 @@ func newAggregationStage(cache *snapshotCache, depth int) Stage {
 			}
 		}()
 
-		return StageResult{Events: events, Errors: errors}
+		return PipelineStepResult{Events: events, Errors: errors}
 	})
 }
 
-func newVWAPStage(enabled bool) Stage {
+func newVWAPStage(enabled bool) PipelineStep {
 	if !enabled {
 		return nil
 	}
-	return NewStageFunc("vwap", func(ctx context.Context, input StageResult) StageResult {
+	return NewPipelineStepFunc("vwap", func(ctx context.Context, input PipelineStepResult) PipelineStepResult {
 		if input.Events == nil && input.Errors == nil {
 			return input
 		}
 
-		events := make(chan EventEnvelope)
+		events := make(chan ClientEvent)
 		errors := make(chan error, 1)
 		eventSource := input.Events
 		errorSource := input.Errors
@@ -316,47 +320,51 @@ func newVWAPStage(enabled bool) Stage {
 
 					symbol := normalizeSymbol(evt.Symbol)
 
-					// Always forward the original event first.
 					select {
 					case events <- evt:
 					case <-ctx.Done():
 						return
 					}
 
-					if evt.Kind == EventKindTrade && evt.Trade != nil &&
-						evt.Trade.Price != nil && evt.Trade.Quantity != nil && symbol != "" {
-						acc := accumulators[symbol]
-						if acc == nil {
-							acc = &accum{
-								amount: new(big.Rat),
-								volume: new(big.Rat),
-							}
-							accumulators[symbol] = acc
+					tradePayload, ok := evt.Payload.(TradePayload)
+					if !ok || tradePayload.Trade == nil {
+						continue
+					}
+					if tradePayload.Trade.Price == nil || tradePayload.Trade.Quantity == nil || symbol == "" {
+						continue
+					}
+
+					acc := accumulators[symbol]
+					if acc == nil {
+						acc = &accum{
+							amount: new(big.Rat),
+							volume: new(big.Rat),
 						}
+						accumulators[symbol] = acc
+					}
 
-						amount := new(big.Rat).Mul(evt.Trade.Price, evt.Trade.Quantity)
-						acc.amount.Add(acc.amount, amount)
-						acc.volume.Add(acc.volume, evt.Trade.Quantity)
-						acc.count++
+					amount := new(big.Rat).Mul(tradePayload.Trade.Price, tradePayload.Trade.Quantity)
+					acc.amount.Add(acc.amount, amount)
+					acc.volume.Add(acc.volume, tradePayload.Trade.Quantity)
+					acc.count++
 
-						if acc.volume.Sign() != 0 {
-							vwap := new(big.Rat).Quo(new(big.Rat).Set(acc.amount), acc.volume)
-							analytics := &AnalyticsEvent{
-								Symbol:     symbol,
-								VWAP:       vwap,
-								TradeCount: acc.count,
-							}
-							analyticsEnvelope := EventEnvelope{
-								Kind:      EventKindVWAP,
-								Symbol:    symbol,
-								Timestamp: evt.Timestamp,
-								Stats:     analytics,
-							}
-							select {
-							case events <- analyticsEnvelope:
-							case <-ctx.Done():
-								return
-							}
+					if acc.volume.Sign() != 0 {
+						vwap := new(big.Rat).Quo(new(big.Rat).Set(acc.amount), acc.volume)
+						analytics := &AnalyticsEvent{
+							Symbol:     symbol,
+							VWAP:       vwap,
+							TradeCount: acc.count,
+						}
+						analyticsEvent := ClientEvent{
+							Channel: evt.Channel,
+							Symbol:  symbol,
+							At:      evt.At,
+							Payload: AnalyticsPayload{Analytics: analytics},
+						}
+						select {
+						case events <- analyticsEvent:
+						case <-ctx.Done():
+							return
 						}
 					}
 				case err, ok := <-errorSource:
@@ -375,16 +383,16 @@ func newVWAPStage(enabled bool) Stage {
 			}
 		}()
 
-		return StageResult{Events: events, Errors: errors}
+		return PipelineStepResult{Events: events, Errors: errors}
 	})
 }
 
-func newObserverStage(observer Observer) Stage {
+func newObserverStage(observer Observer) PipelineStep {
 	if observer == nil {
 		return nil
 	}
-	return NewStageFunc("observer", func(ctx context.Context, input StageResult) StageResult {
-		events := make(chan EventEnvelope)
+	return NewPipelineStepFunc("observer", func(ctx context.Context, input PipelineStepResult) PipelineStepResult {
+		events := make(chan ClientEvent)
 		errors := make(chan error, 1)
 		eventSource := input.Events
 		errorSource := input.Errors
@@ -401,9 +409,7 @@ func newObserverStage(observer Observer) Stage {
 						eventSource = nil
 						continue
 					}
-					if observer != nil {
-						observer.OnEvent(evt)
-					}
+					observer.OnEvent(evt)
 					select {
 					case events <- evt:
 					case <-ctx.Done():
@@ -414,7 +420,7 @@ func newObserverStage(observer Observer) Stage {
 						errorSource = nil
 						continue
 					}
-					if err != nil && observer != nil {
+					if err != nil {
 						observer.OnError(err)
 					}
 					select {
@@ -426,18 +432,18 @@ func newObserverStage(observer Observer) Stage {
 			}
 		}()
 
-		return StageResult{Events: events, Errors: errors}
+		return PipelineStepResult{Events: events, Errors: errors}
 	})
 }
 
-func dispatchStage() Stage {
-	return NewStageFunc("dispatch", func(ctx context.Context, input StageResult) StageResult {
-		result := StageResult{
+func dispatchStage() PipelineStep {
+	return NewPipelineStepFunc("dispatch", func(ctx context.Context, input PipelineStepResult) PipelineStepResult {
+		result := PipelineStepResult{
 			Events: input.Events,
 			Errors: input.Errors,
 		}
 		if result.Events == nil {
-			ch := make(chan EventEnvelope)
+			ch := make(chan ClientEvent)
 			close(ch)
 			result.Events = ch
 		}
@@ -472,4 +478,27 @@ func cloneLevels(levels []core.BookDepthLevel, depth int) []core.BookDepthLevel 
 	copied := make([]core.BookDepthLevel, depth)
 	copy(copied, levels[:depth])
 	return copied
+}
+
+func payloadIdentity(payload TransportPayload) string {
+	switch payload.(type) {
+	case BookPayload:
+		return "book"
+	case TradePayload:
+		return "trade"
+	case TickerPayload:
+		return "ticker"
+	case AnalyticsPayload:
+		return "analytics"
+	case AccountPayload:
+		return "account"
+	case OrderPayload:
+		return "order"
+	case RestResponsePayload:
+		return "rest_response"
+	case UnknownPayload:
+		return "unknown"
+	default:
+		return "payload"
+	}
 }

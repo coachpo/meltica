@@ -50,7 +50,7 @@ func (r *testRouter) InitializeOrderBook(context.Context, string) error { return
 
 func TestSubscribePrivateRejectsTopics(t *testing.T) {
 	svc := newWSService(&testRouter{})
-	if _, err := svc.SubscribePrivate(context.Background(), "trade:BTC-USDT"); !errors.Is(err, core.ErrNotSupported) {
+	if _, err := svc.SubscribePrivate(context.Background(), "mkt.trade:BTC-USDT"); !errors.Is(err, core.ErrNotSupported) {
 		t.Fatalf("expected ErrNotSupported, got %v", err)
 	}
 }

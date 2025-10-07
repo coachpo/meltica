@@ -9,7 +9,7 @@ import (
 	"github.com/coachpo/meltica/core"
 	corestreams "github.com/coachpo/meltica/core/streams"
 	"github.com/coachpo/meltica/exchanges/shared/routing"
-	"github.com/coachpo/meltica/filter"
+	"github.com/coachpo/meltica/pipeline"
 )
 
 type orderBookSubscriber interface {
@@ -90,8 +90,8 @@ func NewAdapterWithREST(orderBooks orderBookSubscriber, ws publicSubscriber, pri
 }
 
 // Capabilities declares supported feeds.
-func (a *Adapter) Capabilities() filter.Capabilities {
-	return filter.Capabilities{
+func (a *Adapter) Capabilities() pipeline.Capabilities {
+	return pipeline.Capabilities{
 		Books:          a.orderBooks != nil,
 		Trades:         a.ws != nil,
 		Tickers:        a.ws != nil,
@@ -101,12 +101,12 @@ func (a *Adapter) Capabilities() filter.Capabilities {
 }
 
 // BookSources subscribes to order book feeds for the requested symbols.
-func (a *Adapter) BookSources(ctx context.Context, symbols []string) ([]filter.BookSource, error) {
+func (a *Adapter) BookSources(ctx context.Context, symbols []string) ([]pipeline.BookSource, error) {
 	if a.orderBooks == nil {
 		return nil, nil
 	}
 	symbols = uniqueSymbols(symbols)
-	sources := make([]filter.BookSource, 0, len(symbols))
+	sources := make([]pipeline.BookSource, 0, len(symbols))
 	for _, symbol := range symbols {
 		if symbol == "" {
 			continue
@@ -115,7 +115,7 @@ func (a *Adapter) BookSources(ctx context.Context, symbols []string) ([]filter.B
 		if err != nil {
 			return nil, err
 		}
-		sources = append(sources, filter.BookSource{
+		sources = append(sources, pipeline.BookSource{
 			Symbol: symbol,
 			Events: events,
 			Errors: errs,
@@ -125,12 +125,12 @@ func (a *Adapter) BookSources(ctx context.Context, symbols []string) ([]filter.B
 }
 
 // TradeSources subscribes to trade streams for each symbol and forwards canonical events.
-func (a *Adapter) TradeSources(ctx context.Context, symbols []string) ([]filter.TradeSource, error) {
+func (a *Adapter) TradeSources(ctx context.Context, symbols []string) ([]pipeline.TradeSource, error) {
 	if a.ws == nil {
 		return nil, nil
 	}
 	symbols = uniqueSymbols(symbols)
-	sources := make([]filter.TradeSource, 0, len(symbols))
+	sources := make([]pipeline.TradeSource, 0, len(symbols))
 
 	for _, symbol := range symbols {
 		if symbol == "" {
@@ -187,7 +187,7 @@ func (a *Adapter) TradeSources(ctx context.Context, symbols []string) ([]filter.
 			}
 		}(symbol, sub)
 
-		sources = append(sources, filter.TradeSource{
+		sources = append(sources, pipeline.TradeSource{
 			Symbol: symbol,
 			Events: events,
 			Errors: errs,
@@ -198,12 +198,12 @@ func (a *Adapter) TradeSources(ctx context.Context, symbols []string) ([]filter.
 }
 
 // TickerSources subscribes to ticker streams for each symbol and forwards canonical events.
-func (a *Adapter) TickerSources(ctx context.Context, symbols []string) ([]filter.TickerSource, error) {
+func (a *Adapter) TickerSources(ctx context.Context, symbols []string) ([]pipeline.TickerSource, error) {
 	if a.ws == nil {
 		return nil, nil
 	}
 	symbols = uniqueSymbols(symbols)
-	sources := make([]filter.TickerSource, 0, len(symbols))
+	sources := make([]pipeline.TickerSource, 0, len(symbols))
 
 	for _, symbol := range symbols {
 		if symbol == "" {
@@ -260,7 +260,7 @@ func (a *Adapter) TickerSources(ctx context.Context, symbols []string) ([]filter
 			}
 		}(symbol, sub)
 
-		sources = append(sources, filter.TickerSource{
+		sources = append(sources, pipeline.TickerSource{
 			Symbol: symbol,
 			Events: events,
 			Errors: errs,
@@ -271,33 +271,31 @@ func (a *Adapter) TickerSources(ctx context.Context, symbols []string) ([]filter
 }
 
 // PrivateSources subscribes to private account and order streams.
-func (a *Adapter) PrivateSources(ctx context.Context, auth *filter.AuthContext) ([]filter.PrivateSource, error) {
+func (a *Adapter) PrivateSources(ctx context.Context, auth *pipeline.AuthContext) ([]pipeline.PrivateSource, error) {
 	if a.privateWS == nil {
 		return nil, nil
 	}
 
-	sources := make([]filter.PrivateSource, 0, 2) // account + orders
+	sources := make([]pipeline.PrivateSource, 0, 2) // account + orders
 
 	// Subscribe to account updates
-	accountEvents := make(chan filter.EventEnvelope, 32)
+	accountEvents := make(chan pipeline.Event, 32)
 	accountErrors := make(chan error, 1)
 
 	go a.forwardPrivateEvents(ctx, "account", accountEvents, accountErrors)
 
-	sources = append(sources, filter.PrivateSource{
-		Kind:   filter.EventKindAccount,
+	sources = append(sources, pipeline.PrivateSource{
 		Events: accountEvents,
 		Errors: accountErrors,
 	})
 
 	// Subscribe to order updates
-	orderEvents := make(chan filter.EventEnvelope, 32)
+	orderEvents := make(chan pipeline.Event, 32)
 	orderErrors := make(chan error, 1)
 
 	go a.forwardPrivateEvents(ctx, "orders", orderEvents, orderErrors)
 
-	sources = append(sources, filter.PrivateSource{
-		Kind:   filter.EventKindOrder,
+	sources = append(sources, pipeline.PrivateSource{
 		Events: orderEvents,
 		Errors: orderErrors,
 	})
@@ -306,12 +304,12 @@ func (a *Adapter) PrivateSources(ctx context.Context, auth *filter.AuthContext) 
 }
 
 // ExecuteREST executes REST API calls through the filter pipeline.
-func (a *Adapter) ExecuteREST(ctx context.Context, req filter.InteractionRequest) (<-chan filter.EventEnvelope, <-chan error, error) {
+func (a *Adapter) ExecuteREST(ctx context.Context, req pipeline.InteractionRequest) (<-chan pipeline.Event, <-chan error, error) {
 	if a.restRouter == nil {
 		return nil, nil, fmt.Errorf("REST router not available")
 	}
 
-	events := make(chan filter.EventEnvelope, 1)
+	events := make(chan pipeline.Event, 1)
 	errors := make(chan error, 1)
 
 	go func() {
@@ -336,7 +334,7 @@ func (a *Adapter) ExecuteREST(ctx context.Context, req filter.InteractionRequest
 		}
 
 		// Parse response and create appropriate envelope
-		envelope := a.createResponseEnvelope(req, result, err)
+		event := a.createResponseEvent(req, result, err)
 
 		if err != nil {
 			select {
@@ -347,7 +345,7 @@ func (a *Adapter) ExecuteREST(ctx context.Context, req filter.InteractionRequest
 		}
 
 		select {
-		case events <- envelope:
+		case events <- event:
 		case <-ctx.Done():
 		}
 	}()
@@ -356,7 +354,7 @@ func (a *Adapter) ExecuteREST(ctx context.Context, req filter.InteractionRequest
 }
 
 // executeWithRetry executes a REST request with retry logic
-func (a *Adapter) executeWithRetry(ctx context.Context, req filter.InteractionRequest, result interface{}) error {
+func (a *Adapter) executeWithRetry(ctx context.Context, req pipeline.InteractionRequest, result interface{}) error {
 	policy := req.RetryPolicy
 	baseDelay := time.Duration(policy.BaseDelay)
 	maxDelay := time.Duration(policy.MaxDelay)
@@ -395,7 +393,7 @@ func (a *Adapter) executeWithRetry(ctx context.Context, req filter.InteractionRe
 }
 
 // isRetryableError checks if an error should be retried based on the retry policy
-func (a *Adapter) isRetryableError(err error, policy *filter.RetryPolicy) bool {
+func (a *Adapter) isRetryableError(err error, policy *pipeline.RetryPolicy) bool {
 	// Check if error message matches retryable patterns
 	errStr := err.Error()
 	for _, pattern := range policy.RetryableErrors {
@@ -412,41 +410,32 @@ func (a *Adapter) isRetryableError(err error, policy *filter.RetryPolicy) bool {
 		strings.Contains(errStr, "429")
 }
 
-// createResponseEnvelope creates an event envelope from REST response
-func (a *Adapter) createResponseEnvelope(req filter.InteractionRequest, result interface{}, err error) filter.EventEnvelope {
-	envelope := filter.EventEnvelope{
-		Kind:          filter.EventKindRestResponse,
-		Channel:       filter.ChannelREST,
-		Symbol:        req.Symbol,
-		Timestamp:     time.Now(),
-		CorrelationID: req.CorrelationID,
+// createResponseEvent creates a pipeline event from REST response
+func (a *Adapter) createResponseEvent(req pipeline.InteractionRequest, result interface{}, err error) pipeline.Event {
+	payload := &pipeline.RestResponse{
+		RequestID:  req.CorrelationID,
+		Method:     req.Method,
+		Path:       req.Path,
+		StatusCode: 200,
+		Body:       result,
+		Error:      nil,
 	}
-
 	if err != nil {
-		envelope.RestResponse = &filter.RestResponse{
-			RequestID:  req.CorrelationID,
-			Method:     req.Method,
-			Path:       req.Path,
-			StatusCode: 500, // Default to 500 for errors
-			Body:       nil,
-			Error:      err,
-		}
-	} else {
-		envelope.RestResponse = &filter.RestResponse{
-			RequestID:  req.CorrelationID,
-			Method:     req.Method,
-			Path:       req.Path,
-			StatusCode: 200,
-			Body:       result,
-			Error:      nil,
-		}
+		payload.StatusCode = 500
+		payload.Body = nil
+		payload.Error = err
 	}
-
-	return envelope
+	return pipeline.Event{
+		Transport:     pipeline.TransportREST,
+		Symbol:        req.Symbol,
+		At:            time.Now(),
+		CorrelationID: req.CorrelationID,
+		Payload:       pipeline.RestResponsePayload{Response: payload},
+	}
 }
 
 // InitPrivateSession initializes private session with authentication.
-func (a *Adapter) InitPrivateSession(ctx context.Context, auth *filter.AuthContext) error {
+func (a *Adapter) InitPrivateSession(ctx context.Context, auth *pipeline.AuthContext) error {
 	if a.sessionMgr == nil {
 		return fmt.Errorf("session manager not available")
 	}
@@ -461,7 +450,7 @@ func (a *Adapter) Close() {
 	}
 }
 
-func (a *Adapter) forwardPrivateEvents(ctx context.Context, streamType string, events chan<- filter.EventEnvelope, errors chan<- error) {
+func (a *Adapter) forwardPrivateEvents(ctx context.Context, streamType string, events chan<- pipeline.Event, errors chan<- error) {
 	defer close(events)
 	defer close(errors)
 
@@ -494,17 +483,17 @@ func (a *Adapter) forwardPrivateEvents(ctx context.Context, streamType string, e
 			}
 
 			// Parse private message using the parser
-			envelope, err := a.parser.ParseMessage(routedMsg)
+			event, err := a.parser.ParseMessage(routedMsg)
 			if err != nil {
-				// Create error envelope for parsing failures
-				errorEnvelope := a.parser.ParseError(err, msg.Raw)
+				// Create error event for parsing failures
+				errorEvent := a.parser.ParseError(err, msg.Raw)
 				select {
 				case errors <- err:
 				case <-ctx.Done():
 					return
 				}
 				select {
-				case events <- errorEnvelope:
+				case events <- errorEvent:
 				case <-ctx.Done():
 					return
 				}
@@ -512,10 +501,9 @@ func (a *Adapter) forwardPrivateEvents(ctx context.Context, streamType string, e
 			}
 
 			// Filter by stream type if needed
-			if (streamType == "account" && envelope.Kind == filter.EventKindAccount) ||
-				(streamType == "orders" && envelope.Kind == filter.EventKindOrder) {
+			if matchesPrivateStream(streamType, event.Payload) {
 				select {
-				case events <- envelope:
+				case events <- event:
 				case <-ctx.Done():
 					return
 				}
@@ -533,6 +521,19 @@ func (a *Adapter) forwardPrivateEvents(ctx context.Context, streamType string, e
 				}
 			}
 		}
+	}
+}
+
+func matchesPrivateStream(streamType string, payload pipeline.Payload) bool {
+	switch streamType {
+	case "account":
+		_, ok := payload.(pipeline.AccountPayload)
+		return ok
+	case "orders":
+		_, ok := payload.(pipeline.OrderPayload)
+		return ok
+	default:
+		return true
 	}
 }
 

@@ -1,4 +1,4 @@
-package filter
+package pipeline
 
 import (
 	"context"
@@ -24,7 +24,7 @@ type Adapter interface {
 
 	// Multi-channel capabilities
 	PrivateSources(ctx context.Context, auth *AuthContext) ([]PrivateSource, error)
-	ExecuteREST(ctx context.Context, req InteractionRequest) (<-chan EventEnvelope, <-chan error, error)
+	ExecuteREST(ctx context.Context, req InteractionRequest) (<-chan Event, <-chan error, error)
 
 	// Lifecycle hooks
 	InitPrivateSession(ctx context.Context, auth *AuthContext) error
@@ -54,7 +54,6 @@ type TickerSource struct {
 
 // PrivateSource represents a subscription to private stream events.
 type PrivateSource struct {
-	Kind   EventKind
-	Events <-chan EventEnvelope
+	Events <-chan Event
 	Errors <-chan error
 }

@@ -1,4 +1,4 @@
-package filter
+package pipeline
 
 import (
 	"strings"
@@ -7,7 +7,7 @@ import (
 
 type snapshotCache struct {
 	mu      sync.RWMutex
-	latest  map[EventKind]map[string]EventEnvelope
+	latest  map[string]map[string]ClientEvent
 	enabled bool
 }
 
@@ -16,12 +16,12 @@ func newSnapshotCache(enabled bool) *snapshotCache {
 		return nil
 	}
 	return &snapshotCache{
-		latest:  make(map[EventKind]map[string]EventEnvelope),
+		latest:  make(map[string]map[string]ClientEvent),
 		enabled: true,
 	}
 }
 
-func (c *snapshotCache) Update(evt EventEnvelope) {
+func (c *snapshotCache) Update(evt ClientEvent) {
 	if c == nil || !c.enabled {
 		return
 	}
@@ -29,27 +29,28 @@ func (c *snapshotCache) Update(evt EventEnvelope) {
 	if symbol == "" {
 		return
 	}
+	eventType := payloadIdentity(evt.Payload)
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if _, ok := c.latest[evt.Kind]; !ok {
-		c.latest[evt.Kind] = make(map[string]EventEnvelope)
+	if _, ok := c.latest[eventType]; !ok {
+		c.latest[eventType] = make(map[string]ClientEvent)
 	}
-	c.latest[evt.Kind][symbol] = evt
+	c.latest[eventType][symbol] = evt
 }
 
-func (c *snapshotCache) Get(kind EventKind, symbol string) (EventEnvelope, bool) {
+func (c *snapshotCache) Get(eventType string, symbol string) (ClientEvent, bool) {
 	if c == nil || !c.enabled {
-		return EventEnvelope{}, false
+		return ClientEvent{}, false
 	}
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	symbol = normalizeSymbol(symbol)
 	if symbol == "" {
-		return EventEnvelope{}, false
+		return ClientEvent{}, false
 	}
-	evtMap, ok := c.latest[kind]
+	evtMap, ok := c.latest[eventType]
 	if !ok {
-		return EventEnvelope{}, false
+		return ClientEvent{}, false
 	}
 	evt, ok := evtMap[symbol]
 	return evt, ok

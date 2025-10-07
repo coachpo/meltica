@@ -358,7 +358,7 @@ if exchange.Capabilities().Has(core.CapabilitySpotPublicREST) {
 // Subscribe to WebSocket events
 if participant, ok := exchange.(WebsocketParticipant); ok {
     ws := participant.WS()
-    sub, err := ws.SubscribePublic(ctx, "ticker:BTC-USDT")
+    sub, err := ws.SubscribePublic(ctx, "mkt.ticker:BTC-USDT")
     if err != nil {
         log.Fatal(err)
     }

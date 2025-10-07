@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/coachpo/meltica/exchanges/shared/routing"
-	mdfilter "github.com/coachpo/meltica/filter"
+	mdfilter "github.com/coachpo/meltica/pipeline"
 )
 
 // SessionManager handles Binance private session lifecycle including listen-key management

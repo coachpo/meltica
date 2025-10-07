@@ -1,14 +1,11 @@
-package filter
+package pipeline
 
 import (
 	"encoding/json"
-	"math/big"
 	"time"
-
-	corestreams "github.com/coachpo/meltica/core/streams"
 )
 
-// ChannelType classifies the communication channel for interactions.
+// ChannelType classifies the communication channel for interactions exposed to clients.
 type ChannelType string
 
 const (
@@ -18,83 +15,27 @@ const (
 	ChannelHybrid    ChannelType = "hybrid"
 )
 
-// EventKind classifies canonical market-data events that flow through the filter pipeline.
-type EventKind string
+// TransportPayload aliases the canonical payload interface for client consumption.
+type TransportPayload = Payload
 
-const (
-	EventKindUnknown      EventKind = "unknown"
-	EventKindBook         EventKind = "book"
-	EventKindTrade        EventKind = "trade"
-	EventKindTicker       EventKind = "ticker"
-	EventKindVWAP         EventKind = "vwap"
-	EventKindAccount      EventKind = "account"
-	EventKindOrder        EventKind = "order"
-	EventKindRestResponse EventKind = "rest_response"
-)
-
-// EventEnvelope wraps a normalized event emitted by the filter pipeline.
-type EventEnvelope struct {
-	Kind          EventKind
+// ClientEvent is emitted by the Level-4 façade to callers.
+type ClientEvent struct {
 	Channel       ChannelType
 	Symbol        string
-	Timestamp     time.Time
+	At            time.Time
+	Payload       TransportPayload
 	CorrelationID string
-
-	Book         *corestreams.BookEvent
-	Trade        *corestreams.TradeEvent
-	Ticker       *corestreams.TickerEvent
-	Stats        *AnalyticsEvent
-	AccountEvent *AccountEvent
-	OrderEvent   *OrderEvent
-	RestResponse *RestResponse
-}
-
-// AnalyticsEvent contains derived metrics computed by the filter pipeline.
-type AnalyticsEvent struct {
-	Symbol     string
-	VWAP       *big.Rat
-	TradeCount int64
-}
-
-// AccountEvent represents account-related events from private streams.
-type AccountEvent struct {
-	Symbol    string
-	Balance   *big.Rat
-	Available *big.Rat
-	Locked    *big.Rat
-}
-
-// OrderEvent represents order-related events from private streams.
-type OrderEvent struct {
-	Symbol      string
-	OrderID     string
-	Side        string
-	Price       *big.Rat
-	Quantity    *big.Rat
-	Status      string
-	Type        string
-	TimeInForce string
-}
-
-// RestResponse represents a REST API response.
-type RestResponse struct {
-	RequestID  string
-	Method     string
-	Path       string
-	StatusCode int
-	Body       interface{}
-	Error      error
+	Metadata      map[string]any
 }
 
 // Observer receives callbacks for events and errors flowing through the filter pipeline.
 type Observer interface {
-	OnEvent(EventEnvelope)
+	OnEvent(ClientEvent)
 	OnError(error)
 }
 
 // InteractionRequest represents a single interaction with an exchange.
 type InteractionRequest struct {
-	Channel       ChannelType
 	Symbol        string
 	Method        string
 	Path          string
@@ -196,8 +137,8 @@ type SessionConfig struct {
 	AutoRenew          bool
 }
 
-// FilterRequest declares the desired feeds and filter policies for a session.
-type FilterRequest struct {
+// PipelineRequest declares the desired feeds and pipeline configuration for a session.
+type PipelineRequest struct {
 	Symbols []string
 	Feeds   FeedSelection
 
@@ -207,10 +148,10 @@ type FilterRequest struct {
 	// SamplingInterval throttles event emission when set to a non-zero duration.
 	SamplingInterval time.Duration
 
-	// MinEmitInterval enforces a minimum time between events per symbol/kind.
+	// MinEmitInterval enforces a minimum time between events per symbol/type.
 	MinEmitInterval time.Duration
 
-	// EnableSnapshots controls whether the coordinator stores last-known envelopes per feed.
+	// EnableSnapshots controls whether the coordinator stores last-known events per feed.
 	EnableSnapshots bool
 
 	// EnableVWAP toggles generation of running VWAP analytics events.
@@ -233,25 +174,49 @@ type FeedSelection struct {
 	Tickers bool
 }
 
-// FilterStream is the multiplexed output of a filter pipeline.
-type FilterStream struct {
-	Events <-chan EventEnvelope
+// PipelineStream is the multiplexed output of a pipeline.
+type PipelineStream struct {
+	Events <-chan ClientEvent
 	Errors <-chan error
 	cancel func()
 	cache  *snapshotCache
 }
 
-// Close cancels the underlying filter pipeline.
-func (s FilterStream) Close() {
+// Close cancels the underlying pipeline.
+func (s PipelineStream) Close() {
 	if s.cancel != nil {
 		s.cancel()
 	}
 }
 
-// Snapshot returns the most recent envelope for the given kind and symbol.
-func (s FilterStream) Snapshot(kind EventKind, symbol string) (EventEnvelope, bool) {
+// LastBookEvent returns the latest cached book event for the given symbol.
+func (s PipelineStream) LastBookEvent(symbol string) (ClientEvent, bool) {
+	return s.lastEventByType("book", symbol)
+}
+
+// LastTradeEvent returns the latest cached trade event for the given symbol.
+func (s PipelineStream) LastTradeEvent(symbol string) (ClientEvent, bool) {
+	return s.lastEventByType("trade", symbol)
+}
+
+// LastTickerEvent returns the latest cached ticker event for the given symbol.
+func (s PipelineStream) LastTickerEvent(symbol string) (ClientEvent, bool) {
+	return s.lastEventByType("ticker", symbol)
+}
+
+// LastAccountEvent returns the latest cached account event for the given symbol.
+func (s PipelineStream) LastAccountEvent(symbol string) (ClientEvent, bool) {
+	return s.lastEventByType("account", symbol)
+}
+
+// LastOrderEvent returns the latest cached order event for the given symbol.
+func (s PipelineStream) LastOrderEvent(symbol string) (ClientEvent, bool) {
+	return s.lastEventByType("order", symbol)
+}
+
+func (s PipelineStream) lastEventByType(eventType string, symbol string) (ClientEvent, bool) {
 	if s.cache == nil {
-		return EventEnvelope{}, false
+		return ClientEvent{}, false
 	}
-	return s.cache.Get(kind, symbol)
+	return s.cache.Get(eventType, symbol)
 }

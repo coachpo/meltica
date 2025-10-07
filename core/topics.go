@@ -10,8 +10,8 @@ import (
 type Topic string
 
 const (
-	TopicTrade       Topic = "trade"
-	TopicTicker      Topic = "ticker"
+	TopicTrade       Topic = "mkt.trade"
+	TopicTicker      Topic = "mkt.ticker"
 	TopicBookDelta   Topic = "book.delta"
 	TopicUserOrder   Topic = "user.order"
 	TopicUserBalance Topic = "user.balance"

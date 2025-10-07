@@ -30,6 +30,11 @@ Meltica follows a layered architecture with clear separation of concerns:
 - **Private Data**: Orders, balances, positions
 - **Core Types**: Standardized data structures across all exchanges
 
+### Level 4: Filter & Client Facade
+- **Interaction Facade**: High-level `SubscribePublic`, `SubscribePrivate`, and `FetchREST` helpers
+- **Client Events**: Typed payloads (`BookPayload`, `TradePayload`, `RestResponsePayload`, etc.) wrapped in `ClientEvent` with channel metadata
+- **Pipeline Stages**: Normalization, throttling, aggregation, analytics, reliability, and observer hooks operating on typed events
+
 ## Quick Start
 
 ```go
@@ -48,6 +53,7 @@ provider := binance.NewWithSettings(config.Default())
 - **Type Safety**: Strongly typed Go interfaces
 - **Extensible**: Easy to add new exchanges following the Binance pattern
 - **Production Ready**: Comprehensive error handling and logging
+- **Typed Event Stream**: Clients consume strongly typed `ClientEvent` payloads instead of raw envelopes
 
 ## Development
 

@@ -1,4 +1,4 @@
-package filter
+package pipeline
 
 import (
 	"context"
@@ -11,21 +11,21 @@ import (
 // multiSourceStage handles mixed channel sources including public feeds, private streams, and REST requests.
 func multiSourceStage(
 	adapter Adapter,
-	req FilterRequest,
+	req PipelineRequest,
 	auth *AuthContext,
-) Stage {
+) PipelineStep {
 	if adapter == nil {
-		return NewStageFunc("source", func(ctx context.Context, input StageResult) StageResult {
-			events := make(chan EventEnvelope)
+		return NewPipelineStepFunc("source", func(ctx context.Context, input PipelineStepResult) PipelineStepResult {
+			events := make(chan ClientEvent)
 			errors := make(chan error)
 			close(events)
 			close(errors)
-			return StageResult{Events: events, Errors: errors}
+			return PipelineStepResult{Events: events, Errors: errors}
 		})
 	}
 
-	return NewStageFunc("multi_source", func(ctx context.Context, input StageResult) StageResult {
-		events := make(chan EventEnvelope, 128)
+	return NewPipelineStepFunc("multi_source", func(ctx context.Context, input PipelineStepResult) PipelineStepResult {
+		events := make(chan ClientEvent, 128)
 		errors := make(chan error, 16)
 
 		var wg sync.WaitGroup
@@ -54,16 +54,16 @@ func multiSourceStage(
 			// For now, we rely on context cancellation to close channels
 		}()
 
-		return StageResult{Events: events, Errors: errors}
+		return PipelineStepResult{Events: events, Errors: errors}
 	})
 }
 
 func startPublicSources(
 	ctx context.Context,
 	adapter Adapter,
-	req FilterRequest,
+	req PipelineRequest,
 	wg *sync.WaitGroup,
-	events chan<- EventEnvelope,
+	events chan<- ClientEvent,
 	errors chan<- error,
 ) {
 	capabilities := adapter.Capabilities()
@@ -116,7 +116,7 @@ func startPrivateSources(
 	adapter Adapter,
 	auth *AuthContext,
 	wg *sync.WaitGroup,
-	events chan<- EventEnvelope,
+	events chan<- ClientEvent,
 	errors chan<- error,
 ) {
 	capabilities := adapter.Capabilities()
@@ -159,7 +159,7 @@ func startPrivateSources(
 						return
 					}
 					select {
-					case events <- evt:
+					case events <- clientEventFromPipeline(evt):
 					case <-ctx.Done():
 						return
 					}
@@ -185,7 +185,7 @@ func startRESTRequests(
 	adapter Adapter,
 	requests []InteractionRequest,
 	wg *sync.WaitGroup,
-	events chan<- EventEnvelope,
+	events chan<- ClientEvent,
 	errors chan<- error,
 ) {
 	capabilities := adapter.Capabilities()
@@ -219,7 +219,7 @@ func startRESTRequests(
 						return
 					}
 					select {
-					case events <- evt:
+					case events <- clientEventFromPipeline(evt):
 					case <-ctx.Done():
 						return
 					}
@@ -246,7 +246,7 @@ func startBookForwarder(
 	eventCh <-chan corestreams.BookEvent,
 	errorCh <-chan error,
 	wg *sync.WaitGroup,
-	events chan<- EventEnvelope,
+	events chan<- ClientEvent,
 	errors chan<- error,
 ) {
 	wg.Add(1)
@@ -262,16 +262,16 @@ func startBookForwarder(
 					continue
 				}
 
-				envelope := EventEnvelope{
-					Kind:      EventKindBook,
-					Channel:   ChannelPublicWS,
-					Symbol:    symbol,
-					Timestamp: evt.Time,
-					Book:      &evt,
+				payload := BookPayload{Book: &evt}
+				event := ClientEvent{
+					Channel: ChannelPublicWS,
+					Symbol:  symbol,
+					At:      evt.Time,
+					Payload: payload,
 				}
 
 				select {
-				case events <- envelope:
+				case events <- event:
 				case <-ctx.Done():
 					return
 				}
@@ -298,7 +298,7 @@ func startTradeForwarder(
 	eventCh <-chan corestreams.TradeEvent,
 	errorCh <-chan error,
 	wg *sync.WaitGroup,
-	events chan<- EventEnvelope,
+	events chan<- ClientEvent,
 	errors chan<- error,
 ) {
 	wg.Add(1)
@@ -314,16 +314,16 @@ func startTradeForwarder(
 					continue
 				}
 
-				envelope := EventEnvelope{
-					Kind:      EventKindTrade,
-					Channel:   ChannelPublicWS,
-					Symbol:    symbol,
-					Timestamp: evt.Time,
-					Trade:     &evt,
+				payload := TradePayload{Trade: &evt}
+				event := ClientEvent{
+					Channel: ChannelPublicWS,
+					Symbol:  symbol,
+					At:      evt.Time,
+					Payload: payload,
 				}
 
 				select {
-				case events <- envelope:
+				case events <- event:
 				case <-ctx.Done():
 					return
 				}
@@ -350,7 +350,7 @@ func startTickerForwarder(
 	eventCh <-chan corestreams.TickerEvent,
 	errorCh <-chan error,
 	wg *sync.WaitGroup,
-	events chan<- EventEnvelope,
+	events chan<- ClientEvent,
 	errors chan<- error,
 ) {
 	wg.Add(1)
@@ -366,16 +366,16 @@ func startTickerForwarder(
 					continue
 				}
 
-				envelope := EventEnvelope{
-					Kind:      EventKindTicker,
-					Channel:   ChannelPublicWS,
-					Symbol:    symbol,
-					Timestamp: evt.Time,
-					Ticker:    &evt,
+				payload := TickerPayload{Ticker: &evt}
+				event := ClientEvent{
+					Channel: ChannelPublicWS,
+					Symbol:  symbol,
+					At:      evt.Time,
+					Payload: payload,
 				}
 
 				select {
-				case events <- envelope:
+				case events <- event:
 				case <-ctx.Done():
 					return
 				}
@@ -394,4 +394,20 @@ func startTickerForwarder(
 			}
 		}
 	}()
+}
+
+func clientEventFromPipeline(evt Event) ClientEvent {
+	channel := ChannelType(evt.Transport.String())
+	// Preserve empty channel for unknown transports to allow later normalization.
+	if evt.Transport == TransportUnknown {
+		channel = ChannelHybrid
+	}
+	return ClientEvent{
+		Channel:       channel,
+		Symbol:        evt.Symbol,
+		At:            evt.At,
+		Payload:       evt.Payload,
+		CorrelationID: evt.CorrelationID,
+		Metadata:      evt.Metadata,
+	}
 }

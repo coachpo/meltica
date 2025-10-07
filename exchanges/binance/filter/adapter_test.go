@@ -13,8 +13,8 @@ import (
 	"github.com/coachpo/meltica/core"
 	corestreams "github.com/coachpo/meltica/core/streams"
 	binancefilter "github.com/coachpo/meltica/exchanges/binance/filter"
-	mdfilter "github.com/coachpo/meltica/filter"
 	"github.com/coachpo/meltica/internal/numeric"
+	mdfilter "github.com/coachpo/meltica/pipeline"
 )
 
 type bookFixture struct {
@@ -74,7 +74,7 @@ func TestBinanceAdapterWithFixtures(t *testing.T) {
 	defer coordinator.Close()
 
 	symbols := []string{"BTC-USDT", "ETH-USDT"}
-	stream, err := coordinator.Stream(ctx, mdfilter.FilterRequest{
+	stream, err := coordinator.Stream(ctx, mdfilter.PipelineRequest{
 		Symbols: symbols,
 		Feeds:   mdfilter.FeedSelection{Books: true},
 	})
@@ -93,11 +93,9 @@ func TestBinanceAdapterWithFixtures(t *testing.T) {
 			if !ok {
 				t.Fatalf("stream closed before receiving all fixtures")
 			}
-			if evt.Kind != mdfilter.EventKindBook {
-				t.Fatalf("unexpected event kind %s", evt.Kind)
-			}
-			if evt.Book == nil {
-				t.Fatalf("expected book payload")
+			payload, ok := evt.Payload.(mdfilter.BookPayload)
+			if !ok || payload.Book == nil {
+				t.Fatalf("expected book payload, got %T", evt.Payload)
 			}
 			seen[evt.Symbol]++
 			received++

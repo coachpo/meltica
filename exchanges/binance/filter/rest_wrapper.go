@@ -7,7 +7,7 @@ import (
 
 	"github.com/coachpo/meltica/exchanges/shared/infra/transport"
 	"github.com/coachpo/meltica/exchanges/shared/routing"
-	mdfilter "github.com/coachpo/meltica/filter"
+	mdfilter "github.com/coachpo/meltica/pipeline"
 )
 
 // RESTWrapper provides retry and rate limiting capabilities for REST requests

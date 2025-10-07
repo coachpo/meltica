@@ -1,4 +1,4 @@
-package filter
+package pipeline
 
 import (
 	"context"
@@ -17,10 +17,15 @@ type MockAdapter struct {
 	bookEvents    map[string]chan corestreams.BookEvent
 	tradeEvents   map[string]chan corestreams.TradeEvent
 	tickerEvents  map[string]chan corestreams.TickerEvent
-	privateEvents map[EventKind]chan EventEnvelope
-	privateErrors map[EventKind]chan error
-	restResults   map[string]EventEnvelope
+	privateEvents map[string]chan Event
+	privateErrors map[string]chan error
+	restResults   map[string]Event
 }
+
+const (
+	accountStream = "account"
+	orderStream   = "order"
+)
 
 func NewMockAdapter() *MockAdapter {
 	return &MockAdapter{
@@ -34,9 +39,9 @@ func NewMockAdapter() *MockAdapter {
 		bookEvents:    make(map[string]chan corestreams.BookEvent),
 		tradeEvents:   make(map[string]chan corestreams.TradeEvent),
 		tickerEvents:  make(map[string]chan corestreams.TickerEvent),
-		privateEvents: make(map[EventKind]chan EventEnvelope),
-		privateErrors: make(map[EventKind]chan error),
-		restResults:   make(map[string]EventEnvelope),
+		privateEvents: make(map[string]chan Event),
+		privateErrors: make(map[string]chan error),
+		restResults:   make(map[string]Event),
 	}
 }
 
@@ -94,32 +99,30 @@ func (m *MockAdapter) PrivateSources(ctx context.Context, auth *AuthContext) ([]
 	sources := make([]PrivateSource, 0, 2)
 
 	// Account events
-	if _, exists := m.privateEvents[EventKindAccount]; !exists {
-		m.privateEvents[EventKindAccount] = make(chan EventEnvelope, 10)
-		m.privateErrors[EventKindAccount] = make(chan error, 10)
+	if _, exists := m.privateEvents[accountStream]; !exists {
+		m.privateEvents[accountStream] = make(chan Event, 10)
+		m.privateErrors[accountStream] = make(chan error, 10)
 	}
 	sources = append(sources, PrivateSource{
-		Kind:   EventKindAccount,
-		Events: m.privateEvents[EventKindAccount],
-		Errors: m.privateErrors[EventKindAccount],
+		Events: m.privateEvents[accountStream],
+		Errors: m.privateErrors[accountStream],
 	})
 
 	// Order events
-	if _, exists := m.privateEvents[EventKindOrder]; !exists {
-		m.privateEvents[EventKindOrder] = make(chan EventEnvelope, 10)
-		m.privateErrors[EventKindOrder] = make(chan error, 10)
+	if _, exists := m.privateEvents[orderStream]; !exists {
+		m.privateEvents[orderStream] = make(chan Event, 10)
+		m.privateErrors[orderStream] = make(chan error, 10)
 	}
 	sources = append(sources, PrivateSource{
-		Kind:   EventKindOrder,
-		Events: m.privateEvents[EventKindOrder],
-		Errors: m.privateErrors[EventKindOrder],
+		Events: m.privateEvents[orderStream],
+		Errors: m.privateErrors[orderStream],
 	})
 
 	return sources, nil
 }
 
-func (m *MockAdapter) ExecuteREST(ctx context.Context, req InteractionRequest) (<-chan EventEnvelope, <-chan error, error) {
-	events := make(chan EventEnvelope, 1)
+func (m *MockAdapter) ExecuteREST(ctx context.Context, req InteractionRequest) (<-chan Event, <-chan error, error) {
+	events := make(chan Event, 1)
 	errors := make(chan error, 1)
 
 	go func() {
@@ -130,19 +133,18 @@ func (m *MockAdapter) ExecuteREST(ctx context.Context, req InteractionRequest) (
 			events <- result
 		} else {
 			// Default response
-			events <- EventEnvelope{
-				Kind:          EventKindRestResponse,
-				Channel:       ChannelREST,
+			events <- Event{
+				Transport:     TransportREST,
 				Symbol:        req.Symbol,
+				At:            time.Now(),
 				CorrelationID: req.CorrelationID,
-				Timestamp:     time.Now(),
-				RestResponse: &RestResponse{
+				Payload: RestResponsePayload{Response: &RestResponse{
 					RequestID:  req.CorrelationID,
 					Method:     req.Method,
 					Path:       req.Path,
 					StatusCode: 200,
 					Body:       map[string]interface{}{"status": "success"},
-				},
+				}},
 			}
 		}
 	}()
@@ -209,24 +211,34 @@ func TestMultiChannelPublicStreams(t *testing.T) {
 	}()
 
 	// Verify events are received
-	var receivedEvents []EventKind
-	for i := 0; i < 2; i++ {
+	gotBook := false
+	gotTrade := false
+	for !(gotBook && gotTrade) {
 		select {
 		case evt, ok := <-stream.Events:
 			if !ok {
 				t.Fatal("Events channel closed unexpectedly")
 			}
-			receivedEvents = append(receivedEvents, evt.Kind)
 			if evt.Channel != ChannelPublicWS {
 				t.Errorf("Expected channel PublicWS, got %s", evt.Channel)
+			}
+			switch payload := evt.Payload.(type) {
+			case BookPayload:
+				if payload.Book == nil {
+					t.Fatalf("expected book payload")
+				}
+				gotBook = true
+			case TradePayload:
+				if payload.Trade == nil {
+					t.Fatalf("expected trade payload")
+				}
+				gotTrade = true
+			default:
+				// Ignore other payloads such as ticker/analytics
 			}
 		case <-ctx.Done():
 			t.Fatal("Timeout waiting for events")
 		}
-	}
-
-	if len(receivedEvents) != 2 {
-		t.Errorf("Expected 2 events, got %d", len(receivedEvents))
 	}
 }
 
@@ -252,17 +264,16 @@ func TestMultiChannelPrivateStreams(t *testing.T) {
 
 		t.Log("Sending private events...")
 		select {
-		case adapter.privateEvents[EventKindAccount] <- EventEnvelope{
-			Kind:      EventKindAccount,
-			Channel:   ChannelPrivateWS,
+		case adapter.privateEvents[accountStream] <- Event{
+			Transport: TransportPrivateWS,
 			Symbol:    "BTC-USDT",
-			Timestamp: time.Now(),
-			AccountEvent: &AccountEvent{
+			At:        time.Now(),
+			Payload: AccountPayload{Account: &AccountEvent{
 				Symbol:    "BTC-USDT",
 				Balance:   bigRat("10"),
 				Available: bigRat("8"),
 				Locked:    bigRat("2"),
-			},
+			}},
 		}:
 			t.Log("Account event sent")
 		default:
@@ -270,12 +281,11 @@ func TestMultiChannelPrivateStreams(t *testing.T) {
 		}
 
 		select {
-		case adapter.privateEvents[EventKindOrder] <- EventEnvelope{
-			Kind:      EventKindOrder,
-			Channel:   ChannelPrivateWS,
+		case adapter.privateEvents[orderStream] <- Event{
+			Transport: TransportPrivateWS,
 			Symbol:    "ETH-USDT",
-			Timestamp: time.Now(),
-			OrderEvent: &OrderEvent{
+			At:        time.Now(),
+			Payload: OrderPayload{Order: &OrderEvent{
 				Symbol:      "ETH-USDT",
 				OrderID:     "12345",
 				Side:        "BUY",
@@ -284,7 +294,7 @@ func TestMultiChannelPrivateStreams(t *testing.T) {
 				Status:      "FILLED",
 				Type:        "LIMIT",
 				TimeInForce: "GTC",
-			},
+			}},
 		}:
 			t.Log("Order event sent")
 		default:
@@ -294,31 +304,37 @@ func TestMultiChannelPrivateStreams(t *testing.T) {
 	}()
 
 	// Verify private events are received
-	var receivedEvents []EventKind
-	for i := 0; i < 2; i++ {
+	gotAccount := false
+	gotOrder := false
+	for !(gotAccount && gotOrder) {
 		select {
 		case evt, ok := <-stream.Events:
 			if !ok {
-				if i == 0 {
-					t.Fatal("Events channel closed unexpectedly")
+				if !gotAccount || !gotOrder {
+					t.Fatal("Events channel closed before all private events received")
 				}
-				break
+				return
 			}
-			t.Logf("Received event: %s from channel: %s", evt.Kind, evt.Channel)
-			receivedEvents = append(receivedEvents, evt.Kind)
 			if evt.Channel != ChannelPrivateWS {
 				t.Errorf("Expected channel PrivateWS, got %s", evt.Channel)
 			}
-		case <-ctx.Done():
-			if i == 0 {
-				t.Fatal("Timeout waiting for private events")
+			switch payload := evt.Payload.(type) {
+			case AccountPayload:
+				if payload.Account != nil {
+					gotAccount = true
+				}
+			case OrderPayload:
+				if payload.Order != nil {
+					gotOrder = true
+				}
 			}
-			break
+		case <-ctx.Done():
+			t.Fatal("Timeout waiting for private events")
 		}
 	}
 
-	if len(receivedEvents) < 1 {
-		t.Errorf("Expected at least 1 event, got %d", len(receivedEvents))
+	if !gotAccount || !gotOrder {
+		t.Fatalf("expected both account and order events (account=%v, order=%v)", gotAccount, gotOrder)
 	}
 }
 
@@ -342,33 +358,24 @@ func TestMultiChannelRESTRequests(t *testing.T) {
 	defer stream.Close()
 
 	// Verify REST responses are received
-	var receivedResponses []string
-	for i := 0; i < 2; i++ {
+	responses := make(map[string]bool)
+	for len(responses) < len(requests) {
 		select {
 		case evt, ok := <-stream.Events:
 			if !ok {
-				if i == 0 {
-					t.Fatal("Events channel closed unexpectedly")
-				}
-				break
-			}
-			if evt.Kind != EventKindRestResponse {
-				t.Errorf("Expected RestResponse, got %s", evt.Kind)
+				t.Fatalf("Events channel closed before all REST responses were received")
 			}
 			if evt.Channel != ChannelREST {
 				t.Errorf("Expected channel REST, got %s", evt.Channel)
 			}
-			receivedResponses = append(receivedResponses, evt.CorrelationID)
-		case <-ctx.Done():
-			if i == 0 {
-				t.Fatal("Timeout waiting for REST responses")
+			payload, ok := evt.Payload.(RestResponsePayload)
+			if !ok || payload.Response == nil {
+				t.Fatalf("expected RestResponse payload, got %T", evt.Payload)
 			}
-			break
+			responses[evt.CorrelationID] = true
+		case <-ctx.Done():
+			t.Fatal("Timeout waiting for REST responses")
 		}
-	}
-
-	if len(receivedResponses) < 1 {
-		t.Errorf("Expected at least 1 response, got %d", len(receivedResponses))
 	}
 }
 
@@ -381,7 +388,7 @@ func TestMultiChannelMixedWorkflows(t *testing.T) {
 	defer cancel()
 
 	// Create a request that combines public feeds and REST calls
-	req := FilterRequest{
+	req := PipelineRequest{
 		Symbols: []string{"BTC-USDT"},
 		Feeds: FeedSelection{
 			Books:   true,
@@ -415,42 +422,42 @@ func TestMultiChannelMixedWorkflows(t *testing.T) {
 			Asks:   []core.BookDepthLevel{{Price: bigRat("50001"), Qty: bigRat("1")}},
 		}
 		// Private event
-		adapter.privateEvents[EventKindAccount] <- EventEnvelope{
-			Kind:      EventKindAccount,
-			Channel:   ChannelPrivateWS,
-			Timestamp: time.Now(),
-			AccountEvent: &AccountEvent{
+		adapter.privateEvents[accountStream] <- Event{
+			Transport: TransportPrivateWS,
+			Symbol:    "BTC-USDT",
+			At:        time.Now(),
+			Payload: AccountPayload{Account: &AccountEvent{
 				Symbol:    "BTC-USDT",
 				Balance:   bigRat("10"),
 				Available: bigRat("8"),
 				Locked:    bigRat("2"),
-			},
+			}},
 		}
 	}()
 
 	// Verify mixed events are received
-	var receivedChannels []ChannelType
-	for i := 0; i < 2; i++ { // book + account (REST response may not come immediately)
+	gotPublic := false
+	gotPrivate := false
+	deadline := time.After(2 * time.Second)
+	for !(gotPublic && gotPrivate) {
 		select {
 		case evt, ok := <-stream.Events:
 			if !ok {
-				if i == 0 {
-					t.Fatal("Events channel closed unexpectedly")
+				t.Fatalf("events channel closed before receiving mixed workflow events")
+			}
+			switch evt.Channel {
+			case ChannelPublicWS:
+				if _, ok := evt.Payload.(BookPayload); ok {
+					gotPublic = true
 				}
-				break
+			case ChannelPrivateWS:
+				if _, ok := evt.Payload.(AccountPayload); ok {
+					gotPrivate = true
+				}
 			}
-			receivedChannels = append(receivedChannels, evt.Channel)
-		case <-ctx.Done():
-			if i == 0 {
-				t.Fatal("Timeout waiting for mixed events")
-			}
-			break
+		case <-deadline:
+			t.Fatal("Timeout waiting for mixed events")
 		}
-	}
-
-	// Should have events from at least 1 channel
-	if len(receivedChannels) < 1 {
-		t.Errorf("Expected at least 1 event, got %d", len(receivedChannels))
 	}
 }
 
