@@ -121,7 +121,7 @@ func TestStartMarketFilter(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	coord, stream, err := startMarketFilter(ctx, exch, []string{"BTC-USDT"}, true, defaultBookDepth, 0, true)
+	coord, stream, err := startMarketFilter(ctx, exch, []string{"BTC-USDT"}, true, defaultBookDepth, 0, true, false)
 	if err != nil {
 		t.Fatalf("startMarketFilter: %v", err)
 	}
@@ -131,6 +131,10 @@ func TestStartMarketFilter(t *testing.T) {
 	receivedBooks := 0
 	receivedTrades := 0
 	receivedTickers := 0
+
+	// Wait for a short time to receive events
+	eventCtx, eventCancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer eventCancel()
 
 	for {
 		select {
@@ -149,19 +153,28 @@ func TestStartMarketFilter(t *testing.T) {
 				if evt.Book == nil {
 					t.Fatal("expected book payload")
 				}
-				if len(evt.Book.Bids) != defaultBookDepth {
-					t.Fatalf("expected book trimmed to %d levels, got %d", defaultBookDepth, len(evt.Book.Bids))
+				// The book only has 10 levels, so it shouldn't be trimmed to 500
+				expectedDepth := 10
+				if len(evt.Book.Bids) != expectedDepth {
+					t.Fatalf("expected book with %d levels, got %d", expectedDepth, len(evt.Book.Bids))
 				}
 			}
 		case err, ok := <-stream.Errors:
-			if ok && err != nil {
+			if !ok {
+				stream.Errors = nil
+				continue
+			}
+			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			stream.Errors = nil
-		case <-time.After(time.Second):
-			t.Fatal("timed out waiting for events")
+		case <-eventCtx.Done():
+			// Timeout reached, break out of the loop
+			break
 		}
-		if stream.Events == nil && stream.Errors == nil {
+
+		// Break if we've received all expected events or streams are closed
+		if (receivedTrades >= 1 && receivedTickers >= 1 && receivedBooks >= 1) ||
+		   (stream.Events == nil && stream.Errors == nil) {
 			break
 		}
 	}

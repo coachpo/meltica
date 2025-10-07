@@ -8,6 +8,7 @@ import (
 
 	"github.com/coachpo/meltica/core"
 	corestreams "github.com/coachpo/meltica/core/streams"
+	"github.com/coachpo/meltica/exchanges/shared/routing"
 	"github.com/coachpo/meltica/marketdata/filter"
 )
 
@@ -33,6 +34,8 @@ type Adapter struct {
 	ws         publicSubscriber
 	privateWS  privateSubscriber
 	restRouter restExecutor
+	sessionMgr *SessionManager
+	parser     *PrivateMessageParser
 }
 
 // NewAdapter constructs a Binance filter adapter.
@@ -56,6 +59,33 @@ func NewAdapterWithPrivate(orderBooks orderBookSubscriber, ws publicSubscriber, 
 		ws:         ws,
 		privateWS:  privateWS,
 		restRouter: restRouter,
+	}, nil
+}
+
+// NewAdapterWithREST constructs a Binance filter adapter with REST capabilities using a bridge.
+func NewAdapterWithREST(orderBooks orderBookSubscriber, ws publicSubscriber, privateWS privateSubscriber, restRouter routing.RESTDispatcher) (*Adapter, error) {
+	if orderBooks == nil && ws == nil && privateWS == nil && restRouter == nil {
+		return nil, fmt.Errorf("binance filter: no feed providers available")
+	}
+
+	// Wrap the router with the Level-4 bridge
+	bridge := NewRESTBridge(restRouter)
+
+	// Create session manager for private streams
+	var sessionMgr *SessionManager
+	var parser *PrivateMessageParser
+	if privateWS != nil {
+		sessionMgr = NewSessionManager(restRouter, DefaultSessionConfig())
+		parser = NewPrivateMessageParser()
+	}
+
+	return &Adapter{
+		orderBooks: orderBooks,
+		ws:         ws,
+		privateWS:  privateWS,
+		restRouter: bridge,
+		sessionMgr: sessionMgr,
+		parser:     parser,
 	}, nil
 }
 
@@ -288,9 +318,25 @@ func (a *Adapter) ExecuteREST(ctx context.Context, req filter.InteractionRequest
 		defer close(events)
 		defer close(errors)
 
-		// Execute REST call
+		// Apply timeout if specified
+		if req.Timeout > 0 {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, time.Duration(req.Timeout))
+			defer cancel()
+		}
+
+		// Execute REST call with retries if specified
 		var result interface{}
-		err := a.restRouter.Dispatch(ctx, req, &result)
+		var err error
+
+		if req.RetryPolicy != nil && req.RetryPolicy.MaxAttempts > 1 {
+			err = a.executeWithRetry(ctx, req, &result)
+		} else {
+			err = a.restRouter.Dispatch(ctx, req, &result)
+		}
+
+		// Parse response and create appropriate envelope
+		envelope := a.createResponseEnvelope(req, result, err)
 
 		if err != nil {
 			select {
@@ -298,22 +344,6 @@ func (a *Adapter) ExecuteREST(ctx context.Context, req filter.InteractionRequest
 			case <-ctx.Done():
 			}
 			return
-		}
-
-		// Create response envelope
-		envelope := filter.EventEnvelope{
-			Kind:           filter.EventKindRestResponse,
-			Channel:        filter.ChannelREST,
-			Symbol:         req.Symbol,
-			Timestamp:      time.Now(),
-			CorrelationID:  req.CorrelationID,
-			RestResponse: &filter.RestResponse{
-				RequestID:  req.CorrelationID,
-				Method:     req.Method,
-				Path:       req.Path,
-				StatusCode: 200,
-				Body:       result,
-			},
 		}
 
 		select {
@@ -325,15 +355,110 @@ func (a *Adapter) ExecuteREST(ctx context.Context, req filter.InteractionRequest
 	return events, errors, nil
 }
 
+// executeWithRetry executes a REST request with retry logic
+func (a *Adapter) executeWithRetry(ctx context.Context, req filter.InteractionRequest, result interface{}) error {
+	policy := req.RetryPolicy
+	baseDelay := time.Duration(policy.BaseDelay)
+	maxDelay := time.Duration(policy.MaxDelay)
+
+	var lastErr error
+
+	for attempt := 0; attempt < policy.MaxAttempts; attempt++ {
+		if attempt > 0 {
+			// Calculate backoff delay
+			delay := baseDelay * time.Duration(policy.BackoffMultiplier*float64(attempt))
+			if delay > maxDelay {
+				delay = maxDelay
+			}
+
+			select {
+			case <-time.After(delay):
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+
+		err := a.restRouter.Dispatch(ctx, req, result)
+		if err == nil {
+			return nil
+		}
+
+		lastErr = err
+
+		// Check if error is retryable
+		if !a.isRetryableError(err, policy) {
+			break
+		}
+	}
+
+	return lastErr
+}
+
+// isRetryableError checks if an error should be retried based on the retry policy
+func (a *Adapter) isRetryableError(err error, policy *filter.RetryPolicy) bool {
+	// Check if error message matches retryable patterns
+	errStr := err.Error()
+	for _, pattern := range policy.RetryableErrors {
+		if strings.Contains(errStr, pattern) {
+			return true
+		}
+	}
+
+	// TODO: Check status codes if we have access to HTTP response
+	// For now, we'll retry on network errors and rate limiting
+	return strings.Contains(errStr, "timeout") ||
+		   strings.Contains(errStr, "network") ||
+		   strings.Contains(errStr, "rate limit") ||
+		   strings.Contains(errStr, "429")
+}
+
+// createResponseEnvelope creates an event envelope from REST response
+func (a *Adapter) createResponseEnvelope(req filter.InteractionRequest, result interface{}, err error) filter.EventEnvelope {
+	envelope := filter.EventEnvelope{
+		Kind:           filter.EventKindRestResponse,
+		Channel:        filter.ChannelREST,
+		Symbol:         req.Symbol,
+		Timestamp:      time.Now(),
+		CorrelationID:  req.CorrelationID,
+	}
+
+	if err != nil {
+		envelope.RestResponse = &filter.RestResponse{
+			RequestID:  req.CorrelationID,
+			Method:     req.Method,
+			Path:       req.Path,
+			StatusCode: 500, // Default to 500 for errors
+			Body:       nil,
+			Error:      err,
+		}
+	} else {
+		envelope.RestResponse = &filter.RestResponse{
+			RequestID:  req.CorrelationID,
+			Method:     req.Method,
+			Path:       req.Path,
+			StatusCode: 200,
+			Body:       result,
+			Error:      nil,
+		}
+	}
+
+	return envelope
+}
+
 // InitPrivateSession initializes private session with authentication.
 func (a *Adapter) InitPrivateSession(ctx context.Context, auth *filter.AuthContext) error {
-	// Binance private streams are managed by the router, no explicit initialization needed
-	return nil
+	if a.sessionMgr == nil {
+		return fmt.Errorf("session manager not available")
+	}
+
+	return a.sessionMgr.InitPrivateSession(ctx, auth)
 }
 
 // Close releases exchange resources.
 func (a *Adapter) Close() {
-	// Adapter relies on exchange lifecycle managed elsewhere.
+	if a.sessionMgr != nil {
+		a.sessionMgr.Close()
+	}
 }
 
 func (a *Adapter) forwardPrivateEvents(ctx context.Context, streamType string, events chan<- filter.EventEnvelope, errors chan<- error) {
@@ -354,32 +479,46 @@ func (a *Adapter) forwardPrivateEvents(ctx context.Context, streamType string, e
 		select {
 		case <-ctx.Done():
 			return
-		case _, ok := <-sub.C():
+		case msg, ok := <-sub.C():
 			if !ok {
 				return
 			}
 
-			// Parse private message and create envelope
-			envelope := filter.EventEnvelope{
-				Channel:   filter.ChannelPrivateWS,
-				Timestamp: time.Now(),
+			// Convert core.Message to streams.RoutedMessage
+			routedMsg := corestreams.RoutedMessage{
+				Topic: msg.Topic,
+				Raw:   msg.Raw,
+				At:    msg.At,
+				Route: "private", // Default route for private messages
+				Parsed: msg.Parsed,
 			}
 
-			// TODO: Parse Binance private stream messages and populate appropriate event fields
-			// For now, we'll create a placeholder envelope
-			switch streamType {
-			case "account":
-				envelope.Kind = filter.EventKindAccount
-				// envelope.AccountEvent = parseAccountEvent(msg)
-			case "orders":
-				envelope.Kind = filter.EventKindOrder
-				// envelope.OrderEvent = parseOrderEvent(msg)
+			// Parse private message using the parser
+			envelope, err := a.parser.ParseMessage(routedMsg)
+			if err != nil {
+				// Create error envelope for parsing failures
+				errorEnvelope := a.parser.ParseError(err, msg.Raw)
+				select {
+				case errors <- err:
+				case <-ctx.Done():
+					return
+				}
+				select {
+				case events <- errorEnvelope:
+				case <-ctx.Done():
+					return
+				}
+				continue
 			}
 
-			select {
-			case events <- envelope:
-			case <-ctx.Done():
-				return
+			// Filter by stream type if needed
+			if (streamType == "account" && envelope.Kind == filter.EventKindAccount) ||
+			   (streamType == "orders" && envelope.Kind == filter.EventKindOrder) {
+				select {
+				case events <- envelope:
+				case <-ctx.Done():
+					return
+				}
 			}
 
 		case err, ok := <-sub.Err():

@@ -16,6 +16,7 @@ import (
 	corestreams "github.com/coachpo/meltica/core/streams"
 	binancel4 "github.com/coachpo/meltica/exchanges/binance/filter"
 	binanceplugin "github.com/coachpo/meltica/exchanges/binance/plugin"
+	"github.com/coachpo/meltica/exchanges/shared/routing"
 	"github.com/coachpo/meltica/internal/numeric"
 	mdfilter "github.com/coachpo/meltica/marketdata/filter"
 )
@@ -33,6 +34,8 @@ func main() {
 	bookDepth := flag.Int("book-depth", defaultBookDepth, "Maximum depth levels per side to display for order books (<=0 keeps full depth)")
 	minEmit := flag.Duration("throttle", 0, "Minimum interval between successive events per symbol/kind (e.g. 250ms)")
 	enableVWAP := flag.Bool("enable-vwap", true, "Emit rolling VWAP analytics events for trades")
+	enablePrivate := flag.Bool("private", false, "Enable private stream subscriptions (account, orders)")
+	restEndpoint := flag.String("rest", "", "Execute REST API call (e.g. 'GET /api/v3/account')")
 	flag.Parse()
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -49,12 +52,12 @@ func main() {
 		log.Fatalf("no symbols provided")
 	}
 
-	if err := run(ctx, exchange, symbols, *includeBook, *bookDepth, *minEmit, *enableVWAP); err != nil {
+	if err := run(ctx, exchange, symbols, *includeBook, *bookDepth, *minEmit, *enableVWAP, *enablePrivate, *restEndpoint); err != nil {
 		log.Fatalf("market data error: %v", err)
 	}
 }
 
-func run(ctx context.Context, exchange core.Exchange, symbols []string, withBook bool, bookDepth int, minEmit time.Duration, enableVWAP bool) error {
+func run(ctx context.Context, exchange core.Exchange, symbols []string, withBook bool, bookDepth int, minEmit time.Duration, enableVWAP bool, enablePrivate bool, restEndpoint string) error {
 	instruments := loadInstrumentCache(ctx, exchange)
 	formatter := newPrecisionFormatter(instruments)
 
@@ -63,7 +66,13 @@ func run(ctx context.Context, exchange core.Exchange, symbols []string, withBook
 		filterStream mdfilter.FilterStream
 		err          error
 	)
-	filterFacade, filterStream, err = startMarketFilter(ctx, exchange, symbols, withBook, bookDepth, minEmit, enableVWAP)
+
+	// Handle REST API call if specified
+	if restEndpoint != "" {
+		return executeRESTCall(ctx, exchange, restEndpoint)
+	}
+
+	filterFacade, filterStream, err = startMarketFilter(ctx, exchange, symbols, withBook, bookDepth, minEmit, enableVWAP, enablePrivate)
 	if err != nil {
 		return fmt.Errorf("start filter: %w", err)
 	}
@@ -79,6 +88,9 @@ func run(ctx context.Context, exchange core.Exchange, symbols []string, withBook
 	}
 	if !enableVWAP {
 		fmt.Printf(" vwap=disabled")
+	}
+	if enablePrivate {
+		fmt.Printf(" private=enabled")
 	}
 	fmt.Println()
 
@@ -124,6 +136,14 @@ func run(ctx context.Context, exchange core.Exchange, symbols []string, withBook
 			case mdfilter.EventKindVWAP:
 				if evt.Stats != nil {
 					printVWAPEvent(*evt.Stats, evt.Timestamp, formatter)
+				}
+			case mdfilter.EventKindAccount:
+				if evt.AccountEvent != nil {
+					printAccountEvent(*evt.AccountEvent, formatter)
+				}
+			case mdfilter.EventKindOrder:
+				if evt.OrderEvent != nil {
+					printOrderEvent(*evt.OrderEvent, formatter)
 				}
 			default:
 				// ignore unknown event kinds for now
@@ -315,6 +335,7 @@ func startMarketFilter(
 	bookDepth int,
 	minEmit time.Duration,
 	enableVWAP bool,
+	enablePrivate bool,
 ) (*mdfilter.InteractionFacade, mdfilter.FilterStream, error) {
 	adapter, auth, err := resolveFilterAdapter(exchange)
 	if err != nil {
@@ -323,7 +344,7 @@ func startMarketFilter(
 
 	facade := mdfilter.NewInteractionFacade(adapter, auth)
 
-	// Build options for public subscription
+	// Build options for subscription
 	var options []mdfilter.PublicOption
 	if includeBook {
 		options = append(options, mdfilter.WithBooks())
@@ -340,7 +361,15 @@ func startMarketFilter(
 		options = append(options, mdfilter.WithVWAP())
 	}
 
-	stream, err := facade.SubscribePublic(ctx, symbols, options...)
+	var stream mdfilter.FilterStream
+
+	// Use multi-channel subscription if private is enabled
+	if enablePrivate && auth != nil {
+		stream, err = facade.MultiChannelStream(ctx, symbols, enablePrivate, options...)
+	} else {
+		stream, err = facade.SubscribePublic(ctx, symbols, options...)
+	}
+
 	if err != nil {
 		facade.Close()
 		return nil, mdfilter.FilterStream{}, err
@@ -376,9 +405,7 @@ func buildBinanceFilterAdapter(exchange core.Exchange) (mdfilter.Adapter, *mdfil
 	var privateWS interface {
 		SubscribePrivate(ctx context.Context, topics ...string) (core.Subscription, error)
 	}
-	var restRouter interface {
-		Dispatch(ctx context.Context, msg interface{}, result interface{}) error
-	}
+	var restRouter routing.RESTDispatcher
 
 	// Try to extract private capabilities from the exchange
 	if privateParticipant, ok := exchange.(interface {
@@ -391,9 +418,7 @@ func buildBinanceFilterAdapter(exchange core.Exchange) (mdfilter.Adapter, *mdfil
 		RESTRouter() interface{}
 	}); ok {
 		if router := restParticipant.RESTRouter(); router != nil {
-			if r, ok := router.(interface {
-				Dispatch(ctx context.Context, msg interface{}, result interface{}) error
-			}); ok {
+			if r, ok := router.(routing.RESTDispatcher); ok {
 				restRouter = r
 			}
 		}
@@ -420,10 +445,11 @@ func buildBinanceFilterAdapter(exchange core.Exchange) (mdfilter.Adapter, *mdfil
 	var adapter mdfilter.Adapter
 	var err error
 
-	// Use enhanced adapter if private capabilities are available
-	if privateWS != nil || restRouter != nil {
-		adapter, err = binancel4.NewAdapterWithPrivate(orderBooks, ws, privateWS, restRouter)
+	// Use enhanced adapter with REST capabilities if available
+	if restRouter != nil {
+		adapter, err = binancel4.NewAdapterWithREST(orderBooks, ws, privateWS, restRouter)
 	} else {
+		// Fall back to basic adapter without REST capabilities
 		adapter, err = binancel4.NewAdapter(orderBooks, ws)
 	}
 
@@ -442,4 +468,85 @@ func printBookSnapshot(evt corestreams.BookEvent, formatter precisionFormatter) 
 		len(evt.Bids),
 		len(evt.Asks),
 	)
+}
+
+func printAccountEvent(evt mdfilter.AccountEvent, formatter precisionFormatter) {
+	fmt.Printf("[%s] ACCOUNT %s balance=%s available=%s locked=%s\n",
+		time.Now().UTC().Format(time.RFC3339Nano),
+		evt.Symbol,
+		formatter.quantity(evt.Symbol, evt.Balance),
+		formatter.quantity(evt.Symbol, evt.Available),
+		formatter.quantity(evt.Symbol, evt.Locked),
+	)
+}
+
+func printOrderEvent(evt mdfilter.OrderEvent, formatter precisionFormatter) {
+	price := "-"
+	if evt.Price != nil {
+		price = formatter.price(evt.Symbol, evt.Price)
+	}
+	fmt.Printf("[%s] ORDER  %s id=%s side=%s price=%s qty=%s status=%s\n",
+		time.Now().UTC().Format(time.RFC3339Nano),
+		evt.Symbol,
+		evt.OrderID,
+		evt.Side,
+		price,
+		formatter.quantity(evt.Symbol, evt.Quantity),
+		evt.Status,
+	)
+}
+
+func executeRESTCall(ctx context.Context, exchange core.Exchange, endpoint string) error {
+	// Parse the REST endpoint (e.g., "GET /api/v3/account")
+	parts := strings.SplitN(endpoint, " ", 2)
+	if len(parts) != 2 {
+		return fmt.Errorf("invalid REST endpoint format: %s (expected 'METHOD /path')", endpoint)
+	}
+	method := strings.ToUpper(parts[0])
+	path := parts[1]
+
+	adapter, auth, err := resolveFilterAdapter(exchange)
+	if err != nil {
+		return fmt.Errorf("resolve adapter: %w", err)
+	}
+	defer adapter.Close()
+
+	// Create REST request
+	request := mdfilter.InteractionRequest{
+		Channel: mdfilter.ChannelREST,
+		Method:  method,
+		Path:    path,
+		AuthContext: auth,
+	}
+
+	// For CLI usage, we'll use a simplified synchronous approach
+	// Create a stream and wait for the first response
+	eventCh, errCh, err := adapter.ExecuteREST(ctx, request)
+	if err != nil {
+		return fmt.Errorf("REST request failed: %w", err)
+	}
+
+	// Wait for either an event or an error
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case err := <-errCh:
+		return fmt.Errorf("REST request error: %w", err)
+	case event := <-eventCh:
+		// Print the response
+		fmt.Printf("REST Response:\n")
+		if event.RestResponse != nil {
+			fmt.Printf("  Status: %d\n", event.RestResponse.StatusCode)
+			if event.RestResponse.Error != nil {
+				fmt.Printf("  Error: %v\n", event.RestResponse.Error)
+			}
+			if event.RestResponse.Body != nil {
+				fmt.Printf("  Body: %+v\n", event.RestResponse.Body)
+			}
+		} else {
+			fmt.Printf("  No response data received\n")
+		}
+	}
+
+	return nil
 }
