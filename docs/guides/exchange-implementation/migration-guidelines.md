@@ -35,9 +35,10 @@ If you have an existing exchange implementation that needs to be updated:
 
 ### Architecture Evolution
 
-- **Added Level 4**: The architecture now includes Level 4 pipeline for filtering, aggregation, and client facade
+- **Added Level 4**: The architecture now includes Level 4 pipeline for filtering, aggregation, and client facades
+- **Unified Bootstrap**: Transports are wired via `core/exchanges/bootstrap` using a single `TransportConfig`
 - **Simplified Interfaces**: Core interfaces have been streamlined for better performance
-- **Shared Infrastructure**: Increased reuse of shared components
+- **Shared Infrastructure**: Increased reuse of shared routing helpers, filter adapters, and numeric utilities
 
 ### Interface Updates
 
@@ -111,6 +112,13 @@ type WebsocketParticipant interface {
 - [ ] Implement order book streaming
 - [ ] Ensure proper cleanup in `Close()` method
 
+### Level 4: Pipeline Layer
+
+- [ ] Implement `pipeline.Adapter` for public and private feeds
+- [ ] Bridge REST execution through a Level-4 REST bridge with retry policies
+- [ ] Manage private session state (listen keys, auth refresh) for `PrivateSources`
+- [ ] Expose accurate capability flags across books, trades, tickers, private streams, and REST endpoints
+
 ### Testing
 
 - [ ] Unit tests for parsing and normalization
@@ -123,10 +131,10 @@ type WebsocketParticipant interface {
 
 ### Code Organization
 
-- Follow the Binance directory structure
-- Use shared infrastructure from `exchanges/shared/`
-- Keep exchange-specific logic in appropriate packages
-- Maintain clear separation between layers
+- Follow the Binance directory structure, including `routing/`, `filter/`, `infra/`, and `plugin/`
+- Use shared infrastructure from `exchanges/shared/` and `core/exchanges/bootstrap`
+- Keep exchange-specific logic in the appropriate layer (transport, routing, exchange services, pipeline adapter)
+- Maintain clear separation between layers and avoid cross-layer dependencies
 
 ### Error Handling
 

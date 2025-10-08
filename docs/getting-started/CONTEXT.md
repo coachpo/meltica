@@ -68,7 +68,7 @@ go run ./cmd/main
 ### Core Modules
 
 * **`core/`** – Canonical domain models & interfaces (`Exchange`, markets, symbols, topics, WS events); capability bitsets.
-* **`exchanges/shared/`** – Shared adapters infrastructure (numeric helpers, transport clients, rate limiters, topic mappers).
+* **`exchanges/shared/`** – Shared adapters infrastructure (numeric helpers, transport clients, rate limiters, bootstrap utilities).
 * **`exchanges/`** – Venue adapters (REST + WS + signing + error/status mapping) per exchange.
 * **`errs/`** – Unified error envelope and standardized capability errors.
 * **`config/`** – Configuration management for exchange adapters.
@@ -113,6 +113,7 @@ interface WebsocketParticipant {
 ├── docs/                     # Onboarding, expectations, how‑to, validation rules
 ├── errs/                     # Unified error definitions
 ├── exchanges/                # Exchange adapters (binance, shared)
+├── pipeline/                 # Level-4 filter/coordinator pipeline
 ├── config/                   # Configuration management
 ├── Makefile                  # build/test/lint targets
 ├── go.mod / go.sum           # module + deps
@@ -223,5 +224,6 @@ How to contribute and the exact path for adding a new exchange adapter.
 
 * **Do:**
 
-  * Create: `exchanges/<name>/<name>.go`, `exchange/provider.go`, `infra/rest/client.go`, `infra/ws/client.go`, `README.md`.
-  * Implement `Exchange` in `<name>.go`; `Name()`
+  * Create: `exchanges/<name>/<name>.go`, `options.go`, `spot.go`, `futures.go`, `futures_linear.go`, `futures_inverse.go`, `book_service.go`, `book_state.go`, `symbol_service.go`, `ws_service.go`, and supporting packages (`infra/rest`, `infra/ws`, `internal/`, `routing/`). Use the Binance adapter as the authoritative layout (`routing/dispatchers.go`, `routing/stream_registry.go`, `routing/ws_router.go`, `routing/rest_router.go`, etc.).
+  * Implement `Exchange` in `<name>.go`; provide `Name()`, `Capabilities()`, `SupportedProtocolVersion()`, the participant accessors (`Spot`, `LinearFutures`, `InverseFutures`, `WS`) and a `Close()` that tears down transports.
+  * Construct transports via `core/exchanges/bootstrap` using the unified `TransportConfig`, and register symbol/topic translators inside the adapter plugin.

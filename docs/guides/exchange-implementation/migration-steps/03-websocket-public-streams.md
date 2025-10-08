@@ -5,7 +5,7 @@
 ---
 ## What needs to be done
 1) Connect and maintain public WS with auto-reconnect, backoff, and heartbeats.
-2) Decode exchange messages into `core.TradeEvent`, `core.TickerEvent`, `core.DepthEvent`.
+2) Decode exchange messages into `corestreams.TradeEvent`, `corestreams.TickerEvent`, `corestreams.BookEvent`.
 3) Canonicalize symbols and ensure typed (not `interface{}`) payloads.
 
 ---
@@ -18,8 +18,8 @@
    - Preserve subscription list across reconnect.
 
 2) **Decoders**
-   - Implement message decoding in `exchanges/<name>/routing/parse_public.go`
-   - Return **concrete** `core.*Event` types.
+   - Implement message decoding via the `StreamRegistry` in `exchanges/<name>/routing/stream_registry.go` (registered by `dispatchers.go`).
+   - Return **concrete** `corestreams.*` event types.
    - Always convert symbols to canonical `BASE-QUOTE` **before** emitting the event.
    - Attach raw JSON to the message `Raw` field.
 

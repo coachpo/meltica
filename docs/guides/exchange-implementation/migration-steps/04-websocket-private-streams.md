@@ -5,7 +5,7 @@
 ---
 ## What needs to be done
 1) Establish authenticated WS session (listen keys or signed channels).
-2) Emit `core/ws.OrderEvent` and `core/ws.BalanceEvent` from private updates.
+2) Emit `corestreams.OrderEvent` and `corestreams.BalanceEvent` from private updates.
 3) Handle sequencing, gap detection, and catch-up on reconnect.
 
 ---
@@ -15,7 +15,7 @@
    - Keep-alive/refresh tokens or listen keys on schedule.
 
 2) **Decoders**
-   - Implement decoder functions returning **concrete** `core/ws.OrderEvent` and `core/ws.BalanceEvent` only.
+   - Register decoder functions in `routing/stream_registry.go` that return **concrete** `corestreams.OrderEvent` and `corestreams.BalanceEvent` values.
    - Canonicalize symbols before emitting.
 
 3) **Sequencing & recovery**

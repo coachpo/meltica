@@ -9,7 +9,7 @@ All exchange providers must follow the four-layer architecture:
 ### Level 1: Transport Layer
 - Implement `RESTClient` interface from `core/transport/transport_contracts.go`
 - Implement `StreamClient` interface for WebSocket connections
-- Use shared infrastructure from `exchanges/shared/`
+- Wire transports via `core/exchanges/bootstrap` factories using `TransportConfig`
 - Handle rate limiting, connection pooling, and error recovery
 
 ### Level 2: Routing Layer
@@ -55,7 +55,7 @@ type InverseFuturesParticipant interface {
 }
 
 type WebsocketParticipant interface {
-    WS(ctx context.Context) WS
+    WS() WS
 }
 ```
 
@@ -171,9 +171,9 @@ if err != nil {
 
 ### Code Organization
 
-- Follow the established directory structure
+- Follow the established directory structure (`infra/`, `routing/`, `filter/`, `plugin/`, etc.)
 - Use clear and descriptive naming
-- Maintain separation of concerns between layers
+- Maintain separation of concerns between layers (Transport → Routing → Exchange → Pipeline)
 - Avoid circular dependencies
 
 ### Documentation

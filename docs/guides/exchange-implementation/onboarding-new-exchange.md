@@ -44,38 +44,43 @@ Follow these tiny steps to add a brand-new exchange to Meltica. Each step has a 
 **Goal:** Build the concrete `Exchange` type.
 1. Follow `exchanges/binance/binance.go` as the template for your `Exchange` struct.
 2. Use `config.DefaultExchangeSettings` plus overrides from `cfg.Exchange(...)` to obtain runtime settings.
-3. Create REST/WS infrastructure with helpers from `exchanges/shared/infra` and routers from `exchanges/shared/routing`.
+3. Wire REST/WS infrastructure through `core/exchanges/bootstrap` factories and hydrate Level-3 services (symbols, listen keys, books).
 
-Example construction pattern:
+Example construction pattern (assumes helper functions returning your exchange-specific transport/router factories):
 ```go
 func NewWithSettings(settings config.Settings) (*Exchange, error) {
-    okxCfg := resolveOKXSettings(settings)
-    
-    restClient := rest.NewClient(rest.Config{
-        APIKey:      okxCfg.Credentials.APIKey,
-        Secret:      okxCfg.Credentials.APISecret,
-        SpotBaseURL: okxCfg.REST["spot"],
-        Timeout:     okxCfg.HTTPTimeout,
-    })
-    
-    restRouter := routing.NewRESTRouter(restClient)
-    wsInfra := ws.NewClient(ws.Config{
+    okxCfg := resolveOKXSettings(config.Apply(settings))
+
+    transportCfg := bootstrap.TransportConfig{
+        APIKey:           okxCfg.Credentials.APIKey,
+        Secret:           okxCfg.Credentials.APISecret,
+        SpotBaseURL:      okxCfg.REST["spot"],
+        LinearBaseURL:    okxCfg.REST["linear"],
+        InverseBaseURL:   okxCfg.REST["inverse"],
+        HTTPTimeout:      okxCfg.HTTPTimeout,
         PublicURL:        okxCfg.Websocket.PublicURL,
         PrivateURL:       okxCfg.Websocket.PrivateURL,
         HandshakeTimeout: okxCfg.HandshakeTimeout,
-    })
-
-    transports := newTransportBundle(restClient, restRouter, wsInfra, nil)
-    symbols := newSymbolService(restRouter)
-
-    x := &Exchange{
-        name:       "okx",
-        transports: transports,
-        symbols:    symbols,
-        cfg:        settings,
     }
-    transports.ws = routing.NewWSRouter(wsInfra, x)
-    return x, nil
+
+    bundle := bootstrap.BuildTransportBundle(defaultTransportFactories(), defaultRouterFactories(), transportCfg)
+    restRouter := bundle.Router().(routingrest.RESTDispatcher)
+    symbolSvc := newSymbolService(restRouter)
+    listenKeySvc := newListenKeyService(restRouter)
+
+    deps := newWSDependencies(exchangeName, symbolSvc, listenKeySvc, nil)
+    bundle.SetWS(defaultRouterFactories().NewWSRouter(bundle.WSInfra(), deps))
+
+    bookSvc := newBookService(bundle.WS().(wsRouter), restRouter, symbolSvc)
+
+    return &Exchange{
+        name:            string(exchangeName),
+        transportBundle: bundle,
+        symbolSvc:       symbolSvc,
+        listenKeySvc:    listenKeySvc,
+        bookSvc:         bookSvc,
+        cfg:             config.Apply(settings),
+    }, nil
 }
 ```
 
@@ -84,7 +89,8 @@ func NewWithSettings(settings config.Settings) (*Exchange, error) {
 1. Map REST endpoints (tickers, balances, orders) using the shared REST router and `core/transport` contracts.
 2. Map WebSocket streams using the shared WS router patterns and implement `core/transport.StreamClient` and `core/streams` routing helpers.
 3. Normalize data into Meltica core types (`core/streams` structs) and surface topic builders in your exchange's routing package (for example `exchanges/binance/routing`).
-4. Reuse numeric helpers from `exchanges/shared/infra/numeric`.
+4. Reuse numeric helpers from `internal/numeric` for formatting and parsing decimals.
+5. Implement the Level-4 filter adapter (`filter/adapter.go`) so the pipeline facade can source books, trades, tickers, private streams, and REST responses from your exchange.
 
 ## Step 9 – Update Docs And Tests
 **Goal:** Tell others how to use the new exchange and prove it works.

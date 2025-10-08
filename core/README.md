@@ -16,7 +16,7 @@ This package provides a unified interface for cryptocurrency exchange operations
 
 ## Subpackages
 
-- `ws`: WebSocket domain helpers, including channel mappers and normalized event types
+- `streams`: WebSocket domain helpers, including routed message contracts and normalized event types
 
 ## Core Types
 
@@ -126,7 +126,7 @@ type BookDepthLevel struct {
 The `core/streams` package defines normalized WebSocket events for real-time data:
 
 ```go
-// core/streams/routing.go
+// core/streams/events.go
 type TradeEvent struct {
     Symbol   string
     Price    *big.Rat
@@ -141,24 +141,24 @@ type TickerEvent struct {
     Time   time.Time
 }
 
-type DepthEvent struct {
+type BookEvent struct {
     Symbol string
-    Bids   []DepthLevel
-    Asks   []DepthLevel
+    Bids   []core.BookDepthLevel
+    Asks   []core.BookDepthLevel
     Time   time.Time
 }
 
 type OrderEvent struct {
     Symbol    string
     OrderID   string
-    Status    OrderStatus
+    Status    core.OrderStatus
     FilledQty *big.Rat
     AvgPrice  *big.Rat
     Time      time.Time
 }
 
 type BalanceEvent struct {
-    Balances []Balance
+    Balances []core.Balance
 }
 ```
 
@@ -176,15 +176,15 @@ if err != nil {
 }
 ```
 
-### Topic Mappers (`exchanges/shared/infra/topics`)
+### Topic Translators
 
-`exchanges/shared/infra/topics` exposes channel mapping helpers for exchange adapters.
+Adapters register canonical/native channel translators with `core.RegisterTopicTranslator`. Translators convert between protocol topics and exchange-native identifiers:
 
 ```go
-mapper := infratopics.NewMapper(infratopics.MappingConfig{
-    ProtocolToExchange: map[string]string{string(core.TopicTrade): "trade"},
-})
-channel := mapper.ExchangeChannelID(string(core.TopicTrade))
+core.RegisterTopicTranslator(binance.Name, binance.NewTopicTranslator())
+
+native, _ := core.NativeTopic(binance.Name, core.TopicTrade)
+canonical, _ := core.CanonicalTopicFromNative(binance.Name, native)
 ```
 
 ## Exchange Interface
@@ -212,7 +212,7 @@ type InverseFuturesParticipant interface {
 }
 
 type WebsocketParticipant interface {
-    WS(ctx context.Context) WS
+    WS() WS
 }
 ```
 
@@ -316,15 +316,15 @@ exchange, err := exchanges.Resolve(binanceName)
 
 ## Decimal Precision
 
-All monetary values use `*big.Rat` to maintain precision:
+All monetary values use `*big.Rat` to maintain precision. Inside the repository, helpers in `internal/numeric` format or parse decimal values:
 
 ```go
 // Create precise decimal values
 price := big.NewRat(50000, 1)      // 50000.00
 qty := big.NewRat(1, 100)          // 0.01
 
-// Use numeric.Format for JSON serialization
-jsonData := numeric.Format(price, 2)  // Returns "50000.00"
+// Use the internal numeric helper for JSON serialization
+formatted := numeric.Format(price, 2)  // Returns "50000.00"
 ```
 
 ## Usage Example

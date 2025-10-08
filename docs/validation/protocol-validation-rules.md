@@ -22,6 +22,7 @@ This document defines validation rules for the meltica protocol. Each rule lists
     - `Name() string`
     - `Capabilities() ExchangeCapabilities`
     - `SupportedProtocolVersion() string`
+    - `Close() error`
   - No extra methods. Method names, parameter and result types MUST match exactly.
 
 2) CORE-IFACE-SPOT (MUST)
@@ -53,7 +54,7 @@ This document defines validation rules for the meltica protocol. Each rule lists
 - Intent: Freeze WS event types.
 - Scope: `core/`.
 - Validation standard:
-  - Types MUST exist: `TradeEvent`, `TickerEvent`, `DepthEvent`, `OrderEvent`, `BalanceEvent`.
+  - Types MUST exist: `TradeEvent`, `TickerEvent`, `BookEvent`, `OrderEvent`, `BalanceEvent`.
 
 7) CORE-ERRORS-TYPE (MUST)
 - Intent: Freeze canonical error type and codes mapping.

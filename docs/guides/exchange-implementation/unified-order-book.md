@@ -8,7 +8,7 @@ The system now uses a unified approach for book data processing. All book update
 
 ### 1. Book State Management
 
-Each provider maintains local book state for its symbols using a `BookManager` defined in `exchanges/<name>/routing/book.go`:
+Each provider maintains local book state for its symbols using a `BookManager` defined in `exchanges/<name>/book_state.go`:
 
 ```go
 type BookManager struct {
@@ -17,11 +17,12 @@ type BookManager struct {
 }
 
 type Book struct {
-    Symbol       string
-    Bids         map[string]*big.Rat // price -> quantity
-    Asks         map[string]*big.Rat // price -> quantity
-    LastUpdateID int64               // For sequence tracking (Binance)
-    LastUpdate   time.Time
+    Symbol        string
+    Bids          map[string]*big.Rat // price -> quantity
+    Asks          map[string]*big.Rat // price -> quantity
+    lastUpdateID  int64               // For sequence tracking (Binance)
+    LastUpdate    time.Time
+    isInitialized bool
 }
 ```
 
@@ -58,13 +59,13 @@ topic := bnrouting.Book("BTC-USDT")
 
 ### 4. Event Structure
 
-The book event structure:
+The book event structure (`core/streams`):
 
 ```go
-type DepthEvent struct {
+type BookEvent struct {
     Symbol string
-    Bids   []DepthLevel
-    Asks   []DepthLevel
+    Bids   []core.BookDepthLevel
+    Asks   []core.BookDepthLevel
     Time   time.Time
 }
 ```
@@ -91,7 +92,7 @@ topic := bnrouting.Book("BTC-USDT")
 ### Processing Book Events
 
 ```go
-func handleBookEvent(event *core.DepthEvent) {
+func handleBookEvent(event *corestreams.BookEvent) {
     // All events are treated as complete snapshots
     log.Printf("Received book for %s with %d bids, %d asks",
         event.Symbol, len(event.Bids), len(event.Asks))
@@ -118,14 +119,14 @@ func handleBookEvent(event *core.DepthEvent) {
 
 ```go
 // Before (complex)
-switch event.UpdateType {
-case corews.DepthUpdateSnapshot:
+switch msg.Route {
+case corestreams.RouteBookSnapshot:
     replaceBook(event)
-case corews.DepthUpdateDelta:
+case corestreams.RouteDepthDelta:
     mergeBook(event)
 }
 
 // After (simple)
-// All events are snapshots - just replace the book
+// All BookEvent payloads are complete snapshots
 replaceBook(event)
 ```

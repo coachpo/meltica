@@ -17,7 +17,7 @@ Meltica follows a layered architecture with clear separation of concerns:
 ### Level 1: Transport Layer
 - **REST Client**: HTTP request/response handling with rate limiting
 - **WebSocket Client**: Connection management and raw message handling
-- **Shared Infrastructure**: Rate limiting, numeric helpers, topic mapping
+- **Shared Infrastructure**: Rate limiting, numeric helpers, bootstrap wiring
 
 ### Level 2: Routing Layer
 - **REST Router**: Maps normalized requests to exchange-specific endpoints

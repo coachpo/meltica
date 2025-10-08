@@ -32,7 +32,7 @@ This document defines non-negotiable standards for the protocol and core code.
 - Validate: `go build ./core`
 
 ## STD-06: WebSocket event types present
-- Must have: `TradeEvent`, `TickerEvent`, `DepthEvent`, `OrderEvent`, `BalanceEvent`.
+- Must have: `TradeEvent`, `TickerEvent`, `BookEvent`, `OrderEvent`, `BalanceEvent`.
 - Must not have: Ad-hoc maps for events.
 - Validate: `go build ./core`
 

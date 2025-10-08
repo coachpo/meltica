@@ -40,6 +40,8 @@ type StreamClient interface {
     Publish(ctx context.Context, message StreamMessage) error
     HandleError(ctx context.Context, err error) error
 }
+
+Exchange constructors should wire these clients using `core/exchanges/bootstrap`. The unified `bootstrap.TransportConfig` bundles REST and WebSocket configuration so factories can remain consistent across venues.
 ```
 
 **Responsibilities:**
@@ -77,7 +79,7 @@ func (r *RESTRouter) MapRequest(req core.Request) (*exchange.RESTRequest, error)
 ```go
 type Router interface {
     SubscribePublic(ctx context.Context, topics ...string) (Subscription, error)
-    SubscribePrivate(ctx context.Context) (Subscription, error)
+    SubscribePrivate(ctx context.Context, topics ...string) (Subscription, error)
     Close() error
 }
 ```
@@ -95,13 +97,13 @@ type Router interface {
 The main exchange provider interface that exposes all market data and trading operations:
 
 ```go
-// Provider struct from Binance implementation
-type Provider struct {
-    restClient   exchange.RESTClient
-    wsClient     exchange.StreamClient
-    restRouter   *routing.RESTRouter
-    wsRouter     *routing.WSRouter
-    symbolLoader *SymbolLoader
+// Exchange struct from the Binance implementation
+type Exchange struct {
+    name            string
+    transportBundle *bootstrap.TransportBundle
+    symbolSvc       *symbolService
+    listenKeySvc    *listenKeyService
+    bookSvc         *BookService
 }
 ```
 

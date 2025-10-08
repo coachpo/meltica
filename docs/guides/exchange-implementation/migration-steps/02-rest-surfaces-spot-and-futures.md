@@ -12,7 +12,7 @@
 ---
 ## How to do it (follow exactly)
 1) **Wire clients**
-   - In `exchange/provider.go`, implement constructors for HTTP clients with timeouts, retry/backoff, and rate-limiting hooks (reuse shared transport if available).
+   - In `your-exchange.go` (or equivalent), configure REST factories via `core/exchanges/bootstrap` and pass the resulting dispatcher into `spot.go` / `futures*.go` services.
    - Ensure methods on provider interfaces return **core models** (`Instrument`, `Ticker`, `Order`, `Position`, etc.).
 
 2) **Canonical symbols**
@@ -20,7 +20,7 @@
 
 3) **Numerics with `*big.Rat`**
    - All price, size, quantity, balance fields **must** be `*big.Rat`.
-   - In JSON marshaling, use proper formatting for `*big.Rat` values.
+   - Use helpers from `internal/numeric` (e.g., `Format`, `Parse`) when formatting or reading decimals.
 
 4) **Enum/status mapping**
    - Implement functions like `mapOrderSide`, `mapOrderType`, `mapTimeInForce`, `mapOrderStatus`.

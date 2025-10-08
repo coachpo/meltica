@@ -12,36 +12,35 @@ Meltica uses a four-layer architecture:
 
 ## Step 1.1: Create Directory Structure
 
-Create the following directory structure under `exchanges/` following the Binance pattern:
+Create the following directory structure under `exchanges/` following the Binance pattern (trim or expand pieces that your venue needs):
 
 ```
 exchanges/your-exchange/
-├── your-exchange.go         # Package entry point and main Exchange implementation
-├── spot.go                  # Spot market implementation
-├── linear_futures.go        # Linear futures implementation
-├── inverse_futures.go       # Inverse futures implementation
-├── depth.go                 # Depth/order book handling
-├── orderbook_snapshot.go    # Order book snapshot logic
-├── symbol_loader.go         # Symbol loading logic
-├── symbol_registry.go       # Symbol registry
-├── ws_service.go            # WebSocket service
+├── your-exchange.go       # Exchange entry point + bootstrap wiring
+├── options.go             # Public constructors & bootstrap options
+├── spot.go                # Spot REST implementation
+├── futures.go             # Shared futures helpers
+├── futures_linear.go      # Linear futures API
+├── futures_inverse.go     # Inverse futures API
+├── book_service.go        # Level-3 order book service
+├── book_state.go          # In-memory depth state tracking
+├── listen_key_service.go  # Listen-key lifecycle helpers (if needed)
+├── symbol_service.go      # Symbol loading + caching
+├── symbol_registry.go     # Canonical/native registry
+├── ws_service.go          # WS participant façade
+├── ws_dependencies.go     # Bridge between routing and services
+├── filter/                # Level-4 pipeline adapter + REST bridge
 ├── infra/
-│   ├── rest/
-│   │   ├── client.go        # REST client
-│   │   ├── errors.go        # REST error handling
-│   │   └── sign.go          # Request signing
-│   └── ws/
-│       └── client.go        # WebSocket client
-├── internal/
-│   ├── errors.go            # Internal error types
-│   └── status.go            # Status mapping
+│   ├── rest/              # REST client, signing, error handling
+│   └── ws/                # WebSocket client implementation
+├── internal/              # Exchange-specific errors, status mapping
+├── plugin/                # Registry + translator registration
 └── routing/
-    ├── rest_router.go       # REST routing using shared dispatcher
-    ├── ws_router.go         # WebSocket routing
-    ├── parse_public.go      # Public data parsing
-    ├── parse_private.go     # Private data parsing
-    ├── orderbook_state.go   # Order book state management
-    └── topics.go            # Topic mapping
+    ├── dispatchers.go     # Stream dispatch entry points
+    ├── parse_helpers.go   # Shared decode helpers
+    ├── stream_registry.go # Topic builders + decoders
+    ├── ws_router.go       # Level-2 router implementation
+    └── rest_router.go     # REST dispatcher wiring
 ```
 
 ## Step 1.2: Define Exchange Configuration
@@ -85,22 +84,23 @@ import (
     
     "github.com/coachpo/meltica/config"
     "github.com/coachpo/meltica/core"
-    "github.com/coachpo/meltica/exchanges/your-exchange/infra/rest"
-    "github.com/coachpo/meltica/exchanges/your-exchange/infra/ws"
-    "github.com/coachpo/meltica/exchanges/your-exchange/routing"
+    "github.com/coachpo/meltica/core/exchanges/bootstrap"
     routingrest "github.com/coachpo/meltica/exchanges/shared/routing"
 )
 
 type Exchange struct {
-    name       string
-    transports *transportBundle
-    symbols    *symbolService
-    cfg        config.Settings
-    cfgMu      sync.Mutex
+    name            string
+    transportBundle *bootstrap.TransportBundle
+    symbolSvc       *symbolService
+    listenKeySvc    *listenKeyService
+    bookSvc         *BookService
+    cfg             config.Settings
+    cfgMu           sync.Mutex
 }
 
-// transportBundle and symbolService mirror the Binance adapter helpers for managing
-// transport lifecycles and symbol caches. Implement equivalents for your exchange.
+// transportBundle and the services mirror the Binance adapter helpers for managing
+// transport lifecycles, symbol caches, listen keys, and book state. Implement
+// equivalents for your exchange.
 
 var capabilities = core.Capabilities(
     // Define your exchange's capabilities here
@@ -110,34 +110,36 @@ var capabilities = core.Capabilities(
 )
 
 func NewWithSettings(settings config.Settings) (*Exchange, error) {
-    // Resolve exchange-specific settings
-    yourCfg := resolveYourExchangeSettings(settings)
-    
-    restClient := rest.NewClient(rest.Config{
-        APIKey:      yourCfg.Credentials.APIKey,
-        Secret:      yourCfg.Credentials.APISecret,
-        SpotBaseURL: yourCfg.REST["spot"],
-        Timeout:     yourCfg.HTTPTimeout,
-    })
-    
-    restRouter := routing.NewRESTRouter(restClient)
-    wsInfra := ws.NewClient(ws.Config{
+    yourCfg := resolveYourExchangeSettings(config.Apply(settings))
+
+    transportCfg := bootstrap.TransportConfig{
+        APIKey:           yourCfg.Credentials.APIKey,
+        Secret:           yourCfg.Credentials.APISecret,
+        SpotBaseURL:      yourCfg.REST["spot"],
+        LinearBaseURL:    yourCfg.REST["linear"],
+        InverseBaseURL:   yourCfg.REST["inverse"],
+        HTTPTimeout:      yourCfg.HTTPTimeout,
         PublicURL:        yourCfg.Websocket.PublicURL,
         PrivateURL:       yourCfg.Websocket.PrivateURL,
         HandshakeTimeout: yourCfg.HandshakeTimeout,
-    })
-
-    transports := newTransportBundle(restClient, restRouter, wsInfra, nil)
-    symbols := newSymbolService(restRouter)
-
-    x := &Exchange{
-        name:       "your-exchange",
-        transports: transports,
-        symbols:    symbols,
-        cfg:        settings,
     }
-    transports.ws = routing.NewWSRouter(wsInfra, x)
-    return x, nil
+
+    bundle := bootstrap.BuildTransportBundle(defaultTransportFactories(), defaultRouterFactories(), transportCfg)
+    restRouter := bundle.Router().(routingrest.RESTDispatcher)
+    symbolSvc := newSymbolService(restRouter)
+    listenKeySvc := newListenKeyService(restRouter)
+    deps := newWSDependencies(exchangeName, symbolSvc, listenKeySvc, nil)
+    bundle.SetWS(defaultRouterFactories().NewWSRouter(bundle.WSInfra(), deps))
+    bookSvc := newBookService(bundle.WS().(wsRouter), restRouter, symbolSvc)
+
+    return &Exchange{
+        name:            string(exchangeName),
+        transportBundle: bundle,
+        symbolSvc:       symbolSvc,
+        listenKeySvc:    listenKeySvc,
+        bookSvc:         bookSvc,
+        cfg:             config.Apply(settings),
+    }, nil
 }
 
 func (x *Exchange) Name() string { return x.name }
@@ -146,13 +148,15 @@ func (x *Exchange) Capabilities() core.ExchangeCapabilities { return capabilitie
 
 func (x *Exchange) SupportedProtocolVersion() string { return core.ProtocolVersion }
 
-func (x *Exchange) Spot(ctx context.Context) core.SpotAPI { return spotAPI{x} }
+func (x *Exchange) Spot(ctx context.Context) core.SpotAPI         { return spotAPI{x} }
+func (x *Exchange) LinearFutures(ctx context.Context) core.FuturesAPI { return newLinearFuturesAPI(x) }
+func (x *Exchange) InverseFutures(ctx context.Context) core.FuturesAPI { return newInverseFuturesAPI(x) }
 
-func (x *Exchange) WS() core.WS { return newWSService(x.wsRouter) }
+func (x *Exchange) WS() core.WS { return newWSService(x.wsRouter()) }
 
 func (x *Exchange) Close() error {
-    if x.wsRouter != nil {
-        _ = x.wsRouter.Close()
+    if x.transportBundle != nil {
+        return x.transportBundle.Close()
     }
     return nil
 }
@@ -235,8 +239,8 @@ After completing this step, proceed to:
 
 ## Notes
 
-- Use the Binance implementation in `exchanges/binance/` as a reference for all patterns
-- Follow the established directory structure without nested `exchange/` subdirectory
-- Use shared routing infrastructure from `exchanges/shared/routing/`
+- Use the Binance implementation in `exchanges/binance/` as a reference for all patterns, including `filter/`, `routing/`, and `plugin/`
+- Follow the established directory structure without nested `exchange/` subdirectories
+- Use shared bootstrap and routing infrastructure (`core/exchanges/bootstrap`, `exchanges/shared/routing`)
 - Ensure all interfaces match the current `core` contracts
-- Implement symbol conversion and caching similar to Binance pattern
+- Implement symbol conversion and caching similar to the Binance pattern and register translators in the plugin package
