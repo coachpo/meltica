@@ -87,14 +87,14 @@ Creates exchange-agnostic market-data pipelines that orchestrate Level 3 service
 **Pipeline Event Contract:**
 - Level 3 adapters emit `pipeline.Event` values that pair a `TransportType` (public, private, REST, hybrid) with a strongly typed payload (`BookPayload`, `TradePayload`, `AccountPayload`, `RestResponsePayload`, etc.).
 - Level 4 stages operate exclusively on these payloads and ultimately surface `ClientEvent` to consumers; downstream code must switch on payload type rather than on string-based `EventKind`.
-- When introducing new payloads, add them to `filter/pipeline/payloads.go`, implement `isPayload`, and update any stages that need awareness of the new type.
+- When introducing new payloads, add them to `pipeline/payloads.go`, implement `isPayload`, and update any stages that need awareness of the new type.
 
-### Registering Filter Adapters & Stages
+### Registering Pipeline Adapters & Stages
 
-1. Implement the `filter.Adapter` interface inside the exchange plugin. Declare supported capabilities via `Capabilities()` including public feeds (`Books`, `Trades`, `Tickers`), private streams (`PrivateStreams`), and REST endpoints (`RESTEndpoints`).
+1. Implement the `pipeline.Adapter` interface inside the exchange plugin. Declare supported capabilities via `Capabilities()` including public feeds (`Books`, `Trades`, `Tickers`), private streams (`PrivateStreams`), and REST endpoints (`RESTEndpoints`).
 2. Surface channel-based sources for each feed type (`BookSources`, `TradeSources`, `TickerSources`, `PrivateSources`) and implement REST execution (`ExecuteREST`). Public feeds still stream `corestreams` events, while private/REST flows now emit `pipeline.Event` payloads that carry transport metadata for Level 4 assembly into `ClientEvent`s.
-3. Wire the adapter into consumers (such as `cmd/market_data`) by instantiating `filter.NewInteractionFacade(adapter, auth)` and using high-level methods (`SubscribePublic`, `SubscribePrivate`, `FetchREST`). For advanced use cases, use `filter.NewCoordinator(adapter, auth)` directly.
-4. To extend filtering behaviour, create a new `filter.Stage` (via `filter.NewStageFunc`) that transforms, enriches, or routes `ClientEvent` streams. Update the coordinator's stage builder to insert the new stage where appropriate or conditionally add it based on `FilterRequest` flags.
+3. Wire the adapter into consumers (such as `cmd/market_data`) by instantiating `pipeline.NewInteractionFacade(adapter, auth)` and using high-level methods (`SubscribePublic`, `SubscribePrivate`, `FetchREST`). For advanced use cases, use `pipeline.NewCoordinator(adapter, auth)` directly.
+4. To extend filtering behaviour, create a new `pipeline.Stage` (via `pipeline.NewStageFunc`) that transforms, enriches, or routes `ClientEvent` streams. Update the coordinator's stage builder to insert the new stage where appropriate or conditionally add it based on `PipelineRequest` flags.
 5. Add integration tests that exercise the adapter with recorded fixtures to ensure stage orchestration remains stable, and unit tests for any new stages to verify ordering, error propagation, and cancellation semantics.
 
 ---

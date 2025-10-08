@@ -38,12 +38,19 @@ Meltica follows a layered architecture with clear separation of concerns:
 ## Quick Start
 
 ```go
-import "github.com/coachpo/meltica/exchanges/binance"
+import (
+    "github.com/coachpo/meltica/core/registry"
+    binanceplugin "github.com/coachpo/meltica/exchanges/binance/plugin"
+)
 
 // Create a Binance provider
-provider := binance.NewWithSettings(config.Default())
+exchange, err := registry.Resolve(binanceplugin.Name)
+if err != nil {
+    log.Fatal(err)
+}
+defer exchange.Close()
 
-// Use the provider for market data or trading operations
+// Use the exchange for market data or trading operations
 ```
 
 ## Features

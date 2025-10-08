@@ -4,11 +4,12 @@ This document provides guidelines for migrating existing exchange implementation
 
 ## Current Architecture
 
-Meltica follows a three-layer architecture:
+Meltica follows a four-layer architecture:
 
 - **Level 1**: Transport layer (REST/WebSocket clients)
 - **Level 2**: Routing layer (request/response mapping)
 - **Level 3**: Exchange layer (provider interface)
+- **Level 4**: Pipeline layer (filtering, aggregation, and client facade)
 
 ## Migration Strategy
 
@@ -32,9 +33,9 @@ If you have an existing exchange implementation that needs to be updated:
 
 ## Key Changes from Previous Versions
 
-### Architecture Simplification
+### Architecture Evolution
 
-- **Removed Level 4**: The architecture now uses only Levels 1-3
+- **Added Level 4**: The architecture now includes Level 4 pipeline for filtering, aggregation, and client facade
 - **Simplified Interfaces**: Core interfaces have been streamlined for better performance
 - **Shared Infrastructure**: Increased reuse of shared components
 

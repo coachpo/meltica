@@ -212,7 +212,7 @@ type InverseFuturesParticipant interface {
 }
 
 type WebsocketParticipant interface {
-    WS() WS
+    WS(ctx context.Context) WS
 }
 ```
 
@@ -272,9 +272,9 @@ const (
 type ExchangeCapabilities uint64
 
 // Usage
-caps := Capabilities(
-    CapabilitySpotPublicREST,
-    CapabilitySpotTradingREST,
+caps := ExchangeCapabilities(
+    CapabilitySpotPublicREST |
+    CapabilitySpotTradingREST |
     CapabilityWebsocketPublic,
 )
 
