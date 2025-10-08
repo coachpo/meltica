@@ -5,6 +5,8 @@ import (
 	"errors"
 	"math/big"
 	"time"
+
+	exchangecap "github.com/coachpo/meltica/core/exchanges/capabilities"
 )
 
 // ProtocolVersion declares the canonical protocol version supported by this repository.
@@ -148,42 +150,52 @@ type Candlestick struct {
 }
 
 // Capability describes a discrete feature of an exchange.
-type Capability uint64
+type Capability = exchangecap.Capability
+
+// ExchangeCapabilities is a bitset describing the features available from an exchange implementation.
+type ExchangeCapabilities = exchangecap.Set
 
 const (
 	// CapabilitySpotPublicREST indicates public spot REST market data.
-	CapabilitySpotPublicREST Capability = 1 << iota
+	CapabilitySpotPublicREST Capability = exchangecap.CapabilitySpotPublicREST
 	// CapabilitySpotTradingREST indicates spot trading REST endpoints.
-	CapabilitySpotTradingREST
+	CapabilitySpotTradingREST Capability = exchangecap.CapabilitySpotTradingREST
 	// CapabilityLinearPublicREST indicates public linear futures REST market data.
-	CapabilityLinearPublicREST
+	CapabilityLinearPublicREST Capability = exchangecap.CapabilityLinearPublicREST
 	// CapabilityLinearTradingREST indicates linear futures trading REST endpoints.
-	CapabilityLinearTradingREST
+	CapabilityLinearTradingREST Capability = exchangecap.CapabilityLinearTradingREST
 	// CapabilityInversePublicREST indicates public inverse futures REST market data.
-	CapabilityInversePublicREST
+	CapabilityInversePublicREST Capability = exchangecap.CapabilityInversePublicREST
 	// CapabilityInverseTradingREST indicates inverse futures trading REST endpoints.
-	CapabilityInverseTradingREST
+	CapabilityInverseTradingREST Capability = exchangecap.CapabilityInverseTradingREST
 	// CapabilityWebsocketPublic indicates support for normalized public websocket topics.
-	CapabilityWebsocketPublic
+	CapabilityWebsocketPublic Capability = exchangecap.CapabilityWebsocketPublic
 	// CapabilityWebsocketPrivate indicates support for normalized private websocket topics.
-	CapabilityWebsocketPrivate
-)
+	CapabilityWebsocketPrivate Capability = exchangecap.CapabilityWebsocketPrivate
 
-// ExchangeCapabilities is a bitset describing the features available from an exchange implementation.
-type ExchangeCapabilities uint64
+	// Extended capability exports.
+	CapabilityTradingSpotAmend     Capability = exchangecap.CapabilityTradingSpotAmend
+	CapabilityTradingSpotCancel    Capability = exchangecap.CapabilityTradingSpotCancel
+	CapabilityTradingLinearAmend   Capability = exchangecap.CapabilityTradingLinearAmend
+	CapabilityTradingLinearCancel  Capability = exchangecap.CapabilityTradingLinearCancel
+	CapabilityTradingInverseAmend  Capability = exchangecap.CapabilityTradingInverseAmend
+	CapabilityTradingInverseCancel Capability = exchangecap.CapabilityTradingInverseCancel
+	CapabilityAccountBalances      Capability = exchangecap.CapabilityAccountBalances
+	CapabilityAccountPositions     Capability = exchangecap.CapabilityAccountPositions
+	CapabilityAccountMargin        Capability = exchangecap.CapabilityAccountMargin
+	CapabilityAccountTransfers     Capability = exchangecap.CapabilityAccountTransfers
+	CapabilityMarketTrades         Capability = exchangecap.CapabilityMarketTrades
+	CapabilityMarketTicker         Capability = exchangecap.CapabilityMarketTicker
+	CapabilityMarketOrderBook      Capability = exchangecap.CapabilityMarketOrderBook
+	CapabilityMarketCandles        Capability = exchangecap.CapabilityMarketCandles
+	CapabilityMarketFundingRates   Capability = exchangecap.CapabilityMarketFundingRates
+	CapabilityMarketMarkPrice      Capability = exchangecap.CapabilityMarketMarkPrice
+	CapabilityMarketLiquidations   Capability = exchangecap.CapabilityMarketLiquidations
+)
 
 // Capabilities builds a ExchangeCapabilities bitset from the provided features.
 func Capabilities(caps ...Capability) ExchangeCapabilities {
-	var bits uint64
-	for _, c := range caps {
-		bits |= uint64(c)
-	}
-	return ExchangeCapabilities(bits)
-}
-
-// Has reports whether the capability bit is present.
-func (pc ExchangeCapabilities) Has(cap Capability) bool {
-	return uint64(pc)&uint64(cap) != 0
+	return exchangecap.Of(caps...)
 }
 
 // Exchange is the stable abstraction implemented by every concrete exchange adapter.

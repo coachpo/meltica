@@ -2,7 +2,6 @@ package binance
 
 import (
 	"context"
-	"fmt"
 	"math/big"
 	"net/http"
 	"time"
@@ -53,38 +52,11 @@ func (f *futuresAPI) Ticker(ctx context.Context, symbol string) (core.Ticker, er
 }
 
 func (f *futuresAPI) PlaceOrder(ctx context.Context, req core.OrderRequest) (core.Order, error) {
-	nativeSymbol, err := f.resolveNativeSymbol(ctx, req.Symbol)
-	if err != nil {
-		return core.Order{}, err
+	svc := f.x.tradingServiceFor(f.market)
+	if svc == nil {
+		return core.Order{}, internal.Invalid("trading service unavailable")
 	}
-	q := map[string]string{
-		"symbol": nativeSymbol,
-		"side":   string(req.Side),
-		"type":   string(req.Type),
-	}
-	if tif := f.x.timeInForceCode(req.TimeInForce); tif != "" {
-		q["timeInForce"] = tif
-	}
-	inst := f.lookupInstrument(ctx, req.Symbol)
-	if req.Quantity != nil {
-		q["quantity"] = numeric.Format(req.Quantity, inst.QtyScale)
-	}
-	if req.Price != nil {
-		q["price"] = numeric.Format(req.Price, inst.PriceScale)
-	}
-	var resp struct {
-		OrderID int64  `json:"orderId"`
-		Status  string `json:"status"`
-	}
-	msg := routingrest.RESTMessage{API: f.endpoints.api, Method: http.MethodPost, Path: f.endpoints.orderPath, Query: q, Signed: true}
-	router := f.x.restRouter()
-	if router == nil {
-		return core.Order{}, internal.Invalid("rest router unavailable")
-	}
-	if err := router.Dispatch(ctx, msg, &resp); err != nil {
-		return core.Order{}, err
-	}
-	return core.Order{ID: fmt.Sprintf("%d", resp.OrderID), Symbol: req.Symbol, Status: internal.MapOrderStatus(resp.Status)}, nil
+	return svc.Place(ctx, req)
 }
 
 func (f *futuresAPI) Positions(ctx context.Context, symbols ...string) ([]core.Position, error) {
@@ -133,14 +105,6 @@ func (f *futuresAPI) Positions(ctx context.Context, symbols ...string) ([]core.P
 		out = append(out, core.Position{Symbol: sym, Side: side, Quantity: qty, EntryPrice: ep, Unrealized: up, UpdatedAt: time.Now()})
 	}
 	return out, nil
-}
-
-func (f *futuresAPI) lookupInstrument(ctx context.Context, symbol string) core.Instrument {
-	inst, ok, err := f.x.instrument(ctx, f.market, symbol)
-	if err != nil || !ok {
-		return core.Instrument{}
-	}
-	return inst
 }
 
 func (f *futuresAPI) resolveNativeSymbol(ctx context.Context, canonical string) (string, error) {

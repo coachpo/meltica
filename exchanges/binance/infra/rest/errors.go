@@ -3,6 +3,7 @@ package rest
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/coachpo/meltica/errs"
 )
@@ -16,6 +17,7 @@ func mapHTTPError(status int, body []byte) error {
 			errs.WithHTTP(status),
 			errs.WithMessage("binance rest rate limited"),
 			errs.WithRawMessage(string(body)),
+			errs.WithCanonicalCode(errs.CanonicalRateLimited),
 		)
 	}
 	var env struct {
@@ -34,13 +36,22 @@ func mapHTTPError(status int, body []byte) error {
 		default:
 			code = errs.CodeExchange
 		}
-		return errs.New(
-			"binance",
-			code,
+		options := []errs.Option{
 			errs.WithHTTP(status),
 			errs.WithMessage(fmt.Sprintf("binance rest error code=%d", env.Code)),
 			errs.WithRawCode(jsonInt(env.Code)),
 			errs.WithRawMessage(env.Msg),
+		}
+		if canonical, remediation := canonicalForBinance(env.Code, env.Msg); canonical != errs.CanonicalUnknown {
+			options = append(options, errs.WithCanonicalCode(canonical))
+			if remediation != "" {
+				options = append(options, errs.WithRemediation(remediation))
+			}
+		}
+		return errs.New(
+			"binance",
+			code,
+			options...,
 		)
 	}
 	return errs.New(
@@ -53,3 +64,24 @@ func mapHTTPError(status int, body []byte) error {
 }
 
 func jsonInt(i int) string { return fmt.Sprintf("%d", i) }
+
+func canonicalForBinance(code int, message string) (errs.CanonicalCode, string) {
+	switch code {
+	case -2011, -2013, -2022:
+		return errs.CanonicalOrderNotFound, ""
+	case -2010:
+		if lookLower(message, "insufficient") || lookLower(message, "not enough") {
+			return errs.CanonicalInsufficientBalance, ""
+		}
+	case -1121, -1130:
+		return errs.CanonicalInvalidSymbol, ""
+	}
+	return errs.CanonicalUnknown, ""
+}
+
+func lookLower(message, needle string) bool {
+	if needle == "" {
+		return false
+	}
+	return strings.Contains(strings.ToLower(message), strings.ToLower(needle))
+}

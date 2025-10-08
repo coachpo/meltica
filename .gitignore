@@ -31,3 +31,11 @@
 # Github Actions
 !.github/workflows/ci.yml
 !.github/workflows/release.yml
+
+# Ignore AI assistant and tooling directories
+.claude/
+.factory/
+.specify/
+
+# Ignore IDE directories
+.idea/

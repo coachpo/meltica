@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -92,89 +91,89 @@ func (c *Client) DoWithHeaders(ctx context.Context, method, path string, query m
 	if reqBody != nil && req.Header.Get("Content-Type") == "" {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	if reqBody != nil {
+		req.GetBody = func() (io.ReadCloser, error) {
+			return io.NopCloser(bytes.NewReader(body)), nil
+		}
+		req.Body = io.NopCloser(bytes.NewReader(body))
+	}
 	for k, vs := range signedHeaders {
 		for _, v := range vs {
 			req.Header.Add(k, v)
 		}
 	}
-	if c.RateLimiter != nil {
-		if err := c.RateLimiter.Wait(ctx); err != nil {
-			return nil, 0, err
-		}
-		if c.OnRLWait != nil {
-			c.OnRLWait(0)
-		}
-	}
 	retries := 0
 	for {
+		if c.RateLimiter != nil {
+			if err := c.RateLimiter.Wait(ctx); err != nil {
+				if c.OnResult != nil {
+					c.OnResult(method, u.String(), retries, 0, err, 0)
+				}
+				return nil, 0, err
+			}
+			if c.OnRLWait != nil {
+				c.OnRLWait(0)
+			}
+		}
+
+		if retries > 0 && req.GetBody != nil {
+			rc, err := req.GetBody()
+			if err != nil {
+				return nil, 0, err
+			}
+			req.Body = rc
+		}
+
 		if c.OnAttempt != nil {
 			c.OnAttempt(method, u.String(), retries)
 		}
 		start := time.Now()
 		resp, err := c.HTTP.Do(req)
 		if err != nil {
-			if retries < c.Retry.MaxRetries {
-				delay := c.Retry.BaseDelay * (1 << retries)
-				if delay > c.Retry.MaxDelay && c.Retry.MaxDelay > 0 {
-					delay = c.Retry.MaxDelay
+			if ctx.Err() != nil {
+				if c.OnResult != nil {
+					c.OnResult(method, u.String(), retries, 0, ctx.Err(), time.Since(start))
 				}
-				select {
-				case <-ctx.Done():
-					if c.OnResult != nil {
-						c.OnResult(method, u.String(), retries, 0, ctx.Err(), time.Since(start))
-					}
-					return nil, 0, ctx.Err()
-				case <-time.After(delay):
+				return nil, 0, ctx.Err()
+			}
+			if retries >= c.Retry.MaxRetries || !isRetryableNetworkError(err) {
+				if c.OnResult != nil {
+					c.OnResult(method, u.String(), retries, 0, err, time.Since(start))
 				}
-				retries++
-				continue
+				return nil, 0, err
 			}
-			if c.OnResult != nil {
-				c.OnResult(method, u.String(), retries, 0, err, time.Since(start))
+			delay := nextBackoff(c.Retry, retries)
+			if c.OnRLWait != nil {
+				c.OnRLWait(delay)
 			}
-			return nil, 0, err
+			if waitErr := waitWithContext(ctx, delay); waitErr != nil {
+				if c.OnResult != nil {
+					c.OnResult(method, u.String(), retries, 0, waitErr, time.Since(start))
+				}
+				return nil, 0, waitErr
+			}
+			retries++
+			continue
 		}
 		status := resp.StatusCode
 		hdr := resp.Header.Clone()
-		if status == http.StatusTooManyRequests || status >= 500 {
-			if retries < c.Retry.MaxRetries {
-				if ra := resp.Header.Get("Retry-After"); ra != "" {
-					if secs, e := strconv.Atoi(ra); e == nil {
-						wait := time.Duration(secs) * time.Second
-						if c.OnRLWait != nil {
-							c.OnRLWait(wait)
-						}
-						resp.Body.Close()
-						time.Sleep(wait)
-					} else {
-						resp.Body.Close()
-					}
-				} else {
-					delay := c.Retry.BaseDelay * (1 << retries)
-					if delay > c.Retry.MaxDelay && c.Retry.MaxDelay > 0 {
-						delay = c.Retry.MaxDelay
-					}
-					if c.OnRLWait != nil {
-						c.OnRLWait(delay)
-					}
-					resp.Body.Close()
-					time.Sleep(delay)
-				}
-				retries++
-				continue
+		if shouldRetryStatus(status) && retries < c.Retry.MaxRetries {
+			wait, ok := parseRetryAfter(resp.Header, time.Now())
+			if !ok {
+				wait = nextBackoff(c.Retry, retries)
 			}
-			data, _ := io.ReadAll(resp.Body)
+			if c.OnRLWait != nil {
+				c.OnRLWait(wait)
+			}
 			resp.Body.Close()
-			var httpErr error
-			if c.OnHTTPError != nil {
-				httpErr = c.OnHTTPError(status, data)
-			} else {
-				httpErr = fmt.Errorf("http %d: %s", status, string(data))
+			if err := waitWithContext(ctx, wait); err != nil {
+				if c.OnResult != nil {
+					c.OnResult(method, u.String(), retries, status, err, time.Since(start))
+				}
+				return nil, status, err
 			}
-			if c.OnResult != nil {
-				c.OnResult(method, u.String(), retries, status, httpErr, time.Since(start))
-			}
-			return nil, status, httpErr
+			retries++
+			continue
 		}
 		if status < 200 || status >= 300 {
 			data, _ := io.ReadAll(resp.Body)

@@ -10,7 +10,9 @@ import (
 	"github.com/coachpo/meltica/config"
 	"github.com/coachpo/meltica/core"
 	"github.com/coachpo/meltica/core/exchanges/bootstrap"
+	exchangecap "github.com/coachpo/meltica/core/exchanges/capabilities"
 	corestreams "github.com/coachpo/meltica/core/streams"
+	"github.com/coachpo/meltica/exchanges/binance/infra/rest"
 	"github.com/coachpo/meltica/exchanges/binance/internal"
 	bnrouting "github.com/coachpo/meltica/exchanges/binance/routing"
 	routingrest "github.com/coachpo/meltica/exchanges/shared/routing"
@@ -25,6 +27,7 @@ type Exchange struct {
 	symbolSvc          *symbolService
 	listenKeySvc       *listenKeyService
 	bookSvc            *BookService
+	trading            tradingSuite
 	transportFactories bootstrap.TransportFactories
 	routerFactories    bootstrap.RouterFactories
 	cfg                config.Settings
@@ -34,6 +37,12 @@ type Exchange struct {
 	symbolRefreshInterval time.Duration
 	symbolRefreshCancel   context.CancelFunc
 	symbolRefreshDone     chan struct{}
+}
+
+type tradingSuite struct {
+	spot    bootstrap.TradingService
+	linear  bootstrap.TradingService
+	inverse bootstrap.TradingService
 }
 
 var capabilities = core.Capabilities(
@@ -100,6 +109,11 @@ func newExchangeWithFactories(settings config.Settings, transports bootstrap.Tra
 		symbolRefreshInterval: binCfg.SymbolRefreshInterval,
 		symbolRefreshDone:     make(chan struct{}),
 	}
+	services, err := x.buildTradingServices(restRouter, symbolSvc)
+	if err != nil {
+		return nil, err
+	}
+	x.trading = services
 
 	// Start background symbol refresh if configured
 	if binCfg.SymbolRefreshInterval > 0 {
@@ -144,6 +158,10 @@ func (x *Exchange) UpdateConfig(opts ...config.Option) error {
 	transportBundle.SetWS(x.routerFactories.NewWSRouter(transportBundle.WSInfra(), wsDeps))
 
 	bookSvc := newBookService(transportBundle.WS().(wsRouter), restRouter, symbolSvc)
+	services, err := x.buildTradingServices(restRouter, symbolSvc)
+	if err != nil {
+		return err
+	}
 
 	x.cfgMutex.Lock()
 	oldBundle := x.transportBundle
@@ -151,6 +169,7 @@ func (x *Exchange) UpdateConfig(opts ...config.Option) error {
 	x.symbolSvc = symbolSvc
 	x.listenKeySvc = listenKeySvc
 	x.bookSvc = bookSvc
+	x.trading = services
 	x.cfg = newCfg
 	x.cfgMutex.Unlock()
 
@@ -339,6 +358,19 @@ func (x *Exchange) instrument(ctx context.Context, market core.Market, symbol st
 	return x.symbolSvc.instrument(ctx, market, symbol)
 }
 
+func (x *Exchange) tradingServiceFor(market core.Market) bootstrap.TradingService {
+	switch market {
+	case core.MarketSpot:
+		return x.trading.spot
+	case core.MarketLinearFutures:
+		return x.trading.linear
+	case core.MarketInverseFutures:
+		return x.trading.inverse
+	default:
+		return nil
+	}
+}
+
 func (x *Exchange) restRouter() routingrest.RESTDispatcher {
 	if x.transportBundle == nil {
 		return nil
@@ -359,6 +391,97 @@ func (x *Exchange) wsRouter() wsRouter {
 		return nil
 	}
 	return router.(wsRouter)
+}
+
+func (x *Exchange) buildTradingServices(router routingrest.RESTDispatcher, symbols *symbolService) (tradingSuite, error) {
+	if router == nil {
+		return tradingSuite{}, internal.Exchange("trading: rest router unavailable")
+	}
+	if symbols == nil {
+		return tradingSuite{}, internal.Exchange("trading: symbol service unavailable")
+	}
+	build := func(cfg bnrouting.OrderTranslatorConfig, caps exchangecap.Set, reqs map[routingrest.OrderAction][]exchangecap.Capability) (bootstrap.TradingService, error) {
+		translator, err := bnrouting.NewOrderTranslator(cfg)
+		if err != nil {
+			return nil, err
+		}
+		options := []routingrest.OrderRouterOption{routingrest.WithCapabilities(caps)}
+		for action, deps := range reqs {
+			if len(deps) == 0 {
+				continue
+			}
+			options = append(options, routingrest.WithCapabilityRequirement(action, deps...))
+		}
+		r, err := routingrest.NewOrderRouter(router, translator, options...)
+		if err != nil {
+			return nil, err
+		}
+		return bootstrap.NewTradingService(bootstrap.TradingServiceConfig{Router: r})
+	}
+
+	spotCfg := x.orderTranslatorConfig(symbols, core.MarketSpot, string(rest.SpotAPI), "/api/v3/order", false)
+	spotCaps := exchangecap.Of(exchangecap.CapabilitySpotTradingREST, exchangecap.CapabilityTradingSpotAmend, exchangecap.CapabilityTradingSpotCancel)
+	spotReqs := map[routingrest.OrderAction][]exchangecap.Capability{
+		routingrest.ActionPlace:  {exchangecap.CapabilitySpotTradingREST},
+		routingrest.ActionAmend:  {exchangecap.CapabilitySpotTradingREST, exchangecap.CapabilityTradingSpotAmend},
+		routingrest.ActionGet:    {exchangecap.CapabilitySpotTradingREST},
+		routingrest.ActionCancel: {exchangecap.CapabilityTradingSpotCancel},
+	}
+	spotService, err := build(spotCfg, spotCaps, spotReqs)
+	if err != nil {
+		return tradingSuite{}, err
+	}
+
+	linearCfg := x.orderTranslatorConfig(symbols, core.MarketLinearFutures, linearFuturesEndpoints.api, linearFuturesEndpoints.orderPath, true)
+	linearCaps := exchangecap.Of(exchangecap.CapabilityLinearTradingREST, exchangecap.CapabilityTradingLinearAmend, exchangecap.CapabilityTradingLinearCancel)
+	linearReqs := map[routingrest.OrderAction][]exchangecap.Capability{
+		routingrest.ActionPlace:  {exchangecap.CapabilityLinearTradingREST},
+		routingrest.ActionAmend:  {exchangecap.CapabilityLinearTradingREST, exchangecap.CapabilityTradingLinearAmend},
+		routingrest.ActionGet:    {exchangecap.CapabilityLinearTradingREST},
+		routingrest.ActionCancel: {exchangecap.CapabilityTradingLinearCancel},
+	}
+	linearService, err := build(linearCfg, linearCaps, linearReqs)
+	if err != nil {
+		return tradingSuite{}, err
+	}
+
+	inverseCfg := x.orderTranslatorConfig(symbols, core.MarketInverseFutures, inverseFuturesEndpoints.api, inverseFuturesEndpoints.orderPath, true)
+	inverseCaps := exchangecap.Of(exchangecap.CapabilityInverseTradingREST, exchangecap.CapabilityTradingInverseAmend, exchangecap.CapabilityTradingInverseCancel)
+	inverseReqs := map[routingrest.OrderAction][]exchangecap.Capability{
+		routingrest.ActionPlace:  {exchangecap.CapabilityInverseTradingREST},
+		routingrest.ActionAmend:  {exchangecap.CapabilityInverseTradingREST, exchangecap.CapabilityTradingInverseAmend},
+		routingrest.ActionGet:    {exchangecap.CapabilityInverseTradingREST},
+		routingrest.ActionCancel: {exchangecap.CapabilityTradingInverseCancel},
+	}
+	inverseService, err := build(inverseCfg, inverseCaps, inverseReqs)
+	if err != nil {
+		return tradingSuite{}, err
+	}
+
+	return tradingSuite{spot: spotService, linear: linearService, inverse: inverseService}, nil
+}
+
+func (x *Exchange) orderTranslatorConfig(symbols *symbolService, market core.Market, api, path string, reduceOnly bool) bnrouting.OrderTranslatorConfig {
+	return bnrouting.OrderTranslatorConfig{
+		Market:    market,
+		API:       api,
+		OrderPath: path,
+		ResolveNative: func(ctx context.Context, symbol string) (string, error) {
+			return symbols.nativeForMarkets(ctx, symbol, market)
+		},
+		LookupInstrument: func(ctx context.Context, symbol string) (core.Instrument, error) {
+			inst, ok, err := symbols.instrument(ctx, market, symbol)
+			if err != nil {
+				return core.Instrument{}, err
+			}
+			if !ok {
+				return core.Instrument{}, internal.Invalid("instrument not found for %s", symbol)
+			}
+			return inst, nil
+		},
+		TimeInForce:       x.timeInForceCode,
+		SupportReduceOnly: reduceOnly,
+	}
 }
 
 func marketsOrAll(markets ...core.Market) []core.Market {
