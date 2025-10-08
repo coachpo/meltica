@@ -4,11 +4,12 @@ This document describes the core interfaces that exchange providers must impleme
 
 ## Architecture Overview
 
-Meltica uses a three-layer architecture:
+Meltica uses a four-layer architecture:
 
 - **Level 1**: Transport layer (REST/WebSocket clients)
 - **Level 2**: Routing layer (request/response mapping)
 - **Level 3**: Exchange layer (provider interface)
+- **Level 4**: Pipeline layer (filtering, aggregation, and client facade)
 
 ## Level 1: Transport Contracts
 

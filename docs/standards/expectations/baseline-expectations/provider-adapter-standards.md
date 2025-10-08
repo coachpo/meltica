@@ -4,7 +4,7 @@ This document defines the standards and expectations for implementing exchange p
 
 ## Architecture Compliance
 
-All exchange providers must follow the three-layer architecture:
+All exchange providers must follow the four-layer architecture:
 
 ### Level 1: Transport Layer
 - Implement `RESTClient` interface from `core/transport/transport_contracts.go`
@@ -19,6 +19,14 @@ All exchange providers must follow the three-layer architecture:
 - Handle data parsing and normalization
 
 ### Level 3: Exchange Layer
+- Implement provider interface and market-specific participants
+- Handle business logic and domain operations
+- Expose normalized market data and trading operations
+
+### Level 4: Pipeline Layer
+- Implement `pipeline.Adapter` interface for filter integration
+- Support public feeds, private streams, and REST endpoints
+- Expose channel-based sources for pipeline consumption
 
 - Implement the core `Exchange` interface:
 
@@ -47,7 +55,7 @@ type InverseFuturesParticipant interface {
 }
 
 type WebsocketParticipant interface {
-    WS() WS
+    WS(ctx context.Context) WS
 }
 ```
 

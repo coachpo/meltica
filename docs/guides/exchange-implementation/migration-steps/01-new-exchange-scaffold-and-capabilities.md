@@ -4,10 +4,11 @@ This step creates the basic directory structure and capability definitions for a
 
 ## Architecture Context
 
-Meltica uses a three-layer architecture:
+Meltica uses a four-layer architecture:
 - **Level 1**: Transport layer (REST/WebSocket clients)
-- **Level 2**: Routing layer (request/response mapping)  
+- **Level 2**: Routing layer (request/response mapping)
 - **Level 3**: Exchange layer (provider interface)
+- **Level 4**: Pipeline layer (filtering, aggregation, and client facade)
 
 ## Step 1.1: Create Directory Structure
 
