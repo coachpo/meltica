@@ -36,6 +36,7 @@ type Adapter struct {
 	restRouter restExecutor
 	sessionMgr *SessionManager
 	parser     *PrivateMessageParser
+	hooks      pipeline.AdapterHooks
 }
 
 // NewAdapter constructs a Binance filter adapter.
@@ -100,6 +101,36 @@ func (a *Adapter) Capabilities() pipeline.Capabilities {
 	}
 }
 
+// SetAdapterHooks configures observability callbacks for adapter activity.
+func (a *Adapter) SetAdapterHooks(h pipeline.AdapterHooks) {
+	a.hooks = h
+}
+
+func (a *Adapter) emitSubscribe(ctx context.Context, feed, symbol string) {
+	if a.hooks.OnSubscribe == nil {
+		return
+	}
+	a.hooks.OnSubscribe(ctx, pipeline.AdapterEvent{
+		Exchange: a.ExchangeName(),
+		Feed:     feed,
+		Symbol:   symbol,
+		Metadata: map[string]string{"adapter": "binance"},
+	})
+}
+
+func (a *Adapter) emitError(ctx context.Context, feed, symbol string, err error) {
+	if err == nil || a.hooks.OnError == nil {
+		return
+	}
+	a.hooks.OnError(ctx, pipeline.AdapterEvent{
+		Exchange: a.ExchangeName(),
+		Feed:     feed,
+		Symbol:   symbol,
+		Metadata: map[string]string{"adapter": "binance"},
+		Err:      err,
+	})
+}
+
 func (a *Adapter) ExchangeName() core.ExchangeName {
 	return core.ExchangeName("binance")
 }
@@ -117,8 +148,10 @@ func (a *Adapter) BookSources(ctx context.Context, symbols []string) ([]pipeline
 		}
 		events, errs, err := a.books.BookSnapshots(ctx, symbol)
 		if err != nil {
+			a.emitError(ctx, "books", symbol, err)
 			return nil, err
 		}
+		a.emitSubscribe(ctx, "books", symbol)
 		sources = append(sources, pipeline.BookSource{
 			Symbol: symbol,
 			Events: events,
@@ -143,10 +176,12 @@ func (a *Adapter) TradeSources(ctx context.Context, symbols []string) ([]pipelin
 		topic := core.MustCanonicalTopic(core.TopicTrade, symbol)
 		sub, err := a.ws.SubscribePublic(ctx, topic)
 		if err != nil {
+			a.emitError(ctx, "trades", symbol, err)
 			return nil, fmt.Errorf("trade subscription %s: %w", symbol, err)
 		}
 		events := make(chan corestreams.TradeEvent, 32)
 		errs := make(chan error, 1)
+		a.emitSubscribe(ctx, "trades", symbol)
 
 		go func(sym string, subscription core.Subscription) {
 			defer close(events)
@@ -181,6 +216,7 @@ func (a *Adapter) TradeSources(ctx context.Context, symbols []string) ([]pipelin
 						continue
 					}
 					if err != nil {
+						a.emitError(ctx, "trades", sym, err)
 						select {
 						case errs <- err:
 						case <-ctx.Done():
@@ -216,10 +252,12 @@ func (a *Adapter) TickerSources(ctx context.Context, symbols []string) ([]pipeli
 		topic := core.MustCanonicalTopic(core.TopicTicker, symbol)
 		sub, err := a.ws.SubscribePublic(ctx, topic)
 		if err != nil {
+			a.emitError(ctx, "tickers", symbol, err)
 			return nil, fmt.Errorf("ticker subscription %s: %w", symbol, err)
 		}
 		events := make(chan corestreams.TickerEvent, 32)
 		errs := make(chan error, 1)
+		a.emitSubscribe(ctx, "tickers", symbol)
 
 		go func(sym string, subscription core.Subscription) {
 			defer close(events)
@@ -254,6 +292,7 @@ func (a *Adapter) TickerSources(ctx context.Context, symbols []string) ([]pipeli
 						continue
 					}
 					if err != nil {
+						a.emitError(ctx, "tickers", sym, err)
 						select {
 						case errs <- err:
 						case <-ctx.Done():
@@ -285,7 +324,7 @@ func (a *Adapter) PrivateSources(ctx context.Context, auth *pipeline.AuthContext
 	// Subscribe to account updates
 	accountEvents := make(chan pipeline.Event, 32)
 	accountErrors := make(chan error, 1)
-
+	a.emitSubscribe(ctx, "private_account", "")
 	go a.forwardPrivateEvents(ctx, "account", accountEvents, accountErrors)
 
 	sources = append(sources, pipeline.PrivateSource{
@@ -296,7 +335,7 @@ func (a *Adapter) PrivateSources(ctx context.Context, auth *pipeline.AuthContext
 	// Subscribe to order updates
 	orderEvents := make(chan pipeline.Event, 32)
 	orderErrors := make(chan error, 1)
-
+	a.emitSubscribe(ctx, "private_orders", "")
 	go a.forwardPrivateEvents(ctx, "orders", orderEvents, orderErrors)
 
 	sources = append(sources, pipeline.PrivateSource{
@@ -310,11 +349,13 @@ func (a *Adapter) PrivateSources(ctx context.Context, auth *pipeline.AuthContext
 // ExecuteREST executes REST API calls through the filter pipeline.
 func (a *Adapter) ExecuteREST(ctx context.Context, req pipeline.InteractionRequest) (<-chan pipeline.Event, <-chan error, error) {
 	if a.restRouter == nil {
+		a.emitError(ctx, "rest", req.Symbol, fmt.Errorf("REST router not available"))
 		return nil, nil, fmt.Errorf("REST router not available")
 	}
 
 	events := make(chan pipeline.Event, 1)
 	errors := make(chan error, 1)
+	a.emitSubscribe(ctx, "rest", req.Symbol)
 
 	go func() {
 		defer close(events)
@@ -341,6 +382,7 @@ func (a *Adapter) ExecuteREST(ctx context.Context, req pipeline.InteractionReque
 		event := a.createResponseEvent(req, result, err)
 
 		if err != nil {
+			a.emitError(ctx, "rest", req.Symbol, err)
 			select {
 			case errors <- err:
 			case <-ctx.Done():
@@ -458,10 +500,17 @@ func (a *Adapter) forwardPrivateEvents(ctx context.Context, streamType string, e
 	defer close(events)
 	defer close(errors)
 
+	feedName := "private"
+	if streamType != "" {
+		feedName = "private_" + streamType
+	}
+
 	sub, err := a.privateWS.SubscribePrivate(ctx)
 	if err != nil {
+		wrapped := fmt.Errorf("subscribe private %s: %w", streamType, err)
+		a.emitError(ctx, feedName, "", wrapped)
 		select {
-		case errors <- fmt.Errorf("subscribe private %s: %w", streamType, err):
+		case errors <- wrapped:
 		case <-ctx.Done():
 		}
 		return
@@ -491,6 +540,7 @@ func (a *Adapter) forwardPrivateEvents(ctx context.Context, streamType string, e
 			if err != nil {
 				// Create error event for parsing failures
 				errorEvent := a.parser.ParseError(err, msg.Raw)
+				a.emitError(ctx, feedName, "", err)
 				select {
 				case errors <- err:
 				case <-ctx.Done():
@@ -518,6 +568,7 @@ func (a *Adapter) forwardPrivateEvents(ctx context.Context, streamType string, e
 				return
 			}
 			if err != nil {
+				a.emitError(ctx, feedName, "", err)
 				select {
 				case errors <- err:
 				case <-ctx.Done():

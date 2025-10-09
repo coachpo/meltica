@@ -52,21 +52,45 @@ func (s *stubAdapter) Close() {}
 
 func (s *stubAdapter) ExchangeName() core.ExchangeName { return "" }
 
+const benchmarkEvents = 512
+
 func BenchmarkPipeline(b *testing.B) {
-	run := func(name string, req PipelineRequest) {
-		b.Run(name, func(b *testing.B) {
+	cases := []struct {
+		name string
+		req  PipelineRequest
+	}{
+		{
+			name: "baseline",
+			req: PipelineRequest{
+				Symbols: []string{"BTC-USDT"},
+				Feeds:   FeedSelection{Trades: true},
+			},
+		},
+		{
+			name: "with_snapshots",
+			req: PipelineRequest{
+				Symbols:         []string{"BTC-USDT"},
+				Feeds:           FeedSelection{Trades: true},
+				EnableSnapshots: true,
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		b.Run(tc.name, func(b *testing.B) {
+			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
 				ctx, cancel := context.WithCancel(context.Background())
 
-				tradeCh := make(chan corestreams.TradeEvent, 1024)
-				errCh := make(chan error)
-				for j := 0; j < 1024; j++ {
+				tradeCh := make(chan corestreams.TradeEvent, benchmarkEvents)
+				for j := 0; j < benchmarkEvents; j++ {
 					tradeCh <- corestreams.TradeEvent{
 						Symbol: "BTC-USDT",
 						Time:   time.Unix(int64(j), 0),
 					}
 				}
 				close(tradeCh)
+				errCh := make(chan error, 1)
 				close(errCh)
 
 				adapter := &stubAdapter{
@@ -77,30 +101,50 @@ func BenchmarkPipeline(b *testing.B) {
 				}
 
 				coord := NewCoordinator(adapter, nil)
-				stream, err := coord.Stream(ctx, req)
+				stream, err := coord.Stream(ctx, tc.req)
 				if err != nil {
 					b.Fatalf("stream: %v", err)
 				}
-				b.ResetTimer()
 				count := 0
 				for range stream.Events {
 					count++
 				}
-				b.StopTimer()
+				if count == 0 {
+					b.Fatalf("expected events for %s", tc.name)
+				}
 				stream.Close()
 				coord.Close()
 				cancel()
 			}
 		})
 	}
+}
 
-	run("baseline", PipelineRequest{
-		Symbols: []string{"BTC-USDT"},
-		Feeds:   FeedSelection{Trades: true},
-	})
-	run("with_snapshots", PipelineRequest{
-		Symbols:         []string{"BTC-USDT"},
-		Feeds:           FeedSelection{Trades: true},
-		EnableSnapshots: true,
-	})
+var benchmarkClientEvent ClientEvent
+
+func BenchmarkHotPathClientEventFromPipeline(b *testing.B) {
+	trade := corestreams.TradeEvent{Symbol: "BTC-USDT"}
+	evt := Event{
+		Transport: TransportPublicWS,
+		Symbol:    "BTC-USDT",
+		Payload:   TradePayload{Trade: &trade},
+		Metadata: map[string]any{
+			metadataKeySourceFeed:     "trade",
+			metadataKeySourceSymbol:   "BTC-USDT",
+			metadataKeySourceExchange: "binance",
+			metadataKeySourceSequence: uint64(42),
+		},
+	}
+
+	b.ReportAllocs()
+	if allocs := testing.AllocsPerRun(1, func() {
+		benchmarkClientEvent = clientEventFromPipeline(evt)
+	}); allocs != 0 {
+		b.Fatalf("client event conversion allocated %.0f objects", allocs)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		benchmarkClientEvent = clientEventFromPipeline(evt)
+	}
 }

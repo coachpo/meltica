@@ -2,7 +2,6 @@ package pipeline
 
 import (
 	"context"
-	"fmt"
 	"math"
 	"math/big"
 	"sort"
@@ -97,7 +96,6 @@ func (m *MockAdapter) TickerSources(ctx context.Context, symbols []string) ([]Ti
 }
 
 func (m *MockAdapter) PrivateSources(ctx context.Context, auth *AuthContext) ([]PrivateSource, error) {
-	fmt.Println("MockAdapter.PrivateSources called")
 	sources := make([]PrivateSource, 0, 2)
 
 	// Account events

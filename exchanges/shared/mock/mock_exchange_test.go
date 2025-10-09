@@ -122,10 +122,13 @@ func TestSetRESTResponseOverridesDefault(t *testing.T) {
 	defer stream.Close()
 
 	select {
-	case evt := <-stream.Events:
+	case evt, ok := <-stream.Events:
+		if !ok {
+			t.Fatal("events channel closed before rest response")
+		}
 		payload, ok := evt.Payload.(pipeline.RestResponsePayload)
 		if !ok || payload.Response == nil {
-			t.Fatalf("expected rest response payload, got %#v", evt.Payload)
+			t.Fatalf("expected rest response payload, got %#v", evt)
 		}
 		if payload.Response.StatusCode != 299 {
 			t.Fatalf("expected status code 299, got %d", payload.Response.StatusCode)
