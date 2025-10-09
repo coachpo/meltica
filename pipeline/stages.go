@@ -3,6 +3,7 @@ package pipeline
 import (
 	"context"
 	"fmt"
+	"log"
 	"math/big"
 	"time"
 
@@ -136,6 +137,99 @@ func newThrottleStage(interval time.Duration) PipelineStep {
 	})
 }
 
+func newSymbolGuardStage(exchange core.ExchangeName) PipelineStep {
+	if exchange == "" {
+		return nil
+	}
+	guard := core.NewSymbolGuard(exchange, func(alert core.SymbolDriftAlert) {
+		log.Printf("symbol guard drift exchange=%s feed=%s canonical=%s expected=%s observed=%s remediation=%q",
+			alert.Exchange, alert.Feed, alert.Canonical, alert.ExpectedSymbol, alert.ObservedSymbol, alert.Remediation)
+	})
+	reported := make(map[string]struct{})
+	return NewPipelineStepFunc("symbol_guard", func(ctx context.Context, input PipelineStepResult) PipelineStepResult {
+		if input.Events == nil {
+			return input
+		}
+		events := make(chan ClientEvent, 128)
+		errors := make(chan error, 16)
+		eventSource := input.Events
+		errorSource := input.Errors
+
+		go func() {
+			defer close(events)
+			defer close(errors)
+			for eventSource != nil || errorSource != nil {
+				if eventSource == nil {
+					if errorSource == nil {
+						break
+					}
+					select {
+					case <-ctx.Done():
+						return
+					case err, ok := <-errorSource:
+						if !ok {
+							errorSource = nil
+							continue
+						}
+						if err != nil {
+							select {
+							case errors <- err:
+							case <-ctx.Done():
+								return
+							}
+						}
+					default:
+						errorSource = nil
+					}
+					continue
+				}
+				select {
+				case <-ctx.Done():
+					return
+				case evt, ok := <-eventSource:
+					if !ok {
+						eventSource = nil
+						continue
+					}
+					feedID, snapshot := guardSnapshotFromEvent(evt)
+					if feedID != "" && snapshot != nil {
+						if err := guard.Check(feedID, snapshot); err != nil {
+							if _, seen := reported[feedID]; !seen {
+								reported[feedID] = struct{}{}
+								select {
+								case errors <- err:
+								case <-ctx.Done():
+									return
+								}
+							}
+							continue
+						}
+					}
+					select {
+					case events <- evt:
+					case <-ctx.Done():
+						return
+					}
+				case err, ok := <-errorSource:
+					if !ok {
+						errorSource = nil
+						continue
+					}
+					if err != nil {
+						select {
+						case errors <- err:
+						case <-ctx.Done():
+							return
+						}
+					}
+				}
+			}
+		}()
+
+		return PipelineStepResult{Events: events, Errors: errors}
+	})
+}
+
 func newNormalizeStage() PipelineStep {
 	return NewPipelineStepFunc("normalize", func(ctx context.Context, input PipelineStepResult) PipelineStepResult {
 		if input.Events == nil {
@@ -145,6 +239,7 @@ func newNormalizeStage() PipelineStep {
 		errors := make(chan error, 16)
 		eventSource := input.Events
 		errorSource := input.Errors
+		lastSequence := make(map[string]uint64)
 
 		go func() {
 			defer close(events)
@@ -162,6 +257,13 @@ func newNormalizeStage() PipelineStep {
 						if _, ok := evt.Payload.(RestResponsePayload); !ok {
 							continue
 						}
+					}
+					if feed, sym, seq, seqOK := extractSourceSequence(evt.Metadata); seqOK {
+						key := feed + "|" + sym
+						if last, seen := lastSequence[key]; seen && seq <= last {
+							continue
+						}
+						lastSequence[key] = seq
 					}
 					if evt.At.IsZero() {
 						evt.At = time.Now()
@@ -434,6 +536,139 @@ func newObserverStage(observer Observer) PipelineStep {
 
 		return PipelineStepResult{Events: events, Errors: errors}
 	})
+}
+
+func extractSourceSequence(meta map[string]any) (feed string, symbol string, sequence uint64, ok bool) {
+	if meta == nil {
+		return "", "", 0, false
+	}
+	feedVal, feedOK := meta[metadataKeySourceFeed].(string)
+	symbolVal, symbolOK := meta[metadataKeySourceSymbol].(string)
+	if !feedOK || !symbolOK || feedVal == "" || symbolVal == "" {
+		return "", "", 0, false
+	}
+	rawSeq, present := meta[metadataKeySourceSequence]
+	if !present {
+		return "", "", 0, false
+	}
+	var seq uint64
+	switch v := rawSeq.(type) {
+	case uint64:
+		seq = v
+	case uint32:
+		seq = uint64(v)
+	case uint16:
+		seq = uint64(v)
+	case int:
+		if v < 0 {
+			return "", "", 0, false
+		}
+		seq = uint64(v)
+	case int64:
+		if v < 0 {
+			return "", "", 0, false
+		}
+		seq = uint64(v)
+	case float64:
+		if v < 0 {
+			return "", "", 0, false
+		}
+		seq = uint64(v)
+	default:
+		return "", "", 0, false
+	}
+	if seq == 0 {
+		return "", "", 0, false
+	}
+	return feedVal, symbolVal, seq, true
+}
+
+type symbolGuardSnapshot struct {
+	canonical string
+	native    string
+}
+
+func (s symbolGuardSnapshot) Canonical() string { return s.canonical }
+
+func (s symbolGuardSnapshot) Native() string { return s.native }
+
+func guardSnapshotFromEvent(evt ClientEvent) (string, core.SymbolSnapshot) {
+	meta := evt.Metadata
+	feedType := metadataString(meta, metadataKeySourceFeed)
+	canonical := metadataString(meta, metadataKeySourceSymbol)
+	native := metadataString(meta, metadataKeySourceNative)
+	var symbol string
+
+	switch payload := evt.Payload.(type) {
+	case BookPayload:
+		if payload.Book != nil {
+			if canonical == "" {
+				canonical = payload.Book.Symbol
+			}
+			if payload.Book.VenueSymbol != "" {
+				native = payload.Book.VenueSymbol
+			}
+		}
+		if feedType == "" {
+			feedType = "book"
+		}
+	case TradePayload:
+		if payload.Trade != nil {
+			if canonical == "" {
+				canonical = payload.Trade.Symbol
+			}
+			if payload.Trade.VenueSymbol != "" {
+				native = payload.Trade.VenueSymbol
+			}
+		}
+		if feedType == "" {
+			feedType = "trade"
+		}
+	case TickerPayload:
+		if payload.Ticker != nil {
+			if canonical == "" {
+				canonical = payload.Ticker.Symbol
+			}
+			if payload.Ticker.VenueSymbol != "" {
+				native = payload.Ticker.VenueSymbol
+			}
+		}
+		if feedType == "" {
+			feedType = "ticker"
+		}
+	default:
+		if feedType == "" {
+			return "", nil
+		}
+	}
+
+	if canonical == "" {
+		return "", nil
+	}
+	if native == "" {
+		native = canonical
+	}
+	symbol = canonical
+	if symbol == "" {
+		symbol = metadataString(meta, metadataKeySourceSymbol)
+	}
+	feedID := feedType
+	if symbol != "" {
+		feedID = fmt.Sprintf("%s:%s", feedType, symbol)
+	}
+	return feedID, symbolGuardSnapshot{canonical: canonical, native: native}
+}
+
+func metadataString(meta map[string]any, key string) string {
+	if meta == nil {
+		return ""
+	}
+	if value, ok := meta[key]; ok {
+		if s, ok := value.(string); ok {
+			return s
+		}
+	}
+	return ""
 }
 
 func dispatchStage() PipelineStep {

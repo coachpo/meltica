@@ -2,6 +2,7 @@ package binance
 
 import (
 	"context"
+	"strings"
 
 	"github.com/coachpo/meltica/core"
 	corestreams "github.com/coachpo/meltica/core/streams"
@@ -29,14 +30,22 @@ func (d *wsDependencies) CanonicalSymbol(binanceSymbol string) (string, error) {
 	if d.symbols == nil {
 		return "", internal.Exchange("symbol service unavailable")
 	}
-	return d.symbols.canonicalForMarkets(context.Background(), binanceSymbol)
+	sanitized := strings.ToUpper(strings.TrimSpace(binanceSymbol))
+	if sanitized == "" {
+		return "", internal.Exchange("symbol service unavailable")
+	}
+	return d.symbols.canonicalForMarkets(context.Background(), sanitized)
 }
 
 func (d *wsDependencies) NativeSymbol(canonical string) (string, error) {
 	if d.symbols == nil {
 		return "", internal.Exchange("symbol service unavailable")
 	}
-	return d.symbols.nativeForMarkets(context.Background(), canonical)
+	sanitized := strings.ToUpper(strings.TrimSpace(canonical))
+	if sanitized == "" {
+		return "", internal.Exchange("symbol service unavailable")
+	}
+	return d.symbols.nativeForMarkets(context.Background(), sanitized)
 }
 
 func (d *wsDependencies) NativeTopic(topic core.Topic) (string, error) {

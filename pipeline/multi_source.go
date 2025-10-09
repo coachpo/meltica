@@ -5,8 +5,38 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/coachpo/meltica/core"
 	corestreams "github.com/coachpo/meltica/core/streams"
 )
+
+const (
+	metadataKeySourceSequence = "source.sequence"
+	metadataKeySourceFeed     = "source.feed"
+	metadataKeySourceSymbol   = "source.symbol"
+	metadataKeySourceNative   = "source.native_symbol"
+	metadataKeySourceExchange = "source.exchange"
+)
+
+type sequenceTracker struct {
+	mu       sync.Mutex
+	counters map[string]uint64
+}
+
+func newSequenceTracker() *sequenceTracker {
+	return &sequenceTracker{counters: make(map[string]uint64)}
+}
+
+func (t *sequenceTracker) next(feed, symbol string) uint64 {
+	if t == nil {
+		return 0
+	}
+	key := feed + "|" + symbol
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	next := t.counters[key] + 1
+	t.counters[key] = next
+	return next
+}
 
 // multiSourceStage handles mixed channel sources including public feeds, private streams, and REST requests.
 func multiSourceStage(
@@ -24,6 +54,8 @@ func multiSourceStage(
 		})
 	}
 
+	exchange := adapter.ExchangeName()
+
 	return NewPipelineStepFunc("multi_source", func(ctx context.Context, input PipelineStepResult) PipelineStepResult {
 		events := make(chan ClientEvent, 128)
 		errors := make(chan error, 16)
@@ -32,7 +64,7 @@ func multiSourceStage(
 
 		// Start public feed sources
 		if req.Feeds.Books || req.Feeds.Trades || req.Feeds.Tickers {
-			startPublicSources(ctx, adapter, req, &wg, events, errors)
+			startPublicSources(ctx, adapter, req, &wg, events, errors, exchange)
 		}
 
 		// Start private stream sources
@@ -45,13 +77,10 @@ func multiSourceStage(
 			startRESTRequests(ctx, adapter, req.RESTRequests, &wg, events, errors)
 		}
 
-		// For mixed channel sources, we don't close events/errors channels immediately
-		// since private streams and REST requests may be long-running.
-		// The channels will be closed when the context is cancelled.
 		go func() {
 			wg.Wait()
-			// Only close channels if there are no long-running sources
-			// For now, we rely on context cancellation to close channels
+			close(events)
+			close(errors)
 		}()
 
 		return PipelineStepResult{Events: events, Errors: errors}
@@ -65,8 +94,10 @@ func startPublicSources(
 	wg *sync.WaitGroup,
 	events chan<- ClientEvent,
 	errors chan<- error,
+	exchange core.ExchangeName,
 ) {
 	capabilities := adapter.Capabilities()
+	tracker := newSequenceTracker()
 
 	if req.Feeds.Books && capabilities.Books {
 		bookSources, err := adapter.BookSources(ctx, req.Symbols)
@@ -77,7 +108,7 @@ func startPublicSources(
 			}
 		} else {
 			for _, src := range bookSources {
-				startBookForwarder(ctx, src.Symbol, src.Events, src.Errors, wg, events, errors)
+				startBookForwarder(ctx, src.Symbol, src.Events, src.Errors, wg, events, errors, tracker, exchange)
 			}
 		}
 	}
@@ -91,7 +122,7 @@ func startPublicSources(
 			}
 		} else {
 			for _, src := range tradeSources {
-				startTradeForwarder(ctx, src.Symbol, src.Events, src.Errors, wg, events, errors)
+				startTradeForwarder(ctx, src.Symbol, src.Events, src.Errors, wg, events, errors, tracker, exchange)
 			}
 		}
 	}
@@ -105,7 +136,7 @@ func startPublicSources(
 			}
 		} else {
 			for _, src := range tickerSources {
-				startTickerForwarder(ctx, src.Symbol, src.Events, src.Errors, wg, events, errors)
+				startTickerForwarder(ctx, src.Symbol, src.Events, src.Errors, wg, events, errors, tracker, exchange)
 			}
 		}
 	}
@@ -248,6 +279,8 @@ func startBookForwarder(
 	wg *sync.WaitGroup,
 	events chan<- ClientEvent,
 	errors chan<- error,
+	tracker *sequenceTracker,
+	exchange core.ExchangeName,
 ) {
 	wg.Add(1)
 	go func() {
@@ -263,11 +296,27 @@ func startBookForwarder(
 				}
 
 				payload := BookPayload{Book: &evt}
+				native := symbol
+				if evt.VenueSymbol != "" {
+					native = evt.VenueSymbol
+				}
+				metadata := map[string]any{
+					metadataKeySourceFeed:     "book",
+					metadataKeySourceSymbol:   symbol,
+					metadataKeySourceSequence: tracker.next("book", symbol),
+				}
+				if native != "" {
+					metadata[metadataKeySourceNative] = native
+				}
+				if exchange != "" {
+					metadata[metadataKeySourceExchange] = string(exchange)
+				}
 				event := ClientEvent{
-					Channel: ChannelPublicWS,
-					Symbol:  symbol,
-					At:      evt.Time,
-					Payload: payload,
+					Channel:  ChannelPublicWS,
+					Symbol:   symbol,
+					At:       evt.Time,
+					Payload:  payload,
+					Metadata: metadata,
 				}
 
 				select {
@@ -300,6 +349,8 @@ func startTradeForwarder(
 	wg *sync.WaitGroup,
 	events chan<- ClientEvent,
 	errors chan<- error,
+	tracker *sequenceTracker,
+	exchange core.ExchangeName,
 ) {
 	wg.Add(1)
 	go func() {
@@ -315,11 +366,27 @@ func startTradeForwarder(
 				}
 
 				payload := TradePayload{Trade: &evt}
+				native := symbol
+				if evt.VenueSymbol != "" {
+					native = evt.VenueSymbol
+				}
+				metadata := map[string]any{
+					metadataKeySourceFeed:     "trade",
+					metadataKeySourceSymbol:   symbol,
+					metadataKeySourceSequence: tracker.next("trade", symbol),
+				}
+				if native != "" {
+					metadata[metadataKeySourceNative] = native
+				}
+				if exchange != "" {
+					metadata[metadataKeySourceExchange] = string(exchange)
+				}
 				event := ClientEvent{
-					Channel: ChannelPublicWS,
-					Symbol:  symbol,
-					At:      evt.Time,
-					Payload: payload,
+					Channel:  ChannelPublicWS,
+					Symbol:   symbol,
+					At:       evt.Time,
+					Payload:  payload,
+					Metadata: metadata,
 				}
 
 				select {
@@ -352,6 +419,8 @@ func startTickerForwarder(
 	wg *sync.WaitGroup,
 	events chan<- ClientEvent,
 	errors chan<- error,
+	tracker *sequenceTracker,
+	exchange core.ExchangeName,
 ) {
 	wg.Add(1)
 	go func() {
@@ -367,11 +436,27 @@ func startTickerForwarder(
 				}
 
 				payload := TickerPayload{Ticker: &evt}
+				native := symbol
+				if evt.VenueSymbol != "" {
+					native = evt.VenueSymbol
+				}
+				metadata := map[string]any{
+					metadataKeySourceFeed:     "ticker",
+					metadataKeySourceSymbol:   symbol,
+					metadataKeySourceSequence: tracker.next("ticker", symbol),
+				}
+				if native != "" {
+					metadata[metadataKeySourceNative] = native
+				}
+				if exchange != "" {
+					metadata[metadataKeySourceExchange] = string(exchange)
+				}
 				event := ClientEvent{
-					Channel: ChannelPublicWS,
-					Symbol:  symbol,
-					At:      evt.Time,
-					Payload: payload,
+					Channel:  ChannelPublicWS,
+					Symbol:   symbol,
+					At:       evt.Time,
+					Payload:  payload,
+					Metadata: metadata,
 				}
 
 				select {

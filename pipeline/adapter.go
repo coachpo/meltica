@@ -3,6 +3,7 @@ package pipeline
 import (
 	"context"
 
+	"github.com/coachpo/meltica/core"
 	corestreams "github.com/coachpo/meltica/core/streams"
 )
 
@@ -29,6 +30,9 @@ type Adapter interface {
 	// Lifecycle hooks
 	InitPrivateSession(ctx context.Context, auth *AuthContext) error
 	Close()
+
+	// ExchangeName returns the canonical identifier for the adapter's venue.
+	ExchangeName() core.ExchangeName
 }
 
 // BookSource represents a single symbol subscription to book events.

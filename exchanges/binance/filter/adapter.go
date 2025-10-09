@@ -100,6 +100,10 @@ func (a *Adapter) Capabilities() pipeline.Capabilities {
 	}
 }
 
+func (a *Adapter) ExchangeName() core.ExchangeName {
+	return core.ExchangeName("binance")
+}
+
 // BookSources subscribes to book feeds for the requested symbols.
 func (a *Adapter) BookSources(ctx context.Context, symbols []string) ([]pipeline.BookSource, error) {
 	if a.books == nil {

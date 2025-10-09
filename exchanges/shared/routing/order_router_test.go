@@ -120,6 +120,17 @@ func TestOrderRouterCapabilityMissing(t *testing.T) {
 	}
 }
 
+func TestOrderRouterCapabilitiesReported(t *testing.T) {
+	set := capabilities.Of(capabilities.CapabilitySpotTradingREST)
+	router, err := NewOrderRouter(noopDispatcher{}, noopTranslator{}, WithCapabilities(set))
+	if err != nil {
+		t.Fatalf("NewOrderRouter returned error: %v", err)
+	}
+	if router.Capabilities() != set {
+		t.Fatalf("expected capability set %v, got %v", set, router.Capabilities())
+	}
+}
+
 // --- Fixtures ----------------------------------------------------------------
 
 type orderFixture struct {
@@ -414,6 +425,28 @@ func (f orderFixture) validateOrderRequest(req core.OrderRequest) error {
 	}
 	return nil
 }
+
+type noopTranslator struct{}
+
+func (noopTranslator) PrepareCreate(context.Context, core.OrderRequest) (DispatchSpec, error) {
+	return DispatchSpec{}, nil
+}
+
+func (noopTranslator) PrepareAmend(context.Context, OrderAmendRequest) (DispatchSpec, error) {
+	return DispatchSpec{}, nil
+}
+
+func (noopTranslator) PrepareGet(context.Context, OrderQueryRequest) (DispatchSpec, error) {
+	return DispatchSpec{}, nil
+}
+
+func (noopTranslator) PrepareCancel(context.Context, OrderCancelRequest) (DispatchSpec, error) {
+	return DispatchSpec{}, nil
+}
+
+type noopDispatcher struct{}
+
+func (noopDispatcher) Dispatch(context.Context, RESTMessage, any) error { return nil }
 
 func (f orderFixture) validateAmendRequest(req OrderAmendRequest) error {
 	if f.Canonical.Symbol != "" && req.Symbol != f.Canonical.Symbol {

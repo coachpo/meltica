@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/coachpo/meltica/core"
 	corestreams "github.com/coachpo/meltica/core/streams"
 )
 
@@ -48,6 +49,8 @@ func (s *stubAdapter) InitPrivateSession(ctx context.Context, auth *AuthContext)
 }
 
 func (s *stubAdapter) Close() {}
+
+func (s *stubAdapter) ExchangeName() core.ExchangeName { return "" }
 
 func BenchmarkPipeline(b *testing.B) {
 	run := func(name string, req PipelineRequest) {

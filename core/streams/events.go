@@ -9,26 +9,29 @@ import (
 
 // TradeEvent represents a normalized public trade update.
 type TradeEvent struct {
-	Symbol   string
-	Price    *big.Rat
-	Quantity *big.Rat
-	Time     time.Time
+	Symbol      string
+	VenueSymbol string
+	Price       *big.Rat
+	Quantity    *big.Rat
+	Time        time.Time
 }
 
 // TickerEvent represents a normalized top of book update.
 type TickerEvent struct {
-	Symbol string
-	Bid    *big.Rat
-	Ask    *big.Rat
-	Time   time.Time
+	Symbol      string
+	VenueSymbol string
+	Bid         *big.Rat
+	Ask         *big.Rat
+	Time        time.Time
 }
 
 // BookEvent represents an order book snapshot.
 type BookEvent struct {
-	Symbol string
-	Bids   []core.BookDepthLevel
-	Asks   []core.BookDepthLevel
-	Time   time.Time
+	Symbol      string
+	VenueSymbol string
+	Bids        []core.BookDepthLevel
+	Asks        []core.BookDepthLevel
+	Time        time.Time
 }
 
 // OrderEvent is a normalized private websocket order update.

@@ -54,7 +54,13 @@ var capabilities = core.Capabilities(
 	core.CapabilityInverseTradingREST,
 	core.CapabilityWebsocketPublic,
 	core.CapabilityWebsocketPrivate,
+	core.CapabilityMarketTrades,
+	core.CapabilityMarketTicker,
+	core.CapabilityMarketOrderBook,
 )
+
+// Capabilities reports the capability bitset exposed by the Binance adapter.
+func Capabilities() core.ExchangeCapabilities { return capabilities }
 
 type wsRouter interface {
 	SubscribePublic(ctx context.Context, topics ...string) (bnrouting.Subscription, error)

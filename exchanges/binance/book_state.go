@@ -37,6 +37,7 @@ func (m *BookManager) GetOrCreate(symbol string) *Book {
 // Book represents the current state of the Binance book for a symbol.
 type Book struct {
 	Symbol        string
+	VenueSymbol   string
 	Bids          map[string]*big.Rat
 	Asks          map[string]*big.Rat
 	lastUpdateID  int64
@@ -51,6 +52,7 @@ func (b *Book) InitializeFromSnapshot(snapshot corestreams.BookEvent, snapshotUp
 
 	b.Bids = make(map[string]*big.Rat)
 	b.Asks = make(map[string]*big.Rat)
+	b.VenueSymbol = snapshot.VenueSymbol
 
 	for _, level := range snapshot.Bids {
 		if level.Price != nil && level.Qty != nil && level.Qty.Sign() > 0 {
@@ -89,14 +91,15 @@ func (b *Book) GetSnapshot() corestreams.BookEvent {
 	}
 
 	return corestreams.BookEvent{
-		Symbol: b.Symbol,
-		Bids:   bids,
-		Asks:   asks,
-		Time:   b.LastUpdate,
+		Symbol:      b.Symbol,
+		VenueSymbol: b.VenueSymbol,
+		Bids:        bids,
+		Asks:        asks,
+		Time:        b.LastUpdate,
 	}
 }
 
-func (b *Book) UpdateFromDelta(bids, asks []core.BookDepthLevel, firstUpdateID, lastUpdateID int64, updateTime time.Time) bool {
+func (b *Book) UpdateFromDelta(bids, asks []core.BookDepthLevel, firstUpdateID, lastUpdateID int64, updateTime time.Time, venueSymbol string) bool {
 	success := true
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -140,6 +143,9 @@ func (b *Book) UpdateFromDelta(bids, asks []core.BookDepthLevel, firstUpdateID, 
 
 	b.lastUpdateID = lastUpdateID
 	b.LastUpdate = updateTime
+	if venueSymbol != "" {
+		b.VenueSymbol = venueSymbol
+	}
 	return success
 }
 

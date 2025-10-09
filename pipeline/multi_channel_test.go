@@ -3,7 +3,9 @@ package pipeline
 import (
 	"context"
 	"fmt"
+	"math"
 	"math/big"
+	"sort"
 	"testing"
 	"time"
 
@@ -173,6 +175,10 @@ func (m *MockAdapter) Close() {
 	for _, ch := range m.privateErrors {
 		close(ch)
 	}
+}
+
+func (m *MockAdapter) ExchangeName() core.ExchangeName {
+	return core.ExchangeName("mock")
 }
 
 // TestMultiChannelPublicStreams tests mixed public stream processing
@@ -464,4 +470,102 @@ func TestMultiChannelMixedWorkflows(t *testing.T) {
 func bigRat(s string) *big.Rat {
 	r, _ := new(big.Rat).SetString(s)
 	return r
+}
+
+func TestMultiChannelLatencySoakUnderTenMillisecondsP99(t *testing.T) {
+	adapter := NewMockAdapter()
+	facade := NewInteractionFacade(adapter, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	symbols := []string{"BTC-USDT", "ETH-USDT"}
+	stream, err := facade.SubscribePublic(ctx, symbols, WithTrades())
+	if err != nil {
+		t.Fatalf("failed to subscribe for latency soak: %v", err)
+	}
+	defer stream.Close()
+
+	const eventsPerVenue = 10000
+	totalExpected := len(symbols) * eventsPerVenue
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < eventsPerVenue; i++ {
+			for _, symbol := range symbols {
+				evt := corestreams.TradeEvent{
+					Symbol:   symbol,
+					Price:    bigRat("50000.00"),
+					Quantity: bigRat("0.1"),
+					Time:     time.Now(),
+				}
+				adapter.tradeEvents[symbol] <- evt
+			}
+		}
+	}()
+
+	latencies := make([]time.Duration, 0, totalExpected)
+	deadline := time.After(30 * time.Second)
+	received := 0
+	for received < totalExpected {
+		select {
+		case evt, ok := <-stream.Events:
+			if !ok {
+				t.Fatalf("stream closed after %d events", received)
+			}
+			latencies = append(latencies, time.Since(evt.At))
+			received++
+		case <-deadline:
+			t.Fatalf("latency soak timeout after receiving %d events", received)
+		}
+	}
+
+	<-done
+
+	sorted := append([]time.Duration(nil), latencies...)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i] < sorted[j] })
+
+	idx := int(math.Ceil(0.99*float64(len(sorted)))) - 1
+	if idx < 0 {
+		idx = 0
+	}
+	p99 := sorted[idx]
+
+	buckets := []struct {
+		label string
+		upper time.Duration
+	}{
+		{"<=1ms", time.Millisecond},
+		{"<=2ms", 2 * time.Millisecond},
+		{"<=5ms", 5 * time.Millisecond},
+		{"<=10ms", 10 * time.Millisecond},
+		{">10ms", 0},
+	}
+	counts := make(map[string]int, len(buckets))
+	for _, latency := range sorted {
+		placed := false
+		for _, bucket := range buckets {
+			if bucket.upper == 0 {
+				continue
+			}
+			if latency <= bucket.upper {
+				counts[bucket.label]++
+				placed = true
+				break
+			}
+		}
+		if !placed {
+			counts[">10ms"]++
+		}
+	}
+
+	for _, bucket := range buckets {
+		t.Logf("latency bucket %s: %d", bucket.label, counts[bucket.label])
+	}
+	t.Logf("latency p99: %s over %d events", p99, len(sorted))
+
+	if p99 > 10*time.Millisecond {
+		t.Fatalf("p99 latency %s exceeds 10ms budget", p99)
+	}
 }

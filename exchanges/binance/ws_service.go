@@ -24,7 +24,7 @@ func (w *wsService) SubscribePublic(ctx context.Context, topics ...string) (core
 	if err != nil {
 		return nil, err
 	}
-	return newWSServerSubscription(sub), nil
+	return newWSServerSubscription(ctx, sub), nil
 }
 
 func (w *wsService) SubscribePrivate(ctx context.Context, topics ...string) (core.Subscription, error) {
@@ -39,18 +39,23 @@ func (w *wsService) SubscribePrivate(ctx context.Context, topics ...string) (cor
 	if err != nil {
 		return nil, err
 	}
-	return newWSServerSubscription(sub), nil
+	return newWSServerSubscription(ctx, sub), nil
 }
 
 type wsServerSubscription struct {
 	inner routing.Subscription
+	ctx   context.Context
 	c     chan core.Message
 	err   chan error
 }
 
-func newWSServerSubscription(inner routing.Subscription) *wsServerSubscription {
+func newWSServerSubscription(ctx context.Context, inner routing.Subscription) *wsServerSubscription {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	s := &wsServerSubscription{
 		inner: inner,
+		ctx:   ctx,
 		c:     make(chan core.Message, 1024),
 		err:   make(chan error, 1),
 	}
@@ -67,6 +72,8 @@ func (s *wsServerSubscription) forward() {
 
 	for {
 		select {
+		case <-s.ctx.Done():
+			return
 		case msg, ok := <-routed:
 			if !ok {
 				return

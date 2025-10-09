@@ -188,7 +188,7 @@ func (s *BookService) applyDelta(
 	delta *bnrouting.DepthDelta,
 	errs chan<- error,
 ) {
-	success := book.UpdateFromDelta(delta.Bids, delta.Asks, delta.FirstUpdateID, delta.LastUpdateID, delta.EventTime)
+	success := book.UpdateFromDelta(delta.Bids, delta.Asks, delta.FirstUpdateID, delta.LastUpdateID, delta.EventTime, delta.VenueSymbol)
 	if !success {
 		// Gap detected, need to reinitialize
 		log.Printf("Order book gap detected for %s, reinitializing", delta.Symbol)
@@ -262,7 +262,7 @@ func (s *BookService) Snapshot(ctx context.Context, symbol string, limit int) (c
 	}
 	bids := convertDepthLevels(resp.Bids)
 	asks := convertDepthLevels(resp.Asks)
-	event := corestreams.BookEvent{Symbol: symbol, Bids: bids, Asks: asks, Time: time.Now()}
+	event := corestreams.BookEvent{Symbol: symbol, VenueSymbol: native, Bids: bids, Asks: asks, Time: time.Now()}
 	return event, resp.LastUpdateID, nil
 }
 

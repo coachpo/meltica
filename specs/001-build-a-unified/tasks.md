@@ -51,19 +51,19 @@
 
 ### Tests (write first)
 
-- [ ] T301 [P] [US2] Create event schema conformance tests in `market_data/events_test.go` covering trades, order books, funding, and account updates using recorded fixtures in `market_data/testdata/`.
-- [ ] T302 [US2] Build latency soak test harness in `pipeline/multi_channel_test.go` simulating 10k events per venue, instrumenting timestamps at transport boundary and post-normalization, and asserting P99 latency <10 ms (PERF-01). The harness must log distribution histograms and fail if the threshold is exceeded.
-- [ ] T303a [US2] Add symbol drift regression test in `market_data/symbol_guard_test.go` simulating mid-session symbol format changes (e.g., venue switching from "BTC-USD" to "BTCUSD"). Verify the system halts affected feeds, emits structured errors with remediation guidance, and prevents propagation of malformed events.
+- [X] T301 [P] [US2] Create event schema conformance tests in `market_data/events_test.go` covering trades, order books, funding, and account updates using recorded fixtures in `market_data/testdata/`.
+- [X] T302 [US2] Build latency soak test harness in `pipeline/multi_channel_test.go` simulating 10k events per venue, instrumenting timestamps at transport boundary and post-normalization, and asserting P99 latency <10 ms (PERF-01). The harness must log distribution histograms and fail if the threshold is exceeded.
+- [X] T303a [US2] Add symbol drift regression test in `market_data/symbol_guard_test.go` simulating mid-session symbol format changes (e.g., venue switching from "BTC-USD" to "BTCUSD"). Verify the system halts affected feeds, emits structured errors with remediation guidance, and prevents propagation of malformed events.
 
 ### Implementation
 
-- [ ] T303 [ALL→US2] Introduce canonical market data event structs and builders in `market_data/events.go`, ensuring rational math and canonical symbol usage.
-- [ ] T304 [US2] Enhance stream fan-out and ordering logic in `pipeline/multi_source.go` and `pipeline/stages.go` to tag events with source metadata and maintain per-venue sequencing.
-- [ ] T305 [P] [US2] Update Binance WebSocket handling (`exchanges/binance/ws_service.go`, `exchanges/binance/ws_dependencies.go`) to emit canonical events and propagate contexts through goroutines.
-- [ ] T306 [US2] Implement market data capability declarations in `exchanges/binance/plugin/register.go` (or equivalent) referencing the new bitsets.
-- [ ] T307 [P] [US2] Add rational precision guards and unit tests for JSON encoding/decoding in `market_data/encoder.go` (new) and `market_data/encoder_test.go`.
-- [ ] T308 [US2] Run `go test ./market_data ./pipeline -race -bench=.` ensuring TS-05 error paths are covered and documenting benchmark results against PERF-01 (P99 <10 ms normalization latency) and PERF-03 (end-to-end propagation) in test output. Fail the build if P99 exceeds 10 ms threshold.
-- [ ] T309 [P] [US2] Build runtime symbol validation guard in `core/symbol_guard.go` with integration into `pipeline/stages.go`. The guard must detect symbol format drift mid-session, halt affected feeds safely, log structured errors with venue/symbol context, and include remediation guidance (e.g., "Symbol format changed from BASE-QUOTE to BASEQUOTE; check venue API changelog").
+- [X] T303 [ALL→US2] Introduce canonical market data event structs and builders in `market_data/events.go`, ensuring rational math and canonical symbol usage.
+- [X] T304 [US2] Enhance stream fan-out and ordering logic in `pipeline/multi_source.go` and `pipeline/stages.go` to tag events with source metadata and maintain per-venue sequencing.
+- [X] T305 [P] [US2] Update Binance WebSocket handling (`exchanges/binance/ws_service.go`, `exchanges/binance/ws_dependencies.go`) to emit canonical events and propagate contexts through goroutines.
+- [X] T306 [US2] Implement market data capability declarations in `exchanges/binance/plugin/register.go` (or equivalent) referencing the new bitsets.
+- [X] T307 [P] [US2] Add rational precision guards and unit tests for JSON encoding/decoding in `market_data/encoder.go` (new) and `market_data/encoder_test.go`.
+- [X] T308 [US2] Run `go test ./market_data ./pipeline -race -bench=.` ensuring TS-05 error paths are covered and documenting benchmark results against PERF-01 (P99 <10 ms normalization latency) and PERF-03 (end-to-end propagation) in test output. Fail the build if P99 exceeds 10 ms threshold.
+- [X] T309 [P] [US2] Build runtime symbol validation guard in `core/symbol_guard.go` with integration into `pipeline/stages.go`. The guard must detect symbol format drift mid-session, halt affected feeds safely, log structured errors with venue/symbol context, and include remediation guidance (e.g., "Symbol format changed from BASE-QUOTE to BASEQUOTE; check venue API changelog").
 
 **Checkpoint**: Unified market data streams deliver normalized events with latency and precision guarantees.
 
@@ -77,17 +77,17 @@
 
 ### Tests (write first)
 
-- [ ] T401 [US3] Develop adapter conformance suite in `exchanges/shared/infra/adapter_conformance_test.go` that loads a mock adapter and validates capability bitsets, symbol normalization, and error envelope usage.
-- [ ] T402 [P] [US3] Add plugin registration regression tests in `exchanges/shared/plugin/plugin_test.go` to ensure new adapters auto-register canonical services.
+- [X] T401 [US3] Develop adapter conformance suite in `exchanges/shared/infra/adapter_conformance_test.go` that loads a mock adapter and validates capability bitsets, symbol normalization, and error envelope usage.
+- [X] T402 [P] [US3] Add plugin registration regression tests in `exchanges/shared/plugin/plugin_test.go` to ensure new adapters auto-register canonical services.
 
 ### Implementation
 
-- [ ] T403 [ALL→US3] Create adapter composition scaffolding in `exchanges/shared/infra/adapter_factory.go` exposing builders for transports, routers, and services.
-- [ ] T404 [US3] Provide template implementations and inline godoc guidance in `exchanges/shared/plugin/template.go` to guide new adapters per CQ-07.
-- [ ] T405 [P] [US3] Add capability discovery CLI command in `cmd/capabilities/main.go` leveraging new bitsets to output exchange support matrices.
-- [ ] T406 [US3] Document (in code comments) the protocol version handshake in `core/exchanges/bootstrap/protocol.go`, ensuring immutable interface checks per CQ-08.
-- [ ] T407 [P] [US3] Build sandbox stub adapter under `exchanges/shared/mock/mock_exchange.go` demonstrating minimal Transport→Pipeline wiring for regression tests.
-- [ ] T408 [US3] Execute `go test ./exchanges/shared/... -race` and confirm coverage ≥80% for routing packages per TS-01.
+- [X] T403 [ALL→US3] Create adapter composition scaffolding in `exchanges/shared/infra/adapter_factory.go` exposing builders for transports, routers, and services.
+- [X] T404 [US3] Provide template implementations and inline godoc guidance in `exchanges/shared/plugin/template.go` to guide new adapters per CQ-07.
+- [X] T405 [P] [US3] Add capability discovery CLI command in `cmd/capabilities/main.go` leveraging new bitsets to output exchange support matrices.
+- [X] T406 [US3] Document (in code comments) the protocol version handshake in `core/exchanges/bootstrap/protocol.go`, ensuring immutable interface checks per CQ-08.
+- [X] T407 [P] [US3] Build sandbox stub adapter under `exchanges/shared/mock/mock_exchange.go` demonstrating minimal Transport→Pipeline wiring for regression tests.
+- [X] T408 [US3] Execute `go test ./exchanges/shared/... -race` and confirm coverage ≥80% for routing packages per TS-01.
 
 **Checkpoint**: New exchange adapters can be onboarded using shared scaffolding with automated conformance validation.
 

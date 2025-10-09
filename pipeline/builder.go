@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"github.com/coachpo/meltica/core"
 )
 
 // StageFactory constructs a PipelineStep for the given request.
@@ -58,11 +60,19 @@ func (c *Coordinator) Close() {
 func (c *Coordinator) buildStages(ctx context.Context, req PipelineRequest) ([]PipelineStep, *snapshotCache) {
 	stages := []PipelineStep{}
 	cache := newSnapshotCache(req.EnableSnapshots)
+	var exchangeName core.ExchangeName
+	if c.adapter != nil {
+		exchangeName = c.adapter.ExchangeName()
+	}
 
 	if c.adapter != nil {
 		// Use multi-source stage for all channel types
 		if stage := multiSourceStage(c.adapter, req, c.auth); stage != nil {
-			stages = append(stages, stage, newNormalizeStage())
+			stages = append(stages, stage)
+			if guard := newSymbolGuardStage(exchangeName); guard != nil {
+				stages = append(stages, guard)
+			}
+			stages = append(stages, newNormalizeStage())
 
 			if throttle := newThrottleStage(req.MinEmitInterval); throttle != nil {
 				stages = append(stages, throttle)

@@ -25,7 +25,7 @@ func parseTradeEvent(msg *RoutedMessage, rec *struct {
 	msg.Route = corestreams.RouteTradeUpdate
 	price, _ := numeric.Parse(rec.Price.String())
 	qty, _ := numeric.Parse(rec.Qty.String())
-	msg.Parsed = &corestreams.TradeEvent{Symbol: symbol, Price: price, Quantity: qty, Time: time.UnixMilli(rec.Time)}
+	msg.Parsed = &corestreams.TradeEvent{Symbol: symbol, VenueSymbol: rec.Symbol, Price: price, Quantity: qty, Time: time.UnixMilli(rec.Time)}
 	return nil
 }
 
@@ -49,7 +49,7 @@ func parseTickerEvent(msg *RoutedMessage, rec *struct {
 	bid, _ := numeric.Parse(rec.BidPrice.String())
 	ask, _ := numeric.Parse(rec.AskPrice.String())
 	eventTime := time.UnixMilli(rec.EventTime)
-	msg.Parsed = &corestreams.TickerEvent{Symbol: symbol, Bid: bid, Ask: ask, Time: eventTime}
+	msg.Parsed = &corestreams.TickerEvent{Symbol: symbol, VenueSymbol: rec.Symbol, Bid: bid, Ask: ask, Time: eventTime}
 	return nil
 }
 
@@ -78,6 +78,7 @@ func parseOrderbookEvent(msg *RoutedMessage, rec *struct {
 	msg.Route = corestreams.RouteDepthDelta
 	msg.Parsed = &DepthDelta{
 		Symbol:        symbol,
+		VenueSymbol:   rec.Symbol,
 		FirstUpdateID: rec.FirstUpdateID,
 		LastUpdateID:  rec.LastUpdateID,
 		Bids:          bids,
