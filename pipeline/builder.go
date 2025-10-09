@@ -15,6 +15,7 @@ type StageFactory func(ctx context.Context, req PipelineRequest, adapter Adapter
 type Coordinator struct {
 	adapter Adapter
 	auth    *AuthContext
+	hooks   AdapterHooks
 }
 
 // NewCoordinator creates a coordinator backed by the provided adapter.
@@ -26,6 +27,8 @@ func NewCoordinator(adapter Adapter, auth *AuthContext) *Coordinator {
 // Stream builds and runs a pipeline for the supplied request.
 func (c *Coordinator) Stream(parent context.Context, req PipelineRequest) (PipelineStream, error) {
 	ctx, cancel := context.WithCancel(parent)
+
+	c.SetAdapterHooks(req.Observability.Adapter)
 
 	if err := c.validateRequest(req); err != nil {
 		cancel()
@@ -54,6 +57,14 @@ func (c *Coordinator) Stream(parent context.Context, req PipelineRequest) (Pipel
 func (c *Coordinator) Close() {
 	if c.adapter != nil {
 		c.adapter.Close()
+	}
+}
+
+// SetAdapterHooks configures observability callbacks on the underlying adapter.
+func (c *Coordinator) SetAdapterHooks(h AdapterHooks) {
+	c.hooks = h
+	if instrumented, ok := c.adapter.(InstrumentedAdapter); ok {
+		instrumented.SetAdapterHooks(h)
 	}
 }
 

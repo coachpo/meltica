@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"context"
 	"encoding/json"
 	"time"
 )
@@ -165,6 +166,9 @@ type PipelineRequest struct {
 
 	// Observer receives event/error callbacks after reliability handling.
 	Observer Observer
+
+	// Observability propagates structured logging callbacks for pipeline activity.
+	Observability ObservabilityHooks
 }
 
 // FeedSelection toggles the exchange feeds that should be sourced.
@@ -172,6 +176,14 @@ type FeedSelection struct {
 	Books   bool
 	Trades  bool
 	Tickers bool
+}
+
+// ObservabilityHooks aggregates stream and adapter callbacks for instrumentation.
+type ObservabilityHooks struct {
+	OnStreamStart func(ctx context.Context, req PipelineRequest)
+	OnStreamError func(ctx context.Context, req PipelineRequest, err error)
+	OnStreamClose func(ctx context.Context, req PipelineRequest, duration time.Duration)
+	Adapter       AdapterHooks
 }
 
 // PipelineStream is the multiplexed output of a pipeline.

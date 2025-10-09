@@ -219,6 +219,9 @@ func startRESTRequests(
 	events chan<- ClientEvent,
 	errors chan<- error,
 ) {
+	if len(requests) == 0 {
+		return
+	}
 	capabilities := adapter.Capabilities()
 	if !capabilities.RESTEndpoints {
 		select {
@@ -228,8 +231,8 @@ func startRESTRequests(
 		return
 	}
 
+	wg.Add(len(requests))
 	for _, restReq := range requests {
-		wg.Add(1)
 		go func(req InteractionRequest) {
 			defer wg.Done()
 			restEvents, restErrors, err := adapter.ExecuteREST(ctx, req)

@@ -35,6 +35,26 @@ type Adapter interface {
 	ExchangeName() core.ExchangeName
 }
 
+// AdapterEvent captures structured metadata about adapter activity.
+type AdapterEvent struct {
+	Exchange core.ExchangeName
+	Feed     string
+	Symbol   string
+	Metadata map[string]string
+	Err      error
+}
+
+// AdapterHooks describes optional observability callbacks invoked by adapters.
+type AdapterHooks struct {
+	OnSubscribe func(ctx context.Context, evt AdapterEvent)
+	OnError     func(ctx context.Context, evt AdapterEvent)
+}
+
+// InstrumentedAdapter exposes a hook setter for observability instrumentation.
+type InstrumentedAdapter interface {
+	SetAdapterHooks(h AdapterHooks)
+}
+
 // BookSource represents a single symbol subscription to book events.
 type BookSource struct {
 	Symbol string

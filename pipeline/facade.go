@@ -9,12 +9,46 @@ import (
 // InteractionFacade provides a high-level interface for Level-4 interactions.
 type InteractionFacade struct {
 	coordinator *Coordinator
+	hooks       ObservabilityHooks
 }
 
 // NewInteractionFacade creates a new facade for Level-4 interactions.
 func NewInteractionFacade(adapter Adapter, auth *AuthContext) *InteractionFacade {
 	coordinator := NewCoordinator(adapter, auth)
 	return &InteractionFacade{coordinator: coordinator}
+}
+
+// SetObservability configures callbacks for structured logging and metrics.
+func (f *InteractionFacade) SetObservability(hooks ObservabilityHooks) {
+	f.hooks = hooks
+	f.coordinator.SetAdapterHooks(hooks.Adapter)
+}
+
+func (f *InteractionFacade) streamWithObservability(ctx context.Context, req PipelineRequest) (PipelineStream, error) {
+	started := time.Now()
+	if f.hooks.OnStreamStart != nil {
+		f.hooks.OnStreamStart(ctx, req)
+	}
+
+	stream, err := f.coordinator.Stream(ctx, req)
+	if err != nil {
+		if f.hooks.OnStreamError != nil {
+			f.hooks.OnStreamError(ctx, req, err)
+		}
+		return stream, err
+	}
+
+	if f.hooks.OnStreamClose != nil {
+		cancel := stream.cancel
+		stream.cancel = func() {
+			if cancel != nil {
+				cancel()
+			}
+			f.hooks.OnStreamClose(ctx, req, time.Since(started))
+		}
+	}
+
+	return stream, nil
 }
 
 // SubscribePublic subscribes to public market data feeds.
@@ -45,8 +79,8 @@ func (f *InteractionFacade) SubscribePublic(
 		EnableVWAP:      config.EnableVWAP,
 		Observer:        config.Observer,
 	}
-
-	return f.coordinator.Stream(ctx, req)
+	req.Observability = f.hooks
+	return f.streamWithObservability(ctx, req)
 }
 
 // SubscribePrivate subscribes to private account and order streams.
@@ -65,8 +99,8 @@ func (f *InteractionFacade) SubscribePrivate(
 		EnableSnapshots: config.EnableSnapshots,
 		Observer:        config.Observer,
 	}
-
-	return f.coordinator.Stream(ctx, req)
+	req.Observability = f.hooks
+	return f.streamWithObservability(ctx, req)
 }
 
 // FetchREST executes REST API calls through the filter pipeline.
@@ -85,8 +119,8 @@ func (f *InteractionFacade) FetchREST(
 		MinEmitInterval: config.MinEmitInterval,
 		Observer:        config.Observer,
 	}
-
-	return f.coordinator.Stream(ctx, req)
+	req.Observability = f.hooks
+	return f.streamWithObservability(ctx, req)
 }
 
 // ExecuteSingleREST executes a single REST API call.
