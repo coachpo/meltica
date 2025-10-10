@@ -10,8 +10,8 @@ import (
 )
 
 // ProtocolVersion declares the canonical protocol version supported by this repository.
-// Version 1.2.0 introduces WebSocket code organization refactoring and Channel Mapper architecture.
-const ProtocolVersion = "1.2.0"
+// Version 2.0.0 removes legacy parser compatibility and requires the processor/router architecture.
+const ProtocolVersion = "2.0.0"
 
 // Market enumerates the product families supported by the protocol.
 type Market string

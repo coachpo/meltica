@@ -15,7 +15,7 @@
 ### Invalid Message Spike
 - Review processor validation errors (`errs.CodeInvalid`).
 - Confirm upstream exchange schema changes; update processors accordingly.
-- Adjust validation thresholds via `parser.WithInvalidThreshold` (legacy) or processor-specific configuration.
+- Adjust validation thresholds via `connection.DialOptions.InvalidThreshold` or processor-specific configuration.
 
 ### Session Disconnects
 - Inspect telemetry emitted from `exchanges/binance/telemetry` for heartbeat timeouts.

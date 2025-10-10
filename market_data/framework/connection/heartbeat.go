@@ -55,39 +55,32 @@ func (r *sessionRuntime) processLoop() {
 				continue
 			}
 			start := time.Now()
-			env, err := r.decoder.Decode(payload)
+			env, err := r.decodePayload(payload)
 			if err != nil {
+				var metadata map[string]string
+				if tracker := r.invalids; tracker != nil {
+					count, thresholdExceeded := tracker.recordFailure()
+					r.session.SetInvalidCount(count)
+					metadata = map[string]string{
+						"invalidCount": strconv.FormatUint(uint64(count), 10),
+					}
+					if thresholdExceeded {
+						metadata["thresholdExceeded"] = "true"
+					}
+				} else {
+					r.session.SetInvalidCount(0)
+				}
 				r.sendError(err)
 				if r.metrics != nil {
 					r.metrics.RecordFailure()
 				}
-				r.publish(telemetry.Event{Kind: telemetry.EventDecodeFailure, Error: err})
+				r.publish(telemetry.Event{Kind: telemetry.EventDecodeFailure, Error: err, Metadata: metadata})
 				continue
 			}
-			if r.validator != nil {
-				result := r.validator.Validate(env)
-				r.session.SetInvalidCount(result.InvalidCount)
-				if !result.Valid {
-					if result.Err != nil {
-						r.sendError(result.Err)
-						metadata := map[string]string{
-							"invalidCount": strconv.FormatUint(uint64(result.InvalidCount), 10),
-						}
-						if result.ThresholdExceeded {
-							metadata["thresholdExceeded"] = "true"
-						}
-						r.publish(telemetry.Event{Kind: telemetry.EventValidationFailure, Error: result.Err, Metadata: metadata})
-					}
-					if r.metrics != nil {
-						r.metrics.RecordFailure()
-					}
-					r.engine.pool.ReleaseEnvelope(env)
-					continue
-				}
-			} else {
-				r.session.SetInvalidCount(0)
-				env.SetValidated(true)
+			if r.invalids != nil {
+				r.invalids.reset()
 			}
+			r.session.SetInvalidCount(0)
 			var summary dispatchSummary
 			if r.dispatch != nil {
 				summary = r.dispatch.Dispatch(r.ctx, env)

@@ -2,6 +2,8 @@
 
 A high-performance cryptocurrency exchange adapter framework written in Go.
 
+> **Breaking Change (v2.0.0):** The legacy `market_data/framework/parser` package has been removed. Review the upgrade guide in [`BREAKING_CHANGES_v2.md`](./BREAKING_CHANGES_v2.md) before updating existing integrations.
+
 ## Supported Providers
 
 | Exchange | Spot | Linear Futures | Inverse Futures | WebSocket Public | WebSocket Private |

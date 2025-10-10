@@ -11,7 +11,6 @@ import (
 	"github.com/coachpo/meltica/core/stream"
 	"github.com/coachpo/meltica/errs"
 	"github.com/coachpo/meltica/market_data/framework"
-	"github.com/coachpo/meltica/market_data/framework/parser"
 	"github.com/coachpo/meltica/market_data/framework/telemetry"
 )
 
@@ -30,11 +29,10 @@ type sessionRuntime struct {
 	hbTimeout  time.Duration
 	maxPending int
 	throttle   time.Duration
-	decoder    *parser.JSONPipeline
-	validator  *parser.ValidationStage
 	dispatch   *dispatcher
 	metrics    *telemetry.MetricsAggregator
 	emitter    *telemetry.Emitter
+	invalids   *invalidTracker
 }
 
 func newSessionRuntime(engine *Engine, session *framework.ConnectionSession, conn *websocket.Conn, ctx context.Context, cancel context.CancelFunc, errs chan<- error, opts DialOptions) (*sessionRuntime, error) {
@@ -60,22 +58,7 @@ func newSessionRuntime(engine *Engine, session *framework.ConnectionSession, con
 		hbTimeout:  engine.cfg.heartbeatTimeout,
 		maxPending: maxPending,
 		throttle:   engine.cfg.throttleDuration,
-		decoder: parser.NewJSONPipeline(
-			engine.pool.AcquireEnvelope,
-			engine.pool.ReleaseEnvelope,
-			func(payload []byte) (parser.DecoderLease, error) {
-				lease, err := engine.pool.BorrowDecoder(payload)
-				if err != nil {
-					return nil, err
-				}
-				return lease, nil
-			},
-			engine.pool.MaxMessageBytes(),
-		),
-		validator: parser.NewValidationStage(
-			parser.WithValidationWindow(engine.cfg.metricsWindow),
-			parser.WithInvalidThreshold(opts.InvalidThreshold),
-		),
+		invalids:   newInvalidTracker(engine.cfg.metricsWindow, opts.InvalidThreshold),
 	}
 	dispatch, err := newDispatcher(engine, session, opts)
 	if err != nil {
@@ -191,4 +174,29 @@ func (r *sessionRuntime) publish(event telemetry.Event) {
 
 func isExpectedClose(err error) bool {
 	return websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) || errors.Is(err, context.Canceled)
+}
+
+func (r *sessionRuntime) decodePayload(payload []byte) (*framework.MessageEnvelope, error) {
+	if r == nil || r.engine == nil || r.engine.pool == nil {
+		return nil, errs.New("", errs.CodeInvalid, errs.WithMessage("connection resources unavailable"))
+	}
+	env := r.engine.pool.AcquireEnvelope()
+	buffer := env.Raw()
+	buffer = append(buffer[:0], payload...)
+	env.SetRaw(buffer)
+	env.SetReceivedAt(time.Now().UTC())
+	lease, err := r.engine.pool.BorrowDecoder(buffer)
+	if err != nil {
+		r.engine.pool.ReleaseEnvelope(env)
+		return nil, err
+	}
+	defer lease.Release()
+	var decoded map[string]any
+	if err := lease.Decode(&decoded); err != nil {
+		r.engine.pool.ReleaseEnvelope(env)
+		return nil, errs.New("", errs.CodeInvalid, errs.WithMessage("json decode failed"), errs.WithCause(err))
+	}
+	env.SetDecoded(decoded)
+	env.SetValidated(true)
+	return env, nil
 }

@@ -44,5 +44,5 @@ func TestRequireProtocolPanics(t *testing.T) {
 			t.Fatal("expected panic for protocol mismatch")
 		}
 	}()
-	RequireProtocol(protocolStub{name: "panic", version: "2.0.0"})
+	RequireProtocol(protocolStub{name: "panic", version: "1.2.0"})
 }
