@@ -14,9 +14,7 @@ import (
 	"github.com/coachpo/meltica/core"
 	"github.com/coachpo/meltica/core/registry"
 	corestreams "github.com/coachpo/meltica/core/streams"
-	binancel4 "github.com/coachpo/meltica/exchanges/binance/filter"
 	binanceplugin "github.com/coachpo/meltica/exchanges/binance/plugin"
-	"github.com/coachpo/meltica/exchanges/shared/routing"
 	"github.com/coachpo/meltica/internal/numeric"
 	mdfilter "github.com/coachpo/meltica/pipeline"
 )
@@ -369,84 +367,10 @@ func startMarketPipeline(
 func resolveFilterAdapter(exchange core.Exchange) (mdfilter.Adapter, *mdfilter.AuthContext, error) {
 	switch exchange.Name() {
 	case string(binanceplugin.Name):
-		return buildBinanceFilterAdapter(exchange)
+		return binanceplugin.NewFilterAdapter(exchange)
 	default:
 		return nil, nil, fmt.Errorf("exchange %s does not expose a filter adapter", exchange.Name())
 	}
-}
-
-// TODO study this
-func buildBinanceFilterAdapter(exchange core.Exchange) (mdfilter.Adapter, *mdfilter.AuthContext, error) {
-	var books interface {
-		BookSnapshots(ctx context.Context, symbol string) (<-chan corestreams.BookEvent, <-chan error, error)
-	}
-	if bs, ok := exchange.(interface {
-		BookSnapshots(ctx context.Context, symbol string) (<-chan corestreams.BookEvent, <-chan error, error)
-	}); ok {
-		books = bs
-	}
-
-	var ws core.WS
-	if participant, ok := exchange.(core.WebsocketParticipant); ok {
-		ws = participant.WS()
-	}
-
-	// Check for private capabilities
-	var privateWS interface {
-		SubscribePrivate(ctx context.Context, topics ...string) (core.Subscription, error)
-	}
-	var restRouter routing.RESTDispatcher
-
-	// Try to extract private capabilities from the exchange
-	if privateParticipant, ok := exchange.(interface {
-		PrivateWS() core.WS
-	}); ok {
-		privateWS = privateParticipant.PrivateWS()
-	}
-
-	if restParticipant, ok := exchange.(interface {
-		RESTRouter() interface{}
-	}); ok {
-		if router := restParticipant.RESTRouter(); router != nil {
-			if r, ok := router.(routing.RESTDispatcher); ok {
-				restRouter = r
-			}
-		}
-	}
-
-	// Build auth context if credentials are available
-	var auth *mdfilter.AuthContext
-	if creds, ok := exchange.(interface {
-		Credentials() (string, string)
-	}); ok {
-		apiKey, secret := creds.Credentials()
-		if apiKey != "" && secret != "" {
-			auth = &mdfilter.AuthContext{
-				APIKey: apiKey,
-				Secret: secret,
-			}
-		}
-	}
-
-	if books == nil && ws == nil && privateWS == nil && restRouter == nil {
-		return nil, nil, fmt.Errorf("exchange %s does not expose required feeds", exchange.Name())
-	}
-
-	var adapter mdfilter.Adapter
-	var err error
-
-	// Use enhanced adapter with REST capabilities if available
-	if restRouter != nil {
-		adapter, err = binancel4.NewAdapterWithREST(books, ws, privateWS, restRouter)
-	} else {
-		// Fall back to basic adapter without REST capabilities
-		adapter, err = binancel4.NewAdapter(books, ws)
-	}
-
-	if err != nil {
-		return nil, nil, err
-	}
-	return adapter, auth, nil
 }
 
 func printBookSnapshot(evt corestreams.BookEvent, formatter precisionFormatter) {

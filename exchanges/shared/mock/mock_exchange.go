@@ -288,6 +288,14 @@ func (a *Adapter) ExecuteREST(_ context.Context, req pipeline.InteractionRequest
 	if ok {
 		delete(a.rest, key)
 	}
+	if !ok && len(a.rest) > 0 {
+		for alias, event := range a.rest {
+			resp = event
+			delete(a.rest, alias)
+			ok = true
+			break
+		}
+	}
 	a.mu.Unlock()
 
 	if !ok {

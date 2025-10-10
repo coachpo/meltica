@@ -3,12 +3,13 @@ package filter
 import (
 	"context"
 	"fmt"
+	"math/big"
 	"strings"
 	"time"
 
 	"github.com/coachpo/meltica/core"
 	corestreams "github.com/coachpo/meltica/core/streams"
-	"github.com/coachpo/meltica/exchanges/shared/routing"
+	"github.com/coachpo/meltica/exchanges/binance/bridge"
 	"github.com/coachpo/meltica/pipeline"
 )
 
@@ -24,18 +25,13 @@ type privateSubscriber interface {
 	SubscribePrivate(ctx context.Context, topics ...string) (core.Subscription, error)
 }
 
-type restExecutor interface {
-	Dispatch(ctx context.Context, msg interface{}, result interface{}) error
-}
-
 // Adapter implements filter.Adapter for Binance.
 type Adapter struct {
 	books      bookSubscriber
 	ws         publicSubscriber
 	privateWS  privateSubscriber
-	restRouter restExecutor
+	restRouter bridge.Dispatcher
 	sessionMgr *SessionManager
-	parser     *PrivateMessageParser
 	hooks      pipeline.AdapterHooks
 }
 
@@ -51,7 +47,7 @@ func NewAdapter(books bookSubscriber, ws publicSubscriber) (*Adapter, error) {
 }
 
 // NewAdapterWithPrivate constructs a Binance filter adapter with private capabilities.
-func NewAdapterWithPrivate(books bookSubscriber, ws publicSubscriber, privateWS privateSubscriber, restRouter restExecutor) (*Adapter, error) {
+func NewAdapterWithPrivate(books bookSubscriber, ws publicSubscriber, privateWS privateSubscriber, restRouter bridge.Dispatcher) (*Adapter, error) {
 	if books == nil && ws == nil && privateWS == nil && restRouter == nil {
 		return nil, fmt.Errorf("binance filter: no feed providers available")
 	}
@@ -64,29 +60,22 @@ func NewAdapterWithPrivate(books bookSubscriber, ws publicSubscriber, privateWS 
 }
 
 // NewAdapterWithREST constructs a Binance filter adapter with REST capabilities using a bridge.
-func NewAdapterWithREST(books bookSubscriber, ws publicSubscriber, privateWS privateSubscriber, restRouter routing.RESTDispatcher) (*Adapter, error) {
+func NewAdapterWithREST(books bookSubscriber, ws publicSubscriber, privateWS privateSubscriber, restRouter bridge.Dispatcher) (*Adapter, error) {
 	if books == nil && ws == nil && privateWS == nil && restRouter == nil {
 		return nil, fmt.Errorf("binance filter: no feed providers available")
 	}
-
-	// Wrap the router with the Level-4 bridge
-	bridge := NewRESTBridge(restRouter)
-
 	// Create session manager for private streams
 	var sessionMgr *SessionManager
-	var parser *PrivateMessageParser
 	if privateWS != nil {
 		sessionMgr = NewSessionManager(restRouter, DefaultSessionConfig())
-		parser = NewPrivateMessageParser()
 	}
 
 	return &Adapter{
 		books:      books,
 		ws:         ws,
 		privateWS:  privateWS,
-		restRouter: bridge,
+		restRouter: restRouter,
 		sessionMgr: sessionMgr,
-		parser:     parser,
 	}, nil
 }
 
@@ -526,35 +515,26 @@ func (a *Adapter) forwardPrivateEvents(ctx context.Context, streamType string, e
 				return
 			}
 
-			// Convert core.Message to streams.RoutedMessage
-			routedMsg := corestreams.RoutedMessage{
-				Topic:  msg.Topic,
-				Raw:    msg.Raw,
-				At:     msg.At,
-				Route:  "private", // Default route for private messages
-				Parsed: msg.Parsed,
-			}
-
-			// Parse private message using the parser
-			event, err := a.parser.ParseMessage(routedMsg)
-			if err != nil {
-				// Create error event for parsing failures
-				errorEvent := a.parser.ParseError(err, msg.Raw)
-				a.emitError(ctx, feedName, "", err)
+			event, convErr := convertPrivateMessage(msg)
+			if convErr != nil {
+				a.emitError(ctx, feedName, "", convErr)
 				select {
-				case errors <- err:
+				case errors <- convErr:
 				case <-ctx.Done():
 					return
 				}
 				select {
-				case events <- errorEvent:
+				case events <- buildPrivateErrorEvent(convErr, msg.Raw):
 				case <-ctx.Done():
 					return
 				}
 				continue
 			}
 
-			// Filter by stream type if needed
+			if event.Payload == nil {
+				continue
+			}
+
 			if matchesPrivateStream(streamType, event.Payload) {
 				select {
 				case events <- event:
@@ -590,6 +570,90 @@ func matchesPrivateStream(streamType string, payload pipeline.Payload) bool {
 	default:
 		return true
 	}
+}
+
+func convertPrivateMessage(msg core.Message) (pipeline.Event, error) {
+	if msg.Parsed == nil {
+		return pipeline.Event{}, fmt.Errorf("binance private: missing parsed payload")
+	}
+
+	event := pipeline.Event{
+		Transport: pipeline.TransportPrivateWS,
+		At:        msg.At,
+	}
+
+	switch payload := msg.Parsed.(type) {
+	case *corestreams.OrderEvent:
+		if payload == nil {
+			return pipeline.Event{}, fmt.Errorf("binance private: order payload is nil")
+		}
+		order := &pipeline.OrderEvent{
+			Symbol:      payload.Symbol,
+			OrderID:     payload.OrderID,
+			Side:        string(payload.Side),
+			Price:       cloneRat(payload.Price),
+			Quantity:    cloneRat(payload.Quantity),
+			Status:      string(payload.Status),
+			Type:        string(payload.Type),
+			TimeInForce: string(payload.TimeInForce),
+		}
+		if order.Quantity == nil {
+			order.Quantity = cloneRat(payload.FilledQty)
+		}
+		if order.Price == nil {
+			order.Price = cloneRat(payload.AvgPrice)
+		}
+		event.Symbol = payload.Symbol
+		event.Payload = pipeline.OrderPayload{Order: order}
+		return event, nil
+
+	case *corestreams.BalanceEvent:
+		if payload == nil || len(payload.Balances) == 0 {
+			return pipeline.Event{}, fmt.Errorf("binance private: balance payload empty")
+		}
+		balance := payload.Balances[0]
+		total := cloneRat(balance.Total)
+		available := cloneRat(balance.Available)
+		locked := cloneRat(balance.Locked)
+		if total == nil && available != nil {
+			total = cloneRat(available)
+		}
+		if locked == nil && total != nil && available != nil {
+			locked = new(big.Rat).Sub(cloneRat(total), available)
+		}
+		event.Symbol = balance.Asset
+		event.Payload = pipeline.AccountPayload{Account: &pipeline.AccountEvent{
+			Symbol:    balance.Asset,
+			Balance:   total,
+			Available: available,
+			Locked:    locked,
+		}}
+		return event, nil
+	default:
+		event.Symbol = msg.Topic
+		event.Payload = pipeline.UnknownPayload{Detail: payload}
+		return event, nil
+	}
+}
+
+func buildPrivateErrorEvent(err error, raw []byte) pipeline.Event {
+	metadata := map[string]any{"error": err}
+	if len(raw) > 0 {
+		metadata["raw"] = string(raw)
+	}
+	return pipeline.Event{
+		Transport: pipeline.TransportPrivateWS,
+		At:        time.Now(),
+		Payload:   pipeline.UnknownPayload{Detail: metadata},
+		Metadata:  metadata,
+	}
+}
+
+func cloneRat(src *big.Rat) *big.Rat {
+	if src == nil {
+		return nil
+	}
+	return new(big.Rat).Set(src)
 }
 
 func uniqueSymbols(symbols []string) []string {

@@ -1,4 +1,4 @@
-package filter
+package bridge
 
 import (
 	"context"
@@ -12,92 +12,77 @@ import (
 	mdfilter "github.com/coachpo/meltica/pipeline"
 )
 
-// RESTBridge implements a Level-4 bridge that maps InteractionRequest to routing.RESTMessage
-type RESTBridge struct {
+// Dispatcher defines the contract for Level-3 components that translate filter interactions
+// into exchange-specific REST calls.
+type Dispatcher interface {
+	Dispatch(ctx context.Context, req mdfilter.InteractionRequest, result any) error
+}
+
+type routerBridge struct {
 	router routing.RESTDispatcher
 }
 
-// NewRESTBridge creates a new bridge that wraps a REST router
-func NewRESTBridge(router routing.RESTDispatcher) *RESTBridge {
-	return &RESTBridge{router: router}
+// NewRouterBridge creates a dispatcher that bridges InteractionRequest to routing.RESTMessage.
+func NewRouterBridge(router routing.RESTDispatcher) Dispatcher {
+	return &routerBridge{router: router}
 }
 
-// Dispatch implements the restExecutor interface by bridging InteractionRequest to RESTMessage
-func (b *RESTBridge) Dispatch(ctx context.Context, msg interface{}, result interface{}) error {
+// Dispatch implements the Dispatcher interface by mapping InteractionRequest to RESTMessage.
+func (b *routerBridge) Dispatch(ctx context.Context, req mdfilter.InteractionRequest, result any) error {
 	if b.router == nil {
 		return fmt.Errorf("REST router not available")
 	}
 
-	// Convert InteractionRequest to RESTMessage
-	interactionReq, ok := msg.(mdfilter.InteractionRequest)
-	if !ok {
-		return fmt.Errorf("expected InteractionRequest, got %T", msg)
-	}
-
-	restMsg, err := b.mapInteractionToREST(interactionReq)
+	restMsg, err := mapInteractionToREST(req)
 	if err != nil {
 		return fmt.Errorf("failed to map interaction to REST: %w", err)
 	}
 
-	// Dispatch through the router
 	return b.router.Dispatch(ctx, restMsg, result)
 }
 
-// mapInteractionToREST converts an InteractionRequest to a routing.RESTMessage
-func (b *RESTBridge) mapInteractionToREST(req mdfilter.InteractionRequest) (routing.RESTMessage, error) {
-	// Determine API based on path
-	api := b.inferAPI(req.Path)
+func mapInteractionToREST(req mdfilter.InteractionRequest) (routing.RESTMessage, error) {
+	api := inferAPI(req.Path)
 
-	// Serialize payload
 	var body []byte
 	if req.Payload != nil {
-		var err error
-		body, err = json.Marshal(req.Payload)
+		data, err := json.Marshal(req.Payload)
 		if err != nil {
 			return routing.RESTMessage{}, fmt.Errorf("failed to serialize payload: %w", err)
 		}
+		body = data
 	}
 
-	// Extract query parameters from path if present and merge with explicit QueryParams
 	query := make(map[string]string)
 	if strings.Contains(req.Path, "?") {
 		parts := strings.SplitN(req.Path, "?", 2)
 		if len(parts) == 2 {
-			queryStr := parts[1]
-			for _, param := range strings.Split(queryStr, "&") {
+			for _, param := range strings.Split(parts[1], "&") {
 				if kv := strings.SplitN(param, "=", 2); len(kv) == 2 {
 					query[kv[0]] = kv[1]
 				}
 			}
 		}
 	}
-	// Merge explicit query parameters (overriding path parameters)
 	for k, v := range req.QueryParams {
 		query[k] = v
 	}
 
-	// Determine if request should be signed based on hint or auto-detection
-	signed := b.determineSigning(req)
+	signed := determineSigning(req)
 
-	// Build headers
 	headers := make(http.Header)
 	headers.Set("Content-Type", "application/json")
-
-	// Add custom headers
 	for k, v := range req.Headers {
 		headers.Set(k, v)
 	}
-
-	// Add authentication headers if required
 	if signed && req.AuthContext != nil {
-		// Note: Actual signing would be handled by the underlying REST client
 		headers.Set("X-MBX-APIKEY", req.AuthContext.APIKey)
 	}
 
 	return routing.RESTMessage{
 		API:    api,
 		Method: req.Method,
-		Path:   b.normalizePath(req.Path),
+		Path:   normalizePath(req.Path),
 		Query:  query,
 		Body:   body,
 		Signed: signed,
@@ -105,8 +90,7 @@ func (b *RESTBridge) mapInteractionToREST(req mdfilter.InteractionRequest) (rout
 	}, nil
 }
 
-// determineSigning determines if the request should be signed based on hint and auto-detection
-func (b *RESTBridge) determineSigning(req mdfilter.InteractionRequest) bool {
+func determineSigning(req mdfilter.InteractionRequest) bool {
 	switch mdfilter.SigningHint(req.SigningHint) {
 	case mdfilter.SigningHintRequired:
 		return true
@@ -115,12 +99,11 @@ func (b *RESTBridge) determineSigning(req mdfilter.InteractionRequest) bool {
 	case mdfilter.SigningHintAuto, "":
 		fallthrough
 	default:
-		return b.shouldSign(req.Method, req.Path)
+		return shouldSign(req.Method, req.Path)
 	}
 }
 
-// inferAPI determines the Binance API endpoint based on the path
-func (b *RESTBridge) inferAPI(path string) string {
+func inferAPI(path string) string {
 	switch {
 	case strings.HasPrefix(path, "/fapi/"):
 		return string(rest.LinearAPI)
@@ -131,9 +114,7 @@ func (b *RESTBridge) inferAPI(path string) string {
 	}
 }
 
-// shouldSign determines if the request requires signing
-func (b *RESTBridge) shouldSign(method, path string) bool {
-	// Private endpoints require signing
+func shouldSign(method, path string) bool {
 	privatePaths := []string{
 		"/api/v3/account",
 		"/api/v3/order",
@@ -161,8 +142,7 @@ func (b *RESTBridge) shouldSign(method, path string) bool {
 	return false
 }
 
-// normalizePath removes query parameters from the path
-func (b *RESTBridge) normalizePath(path string) string {
+func normalizePath(path string) string {
 	if idx := strings.Index(path, "?"); idx != -1 {
 		return path[:idx]
 	}

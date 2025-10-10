@@ -231,47 +231,49 @@ func startRESTRequests(
 		return
 	}
 
-	wg.Add(len(requests))
-	for _, restReq := range requests {
-		go func(req InteractionRequest) {
-			defer wg.Done()
-			restEvents, restErrors, err := adapter.ExecuteREST(ctx, req)
-			if err != nil {
-				select {
-				case errors <- fmt.Errorf("REST request %s %s: %w", req.Method, req.Path, err):
-				case <-ctx.Done():
-				}
-				return
-			}
+    wg.Add(len(requests))
+    for _, restReq := range requests {
+        go func(req InteractionRequest) {
+            defer wg.Done()
+            restEvents, restErrors, err := adapter.ExecuteREST(ctx, req)
+            if err != nil {
+                select {
+                case errors <- fmt.Errorf("REST request %s %s: %w", req.Method, req.Path, err):
+                case <-ctx.Done():
+                }
+                return
+            }
 
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case evt, ok := <-restEvents:
-					if !ok {
-						return
-					}
-					select {
-					case events <- clientEventFromPipeline(evt):
-					case <-ctx.Done():
-						return
-					}
-				case err, ok := <-restErrors:
-					if !ok {
-						return
-					}
-					if err != nil {
-						select {
-						case errors <- err:
-						case <-ctx.Done():
-							return
-						}
-					}
-				}
-			}
-		}(restReq)
-	}
+            for restEvents != nil || restErrors != nil {
+                select {
+                case <-ctx.Done():
+                    return
+                case evt, ok := <-restEvents:
+                    if !ok {
+                        restEvents = nil
+                        continue
+                    }
+                    select {
+                    case events <- clientEventFromPipeline(evt):
+                    case <-ctx.Done():
+                        return
+                    }
+                case err, ok := <-restErrors:
+                    if !ok {
+                        restErrors = nil
+                        continue
+                    }
+                    if err != nil {
+                        select {
+                        case errors <- err:
+                        case <-ctx.Done():
+                            return
+                        }
+                    }
+                }
+            }
+        }(restReq)
+    }
 }
 
 func startBookForwarder(

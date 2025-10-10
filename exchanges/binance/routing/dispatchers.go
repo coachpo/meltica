@@ -7,57 +7,49 @@ import (
 	"time"
 
 	"github.com/coachpo/meltica/core"
-	corestreams "github.com/coachpo/meltica/core/streams"
 	coretransport "github.com/coachpo/meltica/core/transport"
 	"github.com/coachpo/meltica/exchanges/binance/internal"
+	frameworkrouter "github.com/coachpo/meltica/market_data/framework/router"
 )
 
-// PublicDispatcher handles public stream subscriptions.
+var privateKeepAliveInterval = 30 * time.Minute
+
 type PublicDispatcher struct {
-	infra    coretransport.StreamClient
-	registry *StreamRegistry
-	deps     WSDependencies
+	infra      coretransport.StreamClient
+	deps       WSDependencies
+	table      *frameworkrouter.RoutingTable
+	dispatcher *frameworkrouter.RouterDispatcher
+	hub        *processorHub
 }
 
-// NewPublicDispatcher creates a new public stream dispatcher.
-func NewPublicDispatcher(infra coretransport.StreamClient, deps WSDependencies) *PublicDispatcher {
-	return &PublicDispatcher{
-		infra:    infra,
-		registry: NewStreamRegistry(deps),
-		deps:     deps,
-	}
+func NewPublicDispatcher(infra coretransport.StreamClient, deps WSDependencies, table *frameworkrouter.RoutingTable, dispatcher *frameworkrouter.RouterDispatcher, hub *processorHub) *PublicDispatcher {
+	return &PublicDispatcher{infra: infra, deps: deps, table: table, dispatcher: dispatcher, hub: hub}
 }
 
-// Subscribe subscribes to public streams.
 func (d *PublicDispatcher) Subscribe(ctx context.Context, topics ...string) (Subscription, error) {
 	if len(topics) == 0 {
 		return nil, internal.Invalid("public dispatcher: no topics provided")
 	}
-
-	streams, err := d.buildStreams(topics)
+	streams, err := buildStreamsForTopics(topics, d.deps)
 	if err != nil {
 		return nil, err
 	}
 	if len(streams) == 0 {
 		return nil, internal.Invalid("public dispatcher: no streams derived from topics")
 	}
-
-	topicsForInfra := make([]coretransport.StreamTopic, len(streams))
+	request := make([]coretransport.StreamTopic, len(streams))
 	for i, stream := range streams {
-		topicsForInfra[i] = coretransport.StreamTopic{Scope: coretransport.StreamScopePublic, Name: stream}
+		request[i] = coretransport.StreamTopic{Scope: coretransport.StreamScopePublic, Name: stream}
 	}
-
-	rawSub, err := d.infra.Subscribe(ctx, topicsForInfra...)
+	rawSub, err := d.infra.Subscribe(ctx, request...)
 	if err != nil {
 		return nil, err
 	}
-
 	sub := newWSSub(rawSub)
 	go d.pumpPublic(sub)
 	return sub, nil
 }
 
-// pumpPublic reads from the raw subscription and routes messages using the registry.
 func (d *PublicDispatcher) pumpPublic(sub *wsSub) {
 	defer close(sub.c)
 	defer close(sub.err)
@@ -71,18 +63,23 @@ func (d *PublicDispatcher) pumpPublic(sub *wsSub) {
 			if !ok {
 				return
 			}
-			msg := RoutedMessage{Raw: raw.Data, At: raw.At, Route: corestreams.RouteUnknown}
-			if err := d.parsePublicMessage(&msg, raw.Data); err != nil {
-				select {
-				case sub.err <- err:
-				default:
-				}
-				return
+			messageType, err := d.table.Detect(raw.Data)
+			if err != nil {
+				sendError(sub.err, err)
+				continue
 			}
+			if strings.TrimSpace(messageType) == "" {
+				continue
+			}
+			res := d.hub.Dispatch(messageType, raw.Data)
+			if res.err != nil {
+				sendError(sub.err, res.err)
+				continue
+			}
+			msg := *res.msg
 			select {
 			case sub.c <- msg:
 			default:
-				// Backpressure: drop oldest
 				select {
 				case <-sub.c:
 				default:
@@ -94,45 +91,86 @@ func (d *PublicDispatcher) pumpPublic(sub *wsSub) {
 				return
 			}
 			if err != nil {
-				select {
-				case sub.err <- err:
-				default:
-				}
+				sendError(sub.err, err)
 			}
 			return
 		}
 	}
 }
 
-// parsePublicMessage routes a message using the stream registry.
-func (d *PublicDispatcher) parsePublicMessage(msg *RoutedMessage, raw []byte) error {
-	payload, stream := unwrapCombinedPayload(raw)
-
-	var meta struct {
-		Event  string `json:"e"`
-		Symbol string `json:"s"`
-		Time   int64  `json:"E"`
-	}
-	if err := json.Unmarshal(payload, &meta); err != nil {
-		// Not a recognized format, skip
-		return nil
-	}
-
-	kind := ParseStreamKind(stream, meta.Event)
-	if kind == "" {
-		// Unknown stream kind, skip
-		return nil
-	}
-
-	return d.registry.Dispatch(msg, payload, stream, kind)
+type PrivateDispatcher struct {
+	infra      coretransport.StreamClient
+	deps       WSDependencies
+	table      *frameworkrouter.RoutingTable
+	dispatcher *frameworkrouter.RouterDispatcher
+	hub        *processorHub
 }
 
-// buildStreams converts canonical topics to exchange-native stream names.
-func (d *PublicDispatcher) buildStreams(topics []string) ([]string, error) {
-	return buildStreamsForTopics(topics, d.deps)
+func NewPrivateDispatcher(infra coretransport.StreamClient, deps WSDependencies, table *frameworkrouter.RoutingTable, dispatcher *frameworkrouter.RouterDispatcher, hub *processorHub) *PrivateDispatcher {
+	return &PrivateDispatcher{infra: infra, deps: deps, table: table, dispatcher: dispatcher, hub: hub}
 }
 
-// buildStreamsForTopics converts canonical topics to Binance stream names.
+func (d *PrivateDispatcher) Subscribe(ctx context.Context) (Subscription, error) {
+	listenKey, err := d.deps.CreateListenKey(ctx)
+	if err != nil {
+		return nil, err
+	}
+	topic := coretransport.StreamTopic{Scope: coretransport.StreamScopePrivate, Name: listenKey}
+	rawSub, err := d.infra.Subscribe(ctx, topic)
+	if err != nil {
+		return nil, err
+	}
+	sub := newWSSub(rawSub)
+	go d.pumpPrivate(ctx, sub, listenKey)
+	return &wsPrivateWrapper{sub: sub, deps: d.deps, listenKey: listenKey}, nil
+}
+
+func (d *PrivateDispatcher) pumpPrivate(ctx context.Context, sub *wsSub, listenKey string) {
+	defer close(sub.c)
+	defer close(sub.err)
+
+	rawCh := sub.raw.Messages()
+	errCh := sub.raw.Errors()
+
+	keepAliveTicker := time.NewTicker(privateKeepAliveInterval)
+	defer keepAliveTicker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-keepAliveTicker.C:
+			_ = d.deps.KeepAliveListenKey(context.Background(), listenKey)
+		case raw, ok := <-rawCh:
+			if !ok {
+				return
+			}
+			messageType, err := d.table.Detect(raw.Data)
+			if err != nil {
+				sendError(sub.err, err)
+				continue
+			}
+			if strings.TrimSpace(messageType) == "" {
+				continue
+			}
+			res := d.hub.Dispatch(messageType, raw.Data)
+			if res.err != nil {
+				sendError(sub.err, res.err)
+				continue
+			}
+			sub.c <- *res.msg
+		case err, ok := <-errCh:
+			if !ok {
+				return
+			}
+			if err != nil {
+				sendError(sub.err, err)
+			}
+			return
+		}
+	}
+}
+
 func buildStreamsForTopics(topics []string, deps WSDependencies) ([]string, error) {
 	streams := make([]string, 0, len(topics))
 	for _, topic := range topics {
@@ -157,104 +195,6 @@ func buildStreamsForTopics(topics []string, deps WSDependencies) ([]string, erro
 	return streams, nil
 }
 
-// PrivateDispatcher handles private stream subscriptions with listen key management.
-type PrivateDispatcher struct {
-	infra    coretransport.StreamClient
-	registry *StreamRegistry
-	deps     WSDependencies
-}
-
-// NewPrivateDispatcher creates a new private stream dispatcher.
-func NewPrivateDispatcher(infra coretransport.StreamClient, deps WSDependencies) *PrivateDispatcher {
-	return &PrivateDispatcher{
-		infra:    infra,
-		registry: NewStreamRegistry(deps),
-		deps:     deps,
-	}
-}
-
-// Subscribe subscribes to the private user data stream.
-func (d *PrivateDispatcher) Subscribe(ctx context.Context) (Subscription, error) {
-	listenKey, err := d.deps.CreateListenKey(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	topic := coretransport.StreamTopic{Scope: coretransport.StreamScopePrivate, Name: listenKey}
-	rawSub, err := d.infra.Subscribe(ctx, topic)
-	if err != nil {
-		return nil, err
-	}
-
-	sub := newWSSub(rawSub)
-	go d.pumpPrivate(ctx, sub, listenKey)
-	return &wsPrivateWrapper{sub: sub, deps: d.deps, listenKey: listenKey}, nil
-}
-
-// pumpPrivate reads from the raw subscription, routes messages, and manages listen key keepalive.
-func (d *PrivateDispatcher) pumpPrivate(ctx context.Context, sub *wsSub, listenKey string) {
-	defer close(sub.c)
-	defer close(sub.err)
-
-	rawCh := sub.raw.Messages()
-	errCh := sub.raw.Errors()
-
-	keepAliveTicker := time.NewTicker(30 * time.Minute)
-	defer keepAliveTicker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-keepAliveTicker.C:
-			_ = d.deps.KeepAliveListenKey(context.Background(), listenKey)
-		case raw, ok := <-rawCh:
-			if !ok {
-				return
-			}
-			msg := RoutedMessage{Raw: raw.Data, At: raw.At, Route: corestreams.RouteUnknown}
-			if err := d.parsePrivateMessage(&msg, raw.Data); err != nil {
-				select {
-				case sub.err <- err:
-				default:
-				}
-				return
-			}
-			sub.c <- msg
-		case err, ok := <-errCh:
-			if !ok {
-				return
-			}
-			if err != nil {
-				select {
-				case sub.err <- err:
-				default:
-				}
-			}
-			return
-		}
-	}
-}
-
-// parsePrivateMessage routes a private message using the stream registry.
-func (d *PrivateDispatcher) parsePrivateMessage(msg *RoutedMessage, payload []byte) error {
-	var env struct {
-		Event string `json:"e"`
-	}
-	if err := json.Unmarshal(payload, &env); err != nil {
-		return err
-	}
-
-	kind := ParseStreamKind("", env.Event)
-	if kind == "" {
-		// Unknown event, skip
-		return nil
-	}
-
-	return d.registry.Dispatch(msg, payload, "", kind)
-}
-
-// Helper to unwrap combined stream payload
 func unwrapCombinedPayload(raw []byte) ([]byte, string) {
 	var envelope struct {
 		Stream string          `json:"stream"`
@@ -264,4 +204,14 @@ func unwrapCombinedPayload(raw []byte) ([]byte, string) {
 		return envelope.Data, envelope.Stream
 	}
 	return raw, ""
+}
+
+func sendError(ch chan<- error, err error) {
+	if err == nil {
+		return
+	}
+	select {
+	case ch <- err:
+	default:
+	}
 }

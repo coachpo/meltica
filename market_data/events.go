@@ -31,6 +31,13 @@ type Event struct {
 	Payload      EventPayload
 }
 
+// StreamContext captures metadata about the source stream delivering events.
+type StreamContext struct {
+	StreamID  string
+	Exchange  core.ExchangeName
+	IsPrivate bool
+}
+
 type EventPayload interface {
 	eventPayload()
 }
@@ -80,6 +87,14 @@ type AccountPayload struct {
 }
 
 func (*AccountPayload) eventPayload() {}
+
+// RawPayload preserves unparsed message data routed by the default processor.
+type RawPayload struct {
+	Data     []byte
+	Metadata map[string]string
+}
+
+func (*RawPayload) eventPayload() {}
 
 func ParseEvent(exchange core.ExchangeName, raw []byte) (*Event, error) {
 	var envelope map[string]json.RawMessage

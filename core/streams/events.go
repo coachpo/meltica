@@ -36,12 +36,17 @@ type BookEvent struct {
 
 // OrderEvent is a normalized private websocket order update.
 type OrderEvent struct {
-	Symbol    string
-	OrderID   string
-	Status    core.OrderStatus
-	FilledQty *big.Rat
-	AvgPrice  *big.Rat
-	Time      time.Time
+	Symbol      string
+	OrderID     string
+	Status      core.OrderStatus
+	FilledQty   *big.Rat
+	AvgPrice    *big.Rat
+	Quantity    *big.Rat
+	Price       *big.Rat
+	Side        core.OrderSide
+	Type        core.OrderType
+	TimeInForce core.TimeInForce
+	Time        time.Time
 }
 
 // BalanceEvent is a normalized private websocket balance snapshot.

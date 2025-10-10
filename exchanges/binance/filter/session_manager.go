@@ -5,23 +5,23 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/coachpo/meltica/exchanges/shared/routing"
+	"github.com/coachpo/meltica/exchanges/binance/bridge"
 	mdfilter "github.com/coachpo/meltica/pipeline"
 )
 
 // SessionManager handles Binance private session lifecycle including listen-key management
 type SessionManager struct {
-	router      routing.RESTDispatcher
+	dispatcher  bridge.Dispatcher
 	config      mdfilter.SessionConfig
 	authContext *mdfilter.AuthContext
 	cancelFunc  context.CancelFunc
 }
 
 // NewSessionManager creates a new session manager for Binance private streams
-func NewSessionManager(router routing.RESTDispatcher, config mdfilter.SessionConfig) *SessionManager {
+func NewSessionManager(dispatcher bridge.Dispatcher, config mdfilter.SessionConfig) *SessionManager {
 	return &SessionManager{
-		router: router,
-		config: config,
+		dispatcher: dispatcher,
+		config:     config,
 	}
 }
 
@@ -92,14 +92,13 @@ func (sm *SessionManager) createListenKey(ctx context.Context) (string, error) {
 		ListenKey string `json:"listenKey"`
 	}
 
-	msg := routing.RESTMessage{
-		API:    "spot",
-		Method: "POST",
-		Path:   "/api/v3/userDataStream",
-		Signed: false,
+	req := mdfilter.InteractionRequest{
+		Method:      "POST",
+		Path:        "/api/v3/userDataStream",
+		SigningHint: mdfilter.SigningHintNone,
 	}
 
-	err := sm.router.Dispatch(ctx, msg, &result)
+	err := sm.dispatcher.Dispatch(ctx, req, &result)
 	if err != nil {
 		return "", fmt.Errorf("failed to create listen key: %w", err)
 	}
@@ -113,14 +112,14 @@ func (sm *SessionManager) createListenKey(ctx context.Context) (string, error) {
 
 // keepAlive sends a keep-alive request to extend the listen key
 func (sm *SessionManager) keepAlive(ctx context.Context, listenKey string) error {
-	msg := routing.RESTMessage{
-		API:    "spot",
-		Method: "PUT",
-		Path:   fmt.Sprintf("/api/v3/userDataStream?listenKey=%s", listenKey),
-		Signed: false,
+	req := mdfilter.InteractionRequest{
+		Method:      "PUT",
+		Path:        "/api/v3/userDataStream",
+		SigningHint: mdfilter.SigningHintNone,
+		QueryParams: map[string]string{"listenKey": listenKey},
 	}
 
-	err := sm.router.Dispatch(ctx, msg, nil)
+	err := sm.dispatcher.Dispatch(ctx, req, nil)
 	if err != nil {
 		return fmt.Errorf("failed to keep alive listen key: %w", err)
 	}
@@ -130,14 +129,14 @@ func (sm *SessionManager) keepAlive(ctx context.Context, listenKey string) error
 
 // closeListenKey closes the listen key
 func (sm *SessionManager) closeListenKey(ctx context.Context, listenKey string) error {
-	msg := routing.RESTMessage{
-		API:    "spot",
-		Method: "DELETE",
-		Path:   fmt.Sprintf("/api/v3/userDataStream?listenKey=%s", listenKey),
-		Signed: false,
+	req := mdfilter.InteractionRequest{
+		Method:      "DELETE",
+		Path:        "/api/v3/userDataStream",
+		SigningHint: mdfilter.SigningHintNone,
+		QueryParams: map[string]string{"listenKey": listenKey},
 	}
 
-	err := sm.router.Dispatch(ctx, msg, nil)
+	err := sm.dispatcher.Dispatch(ctx, req, nil)
 	if err != nil {
 		return fmt.Errorf("failed to close listen key: %w", err)
 	}

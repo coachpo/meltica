@@ -1,4 +1,4 @@
-package filter
+package bridge
 
 import (
 	"context"
@@ -6,50 +6,47 @@ import (
 	"time"
 
 	"github.com/coachpo/meltica/exchanges/shared/infra/transport"
-	"github.com/coachpo/meltica/exchanges/shared/routing"
 	mdfilter "github.com/coachpo/meltica/pipeline"
 )
 
-// RESTWrapper provides retry and rate limiting capabilities for REST requests
-type RESTWrapper struct {
-	router       routing.RESTDispatcher
-	limiter      *transport.TokenBucketLimiter
-	defaultRetry *mdfilter.RetryPolicy
+// Wrapper provides rate limiting around a Dispatcher.
+type Wrapper struct {
+	dispatcher    Dispatcher
+	limiter       *transport.TokenBucketLimiter
+	defaultPolicy *mdfilter.RetryPolicy
 }
 
-// NewRESTWrapper creates a new wrapper with rate limiting and retry capabilities
-func NewRESTWrapper(router routing.RESTDispatcher, requestsPerSecond float64, defaultRetry *mdfilter.RetryPolicy) *RESTWrapper {
+// NewWrapper constructs a dispatcher with optional rate limiting and retry policy metadata.
+func NewWrapper(dispatcher Dispatcher, requestsPerSecond float64, defaultRetry *mdfilter.RetryPolicy) *Wrapper {
 	var limiter *transport.TokenBucketLimiter
 	if requestsPerSecond > 0 {
-		// Allow burst up to 2x the rate for short periods
-		burstCapacity := requestsPerSecond * 2
-		if burstCapacity < 1 {
-			burstCapacity = 1
+		burst := requestsPerSecond * 2
+		if burst < 1 {
+			burst = 1
 		}
-		limiter = transport.NewTokenBucketLimiter(burstCapacity, requestsPerSecond)
+		limiter = transport.NewTokenBucketLimiter(burst, requestsPerSecond)
 	}
-
-	return &RESTWrapper{
-		router:       router,
-		limiter:      limiter,
-		defaultRetry: defaultRetry,
+	return &Wrapper{
+		dispatcher:    dispatcher,
+		limiter:       limiter,
+		defaultPolicy: defaultRetry,
 	}
 }
 
-// Dispatch implements routing.RESTDispatcher with rate limiting and retry logic
-func (w *RESTWrapper) Dispatch(ctx context.Context, msg routing.RESTMessage, out any) error {
-	// Apply rate limiting if configured
+// Dispatch enforces rate limiting before delegating to the underlying dispatcher.
+func (w *Wrapper) Dispatch(ctx context.Context, req mdfilter.InteractionRequest, out any) error {
 	if w.limiter != nil {
 		if err := w.limiter.Wait(ctx); err != nil {
 			return fmt.Errorf("rate limit wait: %w", err)
 		}
 	}
-
-	// Execute the request through the underlying router
-	return w.router.Dispatch(ctx, msg, out)
+	if req.RetryPolicy == nil && w.defaultPolicy != nil {
+		req.RetryPolicy = w.defaultPolicy
+	}
+	return w.dispatcher.Dispatch(ctx, req, out)
 }
 
-// DefaultRetryPolicy returns a sensible default retry policy for Binance
+// DefaultRetryPolicy returns a sensible default retry policy for Binance REST calls.
 func DefaultRetryPolicy() *mdfilter.RetryPolicy {
 	return &mdfilter.RetryPolicy{
 		MaxAttempts:          3,
@@ -67,7 +64,7 @@ func DefaultRetryPolicy() *mdfilter.RetryPolicy {
 	}
 }
 
-// AggressiveRetryPolicy returns a more aggressive retry policy for critical operations
+// AggressiveRetryPolicy returns a more aggressive retry policy for critical operations.
 func AggressiveRetryPolicy() *mdfilter.RetryPolicy {
 	return &mdfilter.RetryPolicy{
 		MaxAttempts:          5,
@@ -86,7 +83,7 @@ func AggressiveRetryPolicy() *mdfilter.RetryPolicy {
 	}
 }
 
-// ConservativeRetryPolicy returns a conservative retry policy for non-critical operations
+// ConservativeRetryPolicy returns a conservative retry policy for non-critical operations.
 func ConservativeRetryPolicy() *mdfilter.RetryPolicy {
 	return &mdfilter.RetryPolicy{
 		MaxAttempts:          2,
@@ -101,19 +98,19 @@ func ConservativeRetryPolicy() *mdfilter.RetryPolicy {
 	}
 }
 
-// WithRetryPolicy creates a new InteractionRequest with the specified retry policy
+// WithRetryPolicy applies a retry policy to an InteractionRequest.
 func WithRetryPolicy(req mdfilter.InteractionRequest, policy *mdfilter.RetryPolicy) mdfilter.InteractionRequest {
 	req.RetryPolicy = policy
 	return req
 }
 
-// WithTimeout creates a new InteractionRequest with the specified timeout
+// WithTimeout sets a timeout on an InteractionRequest.
 func WithTimeout(req mdfilter.InteractionRequest, timeout time.Duration) mdfilter.InteractionRequest {
 	req.Timeout = mdfilter.Duration(timeout)
 	return req
 }
 
-// WithQueryParams creates a new InteractionRequest with additional query parameters
+// WithQueryParams adds query parameters to an InteractionRequest.
 func WithQueryParams(req mdfilter.InteractionRequest, params map[string]string) mdfilter.InteractionRequest {
 	if req.QueryParams == nil {
 		req.QueryParams = make(map[string]string)
@@ -124,7 +121,7 @@ func WithQueryParams(req mdfilter.InteractionRequest, params map[string]string) 
 	return req
 }
 
-// WithHeaders creates a new InteractionRequest with additional headers
+// WithHeaders adds headers to an InteractionRequest.
 func WithHeaders(req mdfilter.InteractionRequest, headers map[string]string) mdfilter.InteractionRequest {
 	if req.Headers == nil {
 		req.Headers = make(map[string]string)
@@ -135,7 +132,7 @@ func WithHeaders(req mdfilter.InteractionRequest, headers map[string]string) mdf
 	return req
 }
 
-// WithSigningHint creates a new InteractionRequest with the specified signing hint
+// WithSigningHint sets the signing hint on an InteractionRequest.
 func WithSigningHint(req mdfilter.InteractionRequest, hint mdfilter.SigningHint) mdfilter.InteractionRequest {
 	req.SigningHint = hint
 	return req

@@ -3,6 +3,7 @@ package binance
 import (
 	"context"
 	"fmt"
+	"math/big"
 	"net/http"
 	"time"
 
@@ -70,7 +71,14 @@ func (s spotAPI) Balances(ctx context.Context) ([]core.Balance, error) {
 	out := make([]core.Balance, 0, len(resp))
 	for _, b := range resp {
 		avail, _ := numeric.Parse(b.Free)
-		out = append(out, core.Balance{Asset: b.Asset, Available: avail, Time: time.Now()})
+		locked, _ := numeric.Parse(b.Locked)
+		var total *big.Rat
+		if avail != nil && locked != nil {
+			total = new(big.Rat).Add(new(big.Rat).Set(avail), locked)
+		} else if avail != nil {
+			total = new(big.Rat).Set(avail)
+		}
+		out = append(out, core.Balance{Asset: b.Asset, Available: avail, Locked: locked, Total: total, Time: time.Now()})
 	}
 	return out, nil
 }

@@ -1,4 +1,4 @@
-package filter
+package bridge
 
 import (
 	"context"
@@ -11,7 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// mockRESTDispatcher implements routing.RESTDispatcher for testing
 type mockRESTDispatcher struct {
 	dispatchFunc func(ctx context.Context, msg routing.RESTMessage, out any) error
 }
@@ -23,9 +22,7 @@ func (m *mockRESTDispatcher) Dispatch(ctx context.Context, msg routing.RESTMessa
 	return nil
 }
 
-func TestRESTBridge_MapInteractionToREST(t *testing.T) {
-	bridge := NewRESTBridge(nil)
-
+func TestMapInteractionToREST(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    mdfilter.InteractionRequest
@@ -55,7 +52,7 @@ func TestRESTBridge_MapInteractionToREST(t *testing.T) {
 				Method:        "POST",
 				Path:          "/fapi/v1/order",
 				Symbol:        "BTCUSDT",
-				Payload:       map[string]interface{}{"symbol": "BTCUSDT", "side": "BUY", "quantity": 0.001},
+				Payload:       map[string]any{"symbol": "BTCUSDT", "side": "BUY", "quantity": 0.001},
 				CorrelationID: "order-456",
 				AuthContext: &mdfilter.AuthContext{
 					APIKey: "test-key",
@@ -112,7 +109,7 @@ func TestRESTBridge_MapInteractionToREST(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := bridge.mapInteractionToREST(tt.input)
+			result, err := mapInteractionToREST(tt.input)
 			if tt.hasError {
 				require.Error(t, err)
 				return
@@ -125,14 +122,12 @@ func TestRESTBridge_MapInteractionToREST(t *testing.T) {
 			assert.Equal(t, tt.expected.Query, result.Query)
 			assert.Equal(t, tt.expected.Signed, result.Signed)
 
-			// Check body separately since JSON marshaling order might vary
 			if tt.expected.Body != nil {
 				assert.JSONEq(t, string(tt.expected.Body), string(result.Body))
 			} else {
 				assert.Nil(t, result.Body)
 			}
 
-			// Check headers
 			assert.Equal(t, "application/json", result.Header.Get("Content-Type"))
 			if tt.expected.Signed && tt.input.AuthContext != nil {
 				assert.Equal(t, tt.input.AuthContext.APIKey, result.Header.Get("X-MBX-APIKEY"))
@@ -141,19 +136,19 @@ func TestRESTBridge_MapInteractionToREST(t *testing.T) {
 	}
 }
 
-func TestRESTBridge_Dispatch(t *testing.T) {
+func TestRouterBridge_Dispatch(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("successful dispatch", func(t *testing.T) {
-		var capturedMsg routing.RESTMessage
+		var captured routing.RESTMessage
 		mockRouter := &mockRESTDispatcher{
 			dispatchFunc: func(ctx context.Context, msg routing.RESTMessage, out any) error {
-				capturedMsg = msg
+				captured = msg
 				return nil
 			},
 		}
 
-		bridge := NewRESTBridge(mockRouter)
+		dispatcher := NewRouterBridge(mockRouter)
 		interactionReq := mdfilter.InteractionRequest{
 			Method:        "GET",
 			Path:          "/api/v3/ticker/price?symbol=BTCUSDT",
@@ -161,64 +156,33 @@ func TestRESTBridge_Dispatch(t *testing.T) {
 			CorrelationID: "test-123",
 		}
 
-		var result interface{}
-		err := bridge.Dispatch(ctx, interactionReq, &result)
-
-		require.NoError(t, err)
-		assert.Equal(t, string(rest.SpotAPI), capturedMsg.API)
-		assert.Equal(t, "GET", capturedMsg.Method)
-		assert.Equal(t, "/api/v3/ticker/price", capturedMsg.Path)
-		assert.Equal(t, map[string]string{"symbol": "BTCUSDT"}, capturedMsg.Query)
+		var result any
+		require.NoError(t, dispatcher.Dispatch(ctx, interactionReq, &result))
+		assert.Equal(t, string(rest.SpotAPI), captured.API)
+		assert.Equal(t, "GET", captured.Method)
+		assert.Equal(t, "/api/v3/ticker/price", captured.Path)
+		assert.Equal(t, map[string]string{"symbol": "BTCUSDT"}, captured.Query)
 	})
 
 	t.Run("router not available", func(t *testing.T) {
-		bridge := NewRESTBridge(nil)
-		interactionReq := mdfilter.InteractionRequest{
-			Method: "GET",
-			Path:   "/api/v3/ticker/price",
-		}
-
-		var result interface{}
-		err := bridge.Dispatch(ctx, interactionReq, &result)
-
+		dispatcher := NewRouterBridge(nil)
+		var result any
+		err := dispatcher.Dispatch(ctx, mdfilter.InteractionRequest{Method: "GET", Path: "/api/v3/ticker/price"}, &result)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "REST router not available")
 	})
 
-	t.Run("invalid message type", func(t *testing.T) {
-		mockRouter := &mockRESTDispatcher{}
-		bridge := NewRESTBridge(mockRouter)
-
-		var result interface{}
-		err := bridge.Dispatch(ctx, "invalid-type", &result)
-
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "expected InteractionRequest")
-	})
-
 	t.Run("payload serialization error", func(t *testing.T) {
-		mockRouter := &mockRESTDispatcher{}
-		bridge := NewRESTBridge(mockRouter)
-
-		// Create an invalid payload that can't be JSON marshaled
-		interactionReq := mdfilter.InteractionRequest{
-			Method:        "POST",
-			Path:          "/api/v3/order",
-			Payload:       make(chan int), // Channels can't be JSON marshaled
-			CorrelationID: "test-123",
-		}
-
-		var result interface{}
-		err := bridge.Dispatch(ctx, interactionReq, &result)
-
+		dispatcher := NewRouterBridge(&mockRESTDispatcher{})
+		req := mdfilter.InteractionRequest{Method: "POST", Path: "/api/v3/order", Payload: make(chan int)}
+		var result any
+		err := dispatcher.Dispatch(ctx, req, &result)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to serialize payload")
 	})
 }
 
-func TestRESTBridge_InferAPI(t *testing.T) {
-	bridge := NewRESTBridge(nil)
-
+func TestInferAPI(t *testing.T) {
 	tests := []struct {
 		path     string
 		expected string
@@ -233,21 +197,17 @@ func TestRESTBridge_InferAPI(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
-			result := bridge.inferAPI(tt.path)
-			assert.Equal(t, tt.expected, result)
+			assert.Equal(t, tt.expected, inferAPI(tt.path))
 		})
 	}
 }
 
-func TestRESTBridge_ShouldSign(t *testing.T) {
-	bridge := NewRESTBridge(nil)
-
+func TestShouldSign(t *testing.T) {
 	tests := []struct {
 		method   string
 		path     string
 		expected bool
 	}{
-		// Private endpoints that should be signed
 		{"GET", "/api/v3/account", true},
 		{"POST", "/api/v3/order", true},
 		{"GET", "/api/v3/openOrders", true},
@@ -255,8 +215,6 @@ func TestRESTBridge_ShouldSign(t *testing.T) {
 		{"POST", "/fapi/v1/order", true},
 		{"GET", "/dapi/v1/account", true},
 		{"POST", "/dapi/v1/order", true},
-
-		// Public endpoints that should not be signed
 		{"GET", "/api/v3/ticker/price", false},
 		{"GET", "/fapi/v1/ticker/price", false},
 		{"GET", "/dapi/v1/ticker/price", false},
@@ -265,15 +223,12 @@ func TestRESTBridge_ShouldSign(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
-			result := bridge.shouldSign(tt.method, tt.path)
-			assert.Equal(t, tt.expected, result)
+			assert.Equal(t, tt.expected, shouldSign(tt.method, tt.path))
 		})
 	}
 }
 
-func TestRESTBridge_NormalizePath(t *testing.T) {
-	bridge := NewRESTBridge(nil)
-
+func TestNormalizePath(t *testing.T) {
 	tests := []struct {
 		input    string
 		expected string
@@ -286,8 +241,7 @@ func TestRESTBridge_NormalizePath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			result := bridge.normalizePath(tt.input)
-			assert.Equal(t, tt.expected, result)
+			assert.Equal(t, tt.expected, normalizePath(tt.input))
 		})
 	}
 }

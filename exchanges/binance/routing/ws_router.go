@@ -6,6 +6,9 @@ import (
 	"github.com/coachpo/meltica/core"
 	corestreams "github.com/coachpo/meltica/core/streams"
 	coretransport "github.com/coachpo/meltica/core/transport"
+	"github.com/coachpo/meltica/errs"
+	frameworkrouter "github.com/coachpo/meltica/market_data/framework/router"
+	"github.com/coachpo/meltica/market_data/processors"
 )
 
 // WSDependencies exposes the exchange hooks required by the websocket routing layer.
@@ -25,15 +28,33 @@ type Subscription = corestreams.Subscription
 
 // WSRouter manages websocket subscriptions using Public and Private dispatchers.
 type WSRouter struct {
-	public  *PublicDispatcher
-	private *PrivateDispatcher
+	public     *PublicDispatcher
+	private    *PrivateDispatcher
+	hub        *processorHub
+	table      *frameworkrouter.RoutingTable
+	dispatcher *frameworkrouter.RouterDispatcher
 }
 
 // NewWSRouter creates a websocket routing layer bound to the infrastructure client.
 func NewWSRouter(infra coretransport.StreamClient, deps WSDependencies) *WSRouter {
+	ctx := context.Background()
+	table := frameworkrouter.NewRoutingTable()
+	descriptors := BinanceMessageTypeDescriptors()
+
+	if err := registerBinanceProcessors(table, deps, descriptors); err != nil {
+		panic(err)
+	}
+
+	metrics := frameworkrouter.NewRoutingMetrics()
+	dispatcher := frameworkrouter.NewRouterDispatcher(ctx, metrics)
+	hub := newProcessorHub(ctx, table, dispatcher, descriptors)
+
 	return &WSRouter{
-		public:  NewPublicDispatcher(infra, deps),
-		private: NewPrivateDispatcher(infra, deps),
+		public:     NewPublicDispatcher(infra, deps, table, dispatcher, hub),
+		private:    NewPrivateDispatcher(infra, deps, table, dispatcher, hub),
+		hub:        hub,
+		table:      table,
+		dispatcher: dispatcher,
 	}
 }
 
@@ -49,7 +70,12 @@ func (w *WSRouter) SubscribePrivate(ctx context.Context) (Subscription, error) {
 
 // Close terminates the router.
 func (w *WSRouter) Close() error {
-	// Dispatchers don't hold persistent resources; infrastructure client is closed elsewhere
+	if w.hub != nil {
+		w.hub.Close()
+	}
+	if w.dispatcher != nil {
+		w.dispatcher.Shutdown()
+	}
 	return nil
 }
 
@@ -89,4 +115,36 @@ func (w *wsPrivateWrapper) Err() <-chan error       { return w.sub.Err() }
 func (w *wsPrivateWrapper) Close() error {
 	w.deps.CloseListenKey(context.Background(), w.listenKey)
 	return w.sub.Close()
+}
+
+func registerBinanceProcessors(table *frameworkrouter.RoutingTable, deps WSDependencies, descriptors []*frameworkrouter.MessageTypeDescriptor) error {
+	for _, desc := range descriptors {
+		var proc processors.Processor
+		switch desc.ID {
+		case "binance.trade":
+			proc = NewTradeProcessorAdapter(deps)
+		case "binance.orderbook":
+			proc = NewOrderBookProcessorAdapter(deps)
+		case "binance.ticker":
+			proc = NewTickerProcessorAdapter(deps)
+		case "binance.user.order":
+			proc = NewOrderUpdateProcessorAdapter()
+		case "binance.user.balance":
+			proc = NewBalanceProcessorAdapter()
+		default:
+			return errs.New("", errs.CodeExchange, errs.WithMessage("unknown binance descriptor"))
+		}
+		if err := table.Register(desc, proc); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// RegisterProcessors registers Binance message type descriptors and processors with the provided routing table.
+func RegisterProcessors(table *frameworkrouter.RoutingTable, deps WSDependencies) error {
+	if table == nil {
+		return errs.New("", errs.CodeInvalid, errs.WithMessage("routing table required"))
+	}
+	return registerBinanceProcessors(table, deps, BinanceMessageTypeDescriptors())
 }

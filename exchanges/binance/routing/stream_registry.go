@@ -88,12 +88,7 @@ func ParseStreamKind(stream string, eventType string) core.Topic {
 }
 
 func (r *StreamRegistry) handleTrade(msg *RoutedMessage, payload []byte, stream string) error {
-	var rec struct {
-		Symbol string      `json:"s"`
-		Price  json.Number `json:"p"`
-		Qty    json.Number `json:"q"`
-		Time   int64       `json:"T"`
-	}
+	var rec tradeRecord
 	if err := json.Unmarshal(payload, &rec); err != nil {
 		return internal.WrapExchange(err, "decode trade event")
 	}
@@ -105,17 +100,7 @@ func (r *StreamRegistry) handleTrade(msg *RoutedMessage, payload []byte, stream 
 }
 
 func (r *StreamRegistry) handleTicker(msg *RoutedMessage, payload []byte, stream string) error {
-	var rec struct {
-		EventType string      `json:"e"`
-		EventTime int64       `json:"E"`
-		Symbol    string      `json:"s"`
-		BidPrice  json.Number `json:"b"`
-		BidQty    json.Number `json:"B"`
-		AskPrice  json.Number `json:"a"`
-		AskQty    json.Number `json:"A"`
-		LastPrice json.Number `json:"c"`
-		LastQty   json.Number `json:"Q"`
-	}
+	var rec tickerRecord
 	if err := json.Unmarshal(payload, &rec); err != nil {
 		return internal.WrapExchange(err, "decode ticker event")
 	}
@@ -127,15 +112,11 @@ func (r *StreamRegistry) handleTicker(msg *RoutedMessage, payload []byte, stream
 }
 
 func (r *StreamRegistry) handleOrderbook(msg *RoutedMessage, payload []byte, stream string) error {
-	var rec struct {
-		Event         string          `json:"e"`
-		Symbol        string          `json:"s"`
-		FirstUpdateID int64           `json:"U"`
-		LastUpdateID  int64           `json:"u"`
-		Bids          [][]interface{} `json:"b"`
-		Asks          [][]interface{} `json:"a"`
-		EventTime     int64           `json:"E"`
+	event, err := eventTypeFromPayload(payload)
+	if err != nil {
+		return internal.WrapExchange(err, "decode depth")
 	}
+	var rec orderbookRecord
 	if err := json.Unmarshal(payload, &rec); err != nil {
 		return internal.WrapExchange(err, "decode depth")
 	}
@@ -143,7 +124,7 @@ func (r *StreamRegistry) handleOrderbook(msg *RoutedMessage, payload []byte, str
 	if err != nil {
 		return err
 	}
-	return parseOrderbookEvent(msg, &rec, symbol)
+	return parseOrderbookEvent(msg, &rec, symbol, event)
 }
 
 func (r *StreamRegistry) handleOrderUpdate(msg *RoutedMessage, payload []byte, stream string) error {
@@ -151,11 +132,9 @@ func (r *StreamRegistry) handleOrderUpdate(msg *RoutedMessage, payload []byte, s
 }
 
 func (r *StreamRegistry) handleBalanceUpdate(msg *RoutedMessage, payload []byte, stream string) error {
-	var env struct {
-		Event string `json:"e"`
-	}
-	if err := json.Unmarshal(payload, &env); err != nil {
+	event, err := eventTypeFromPayload(payload)
+	if err != nil {
 		return err
 	}
-	return parseBalanceUpdateEvent(msg, payload, env.Event)
+	return parseBalanceUpdateEvent(msg, payload, event)
 }

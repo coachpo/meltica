@@ -13,11 +13,16 @@ import (
 const defaultValidationWindow = time.Minute
 
 // Validator defines a rule that inspects and optionally rejects an envelope.
+//
+// Deprecated: Implement processors.Processor validation within Process instead
+// of using standalone validator stages.
 type Validator interface {
 	Validate(*framework.MessageEnvelope) error
 }
 
 // ValidatorFunc adapts a function into a Validator.
+//
+// Deprecated: Prefer inline validation in processor implementations.
 type ValidatorFunc func(*framework.MessageEnvelope) error
 
 // Validate executes the wrapped function.
@@ -29,6 +34,9 @@ func (fn ValidatorFunc) Validate(env *framework.MessageEnvelope) error {
 }
 
 // ValidationResult captures the outcome of a validation cycle.
+//
+// Deprecated: Processors should return typed errors directly and rely on
+// routing metrics rather than ValidationResult tracking.
 type ValidationResult struct {
 	Valid             bool
 	InvalidCount      uint32
@@ -37,6 +45,9 @@ type ValidationResult struct {
 }
 
 // ValidationStage coordinates validator execution and invalid message tracking.
+//
+// Deprecated: Validation should be performed within processors registered to
+// the routing framework instead of a separate validation stage.
 type ValidationStage struct {
 	validators []Validator
 	window     time.Duration
@@ -48,9 +59,14 @@ type ValidationStage struct {
 }
 
 // ValidationOption configures ValidationStage behavior.
+//
+// Deprecated: Configure validation logic directly on processors.
 type ValidationOption func(*ValidationStage)
 
 // WithValidators registers validator implementations for the stage.
+//
+// Deprecated: Add validation logic inside processors instead of using
+// ValidationStage options.
 func WithValidators(validators ...Validator) ValidationOption {
 	return func(stage *ValidationStage) {
 		for _, v := range validators {
@@ -63,6 +79,9 @@ func WithValidators(validators ...Validator) ValidationOption {
 }
 
 // WithValidationWindow sets the sliding window used to report invalid counts.
+//
+// Deprecated: Utilize routing metrics to observe error rates instead of
+// ValidationStage windows.
 func WithValidationWindow(window time.Duration) ValidationOption {
 	return func(stage *ValidationStage) {
 		stage.window = window
@@ -70,6 +89,8 @@ func WithValidationWindow(window time.Duration) ValidationOption {
 }
 
 // WithInvalidThreshold configures the threshold after which callers may take action.
+//
+// Deprecated: Use router metrics and processor error handling for thresholding.
 func WithInvalidThreshold(threshold uint32) ValidationOption {
 	return func(stage *ValidationStage) {
 		stage.threshold = threshold
@@ -77,6 +98,8 @@ func WithInvalidThreshold(threshold uint32) ValidationOption {
 }
 
 // WithClock overrides the clock source used for window calculations.
+//
+// Deprecated: Provided for backward compatibility only.
 func WithClock(clock func() time.Time) ValidationOption {
 	return func(stage *ValidationStage) {
 		if clock != nil {
@@ -86,6 +109,9 @@ func WithClock(clock func() time.Time) ValidationOption {
 }
 
 // NewValidationStage constructs a validation pipeline with optional configuration.
+//
+// Deprecated: Register processors with the router and perform validation there
+// instead of constructing validation stages.
 func NewValidationStage(opts ...ValidationOption) *ValidationStage {
 	stage := &ValidationStage{
 		window: defaultValidationWindow,
@@ -100,6 +126,8 @@ func NewValidationStage(opts ...ValidationOption) *ValidationStage {
 }
 
 // Validate executes registered validators and tracks invalid payloads.
+//
+// Deprecated: Perform validation inside processor Process methods.
 func (s *ValidationStage) Validate(env *framework.MessageEnvelope) ValidationResult {
 	if env == nil {
 		return ValidationResult{

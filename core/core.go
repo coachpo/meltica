@@ -119,6 +119,8 @@ type Trade struct {
 type Balance struct {
 	Asset     string
 	Available *big.Rat
+	Total     *big.Rat
+	Locked    *big.Rat
 	Time      time.Time
 }
 
