@@ -2,11 +2,11 @@
 
 ## Decision Log
 
-### 1. Framework Residency
-- **Decision**: Host the reusable WebSocket routing framework under `/lib/ws-routing`.
-- **Rationale**: Aligns with ARCH-01 requiring domain-agnostic infrastructure to live in `/lib`; avoids future relocation once additional domains adopt the framework.
+### 1. Library Residency
+- **Decision**: Host the reusable WebSocket routing library under `/lib/ws-routing`.
+- **Rationale**: Aligns with ARCH-01 requiring domain-agnostic infrastructure to live in `/lib`; avoids future relocation once additional domains adopt the library.
 - **Alternatives Considered**:
-  - `/frameworks/ws-routing`: Consistent with name but increases path churn because existing shared utilities already consolidated in `/lib`.
+  - A separate top-level folder outside `/lib`: Increases path churn and conflicts with governance requiring shared code to reside in `/lib`.
   - Leave code inside `market_data`: Violates ARCH-02 by keeping reusable code in a domain package and blocks cross-domain adoption.
 
 ### 2. Public API Surface

@@ -32,9 +32,11 @@
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
 [Gates determined based on constitution file]
-- Confirm the proposed work prioritizes new capabilities/architectural improvements over backward compatibility, and document migration impacts when breaks are required.
-- Verify reusable infrastructure remains under `/frameworks` or `/lib` and that framework code does not import domain packages.
-- If refactors change import paths, include migration notes and a one-release deprecation shim in the rollout plan.
+- Confirm the proposed work prioritizes new capabilities/architectural improvements over backward compatibility, and explicitly flag breaking changes in the spec with migration impacts documented.
+- Verify reusable infrastructure remains under `/lib` and that `/lib/**` code does not import domain packages.
+- If refactors change import paths, include migration notes and a one-release deprecation shim in the rollout plan (GOV-08).
+- If touching routing or boundary contracts, define PERF-07 routing hot-path benchmarks and add boundary test plans (TS-10).
+- Ensure observability uses `/lib` logging/metrics interfaces; no vendor SDKs in domain or routing code.
 
 ## Project Structure
 

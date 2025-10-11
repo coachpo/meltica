@@ -247,6 +247,6 @@ With multiple developers:
 - Stop at any checkpoint to validate story independently
 - Avoid: vague tasks, same file conflicts, cross-story dependencies that break independence
 - When innovation requires breaking changes, add tasks for migration guidance, one-release deprecation shims for import changes, and communication rather than deferring delivery.
-- Ensure reusable frameworks live in `/frameworks` or `/lib` and add tasks to relocate shared utilities out of domain packages when discovered.
+- Ensure reusable core libraries live in `/lib` and add tasks to relocate shared utilities out of domain packages when discovered.
 
 

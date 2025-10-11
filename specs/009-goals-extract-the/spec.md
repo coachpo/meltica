@@ -3,7 +3,7 @@
 **Feature Branch**: `009-goals-extract-the`  
 **Created**: 2025-10-11  
 **Status**: Draft  
-**Input**: User description: "Goals: - Extract the generic websocket parsing routing framework from /market_data into /frameworks/ws-routing name can be /lib/ws-routing . - Keep market_data specific handlers as adapters in /market_data that consume the framework. - Provide a stable public API init/start/subscribe/publish/middleware and clear extension points. - No breaking runtime behavior maintain existing message formats and routing semantics. - Add minimal README + examples in the new framework folder. Acceptance criteria: - All imports from market_data → internal framework code are removed domain code uses the new public API. - Unit tests + contract tests cover parser, router, error handling, backoff/reconnect, and adapter wiring. - Lint/build/test pass runtime smoke test proves parity. - Migration notes + deprecation shim temporary re-export included."
+**Input**: User description: "Goals: - Extract the generic websocket parsing routing framework from /market_data into /lib/ws-routing. - Keep market_data specific handlers as adapters in /market_data that consume the framework. - Provide a stable public API init/start/subscribe/publish/middleware and clear extension points. - No breaking runtime behavior; maintain existing message formats and routing semantics. - Add minimal README + examples in the new library folder. Acceptance criteria: - All imports from market_data → internal framework code are removed; domain code uses the new public API. - Unit tests + contract tests cover parser, router, error handling, backoff/reconnect, and adapter wiring. - Lint/build/test pass; runtime smoke test proves parity. - Migration notes + deprecation shim temporary re-export included."
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -58,7 +58,7 @@ SDK consumers receive migration support including documentation, examples, tests
 
 ## Requirements *(mandatory)*
 
-**Compatibility Note**: If delivering new capabilities requires breaking backward compatibility, explicitly describe the impact, planned migration path, and the one-release deprecation shim for changed imports; innovation takes precedence per constitution. Confirm architecture boundaries keep frameworks in `/frameworks` or `/lib` and domain packages free of reusable infrastructure.
+**Compatibility Note**: If delivering new capabilities requires breaking backward compatibility, explicitly describe the impact, planned migration path, and the one-release deprecation shim for changed imports; innovation takes precedence per constitution. Confirm architecture boundaries keep core libraries in `/lib` and domain packages free of reusable infrastructure.
 
 ### Functional Requirements
 

@@ -82,7 +82,7 @@
   Fill them out with the right functional requirements.
 -->
 
-**Compatibility Note**: If delivering new capabilities requires breaking backward compatibility, explicitly describe the impact, planned migration path, and the one-release deprecation shim for changed imports; innovation takes precedence per constitution. Confirm architecture boundaries keep frameworks in `/frameworks` or `/lib` and domain packages free of reusable infrastructure.
+**Compatibility Note**: If delivering new capabilities requires breaking backward compatibility, include the explicit statement "This change is backward incompatible", describe impact and migration path, and provide a one-release deprecation shim for any changed import paths. Confirm architecture boundaries keep reusable code in `/lib` and domain packages free of reusable infrastructure. If changes touch routing or layer boundaries, specify routing hot-path performance baselines and exhaustive boundary tests. Use structured logging and metrics via `/lib` interfaces (no vendor SDK imports in feature code).
 
 ### Functional Requirements
 

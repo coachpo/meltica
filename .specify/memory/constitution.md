@@ -1,21 +1,24 @@
 <!--
 Sync Impact Report
-Version: 1.2.0 → 1.3.0
+Version: 1.3.0 → 1.4.0
 Modified Principles:
-- Updated TS-01: Coverage thresholds now ≥80% overall and ≥70% per package (previously variable thresholds)
-- Expanded TS-02: Added explicit table-driven test enforcement
-- Added TS-08: Integration Test Isolation (build tags)
-- Added TS-09: Test Deduplication and Fixture Sharing
-- Expanded TS-04: Enhanced to include deterministic test requirements (no sleeps, context timeouts)
-- Updated GOV-04: Coverage checks are now blocking in CI
+- ARCH-01: Now explicitly mandates business-agnostic core libraries live under /lib only; clarified import rules and added naming/types/docs neutrality
+- ARCH-02/ARCH-03/ARCH-04: Reworded to refer to core libraries and /lib (removed /frameworks references)
+- CQ-02: Clarified API boundaries by tying contracts to core/layers/* and requiring boundary ownership
+- GOV-01/GOV-04: Updated architecture boundary references to ARCH-01 through ARCH-06
 Added Sections:
-- None
+- CQ-09: Structured Logging & Metrics Interfaces (MUST)
+- TS-10: Exhaustive Boundary Tests (MUST)
+- PERF-07: Routing Hot Path Baselines (MUST)
+- ARCH-05: Zero Domain Leakage (MUST)
+- ARCH-06: Stable Package Names (MUST)
+- GOV-08: Spec-Authorized Breaking Changes (MUST)
 Removed Sections:
 - None
 Template Updates:
-- ✅ .specify/templates/plan-template.md (no updates needed - testing principles independent)
-- ✅ .specify/templates/spec-template.md (no updates needed - testing principles independent)
-- ✅ .specify/templates/tasks-template.md (no updates needed - testing principles independent)
+- ✅ .specify/templates/spec-template.md (compatibility note updated; /lib only; added observability/perf gates)
+- ✅ .specify/templates/plan-template.md (constitution check aligned to /lib; perf/observability/stability gates)
+- ✅ .specify/templates/tasks-template.md (/lib reference; migration tasks guidance retained)
 Follow-up TODOs:
 - None
 -->
@@ -35,7 +38,7 @@ Implementation:
 - No adapter-specific types exposed in public APIs
 
 **CQ-02: Layered Architecture Enforcement (MUST)**  
-Principle: Strict separation between Transport (L1), Routing (L2), Exchange (L3), and Pipeline (L4) layers.  
+Principle: Strict separation between Transport (L1), Routing (L2), Exchange (L3), and Pipeline (L4) layers with clear API boundaries.  
 Rationale: Prevents circular dependencies and ensures testability at each layer.  
 Implementation:  
 - L1 (Transport): Only handles HTTP/WebSocket primitives, retries, rate limits  
@@ -43,6 +46,7 @@ Implementation:
 - L3 (Exchange): Exposes unified market APIs and services  
 - L4 (Pipeline): Coordinates multi-exchange filtering and aggregation  
 Anti-pattern: Routing logic in transport clients; business logic in routers
+Boundary Ownership: Contracts for each layer live under `core/layers/*.go` and are the only allowed cross-layer API surface; changes require design review and version alignment.
 
 **CQ-03: Zero Floating-Point Policy (MUST)**  
 Principle: All monetary values use *big.Rat; float32/float64 prohibited in public APIs.  
@@ -92,6 +96,15 @@ Implementation:
 - core.ProtocolVersion follows SemVer  
 - Adapters return matching version via SupportedProtocolVersion()  
 - New capabilities added via optional participant interfaces, not interface changes
+
+**CQ-09: Structured Logging & Metrics Interfaces (MUST)**  
+Principle: Observability is exposed via narrow, vendor-neutral interfaces housed in `/lib` (e.g., `/lib/log`, `/lib/metrics`).  
+Rationale: Enables consistent structured logs and metrics without coupling to a specific provider.  
+Implementation:  
+- Logging interface supports leveled, structured fields: Debug/Info/Warn/Error(ctx, msg, fields...)  
+- Metrics interfaces for counters, gauges, histograms with label support  
+- No direct dependencies on logging/metrics vendors in domain or routing code; wiring occurs at composition roots  
+Anti-pattern: Importing concrete vendor SDKs (e.g., zap, slog, prometheus) directly in domain or routing packages
 
 ## 2. Testing Standards
 
@@ -175,6 +188,15 @@ Implementation:
 - Forbid duplicate test function names across the entire test suite  
 - Code review must verify no redundant test assertions for identical behavior  
 Anti-pattern: Testing the same parsing logic in both unit tests and integration tests; copy-pasted test fixtures; multiple tests named "TestValidation"
+
+**TS-10: Exhaustive Boundary Tests (MUST)**  
+Principle: All public APIs and enumerations at layer boundaries are exhaustively tested.  
+Rationale: Guarantees contract correctness and prevents silent regressions across layers.  
+Implementation:  
+- Every exported function/method in boundary packages (`core/layers`, `/lib/**` public APIs) has at least one positive and one negative test  
+- Enumerations and switch-based mappings include a test case per value; unknown values covered with error assertions  
+- Table-driven tests enumerate all supported message types in routing and all error paths in adapters  
+Enforcement: CI blocks merges if new exported members land without corresponding tests
 
 ## 3. User Experience Consistency
 
@@ -260,16 +282,21 @@ Implementation:
 - http.Client with MaxIdleConnsPerHost tuned per exchange  
 - WebSocket reconnect on errors, not per-subscription connections
 
+**PERF-07: Routing Hot Path Baselines (MUST)**  
+Target: Router dispatch in `/lib/ws-routing` performs with zero allocations and median < 500ns, P99 < 2µs per event on reference hardware.  
+Measurement: Benchmarks in `lib/ws-routing` cover decode → route → emit; include `-benchmem` and allocation checks.  
+Rationale: Routing is a critical latency path; strict baselines prevent regressions.
+
 ## 5. Governance Framework
 
 ### 5.1 How Principles Guide Technical Decisions
 
 **GOV-01: Decision Authority**  
-- Code Quality (CQ-01 through CQ-08): All MUST principles are CI-enforced and non-negotiable  
-- Testing Standards (TS-01 through TS-09): Coverage thresholds and test discipline are CI-enforced; SHOULD principles warn but don't block  
+- Code Quality (CQ-01 through CQ-09): All MUST principles are CI-enforced and non-negotiable  
+- Testing Standards (TS-01 through TS-10): Coverage thresholds and test discipline are CI-enforced; SHOULD principles warn but don't block  
 - User Experience (UX-01 through UX-06): MUST principles require code review approval; SHOULD principles are advisory  
-- Performance (PERF-01 through PERF-06): MUST principles validated via benchmarks; SHOULD principles tracked as metrics  
-- Architecture Boundaries (ARCH-01 through ARCH-04): MUST principles owned by architecture council; violations require design review sign-off
+- Performance (PERF-01 through PERF-07): MUST principles validated via benchmarks; SHOULD principles tracked as metrics  
+- Architecture Boundaries (ARCH-01 through ARCH-06): MUST principles owned by architecture council; violations require design review sign-off
 
 **GOV-02: Standard Enforcement**  
 - Automated CI checks: Block merge on MUST violations  
@@ -283,12 +310,12 @@ Implementation:
 
 **GOV-04: Quality Gates**  
 All code changes must satisfy:  
-- Code quality principles (CQ-01 through CQ-08)  
+- Code quality principles (CQ-01 through CQ-09)  
 - Testing standards coverage thresholds (TS-01) - **Coverage checks are blocking in CI**  
-- Testing discipline requirements (TS-02, TS-04, TS-08, TS-09)  
+- Testing discipline requirements (TS-02, TS-04, TS-08, TS-09, TS-10)  
 - User experience consistency requirements (UX-01, UX-03, UX-04, UX-06)  
 - Performance benchmarks showing no regressions (PERF-03)  
-- Architecture boundaries (ARCH-01 through ARCH-04)
+- Architecture boundaries (ARCH-01 through ARCH-06)
 
 **GOV-05: Principle Evolution**  
 - Review cycle: Principles reviewed annually or after significant project milestones  
@@ -311,39 +338,64 @@ Implementation:
 - Maintain backward-compatible import aliases for at least one release cycle
 - Remove shims only after verifying downstream adoption or obtaining explicit approvals
 
+**GOV-08: Spec-Authorized Breaking Changes (MUST)**  
+Principle: Backward-compatibility-breaking refactors are allowed when explicitly stated in the feature spec.  
+Rationale: Makes intentional breaks visible and reviewable while preserving overall project velocity.  
+Implementation:  
+- Spec must include an explicit statement: "This change is backward incompatible"  
+- Spec must document impact scope, migration path, and import path changes (if any)  
+- Plan must include a one-release deprecation shim when import paths change; link to migration notes
+
 ## 6. Architecture Boundaries
 
-**ARCH-01: Framework Residency (MUST)**  
-Principle: Shared infrastructure lives exclusively under `/frameworks` or `/lib` and stays domain-agnostic.  
-Rationale: Keeps reusable capabilities isolated from business rules and simplifies reuse.  
+**ARCH-01: Core Library Residency (/lib) (MUST)**  
+Principle: Shared, reusable infrastructure lives exclusively under `/lib` and is strictly business-agnostic.  
+Rationale: Isolates capabilities from business rules and enables reuse across domains.  
 Implementation:  
-- Framework packages must not import domain modules or rely on domain-specific data models  
-- Infrastructure helpers expose configuration via interfaces, not concrete domain types  
-- CI fails if reusable groundwork appears outside approved directories
+- `/lib/**` packages must not import domain modules or rely on domain-specific data models  
+- APIs expose configuration via interfaces, not concrete domain types  
+- No domain terms appear in `/lib` package names, exported identifiers, or doc comments  
+- CI fails if reusable groundwork appears outside `/lib`
 
 **ARCH-02: Domain Package Purity (MUST)**  
-Principle: Domain packages (e.g., `/market_data`, `/trading`) contain only business logic and must not ship reusable frameworks.  
+Principle: Domain packages (e.g., `/market_data`, `/trading`) contain only business logic and must not ship reusable core libraries.  
 Rationale: Protects domain boundaries and prevents cross-contamination of shared infrastructure.  
 Implementation:  
 - Domain directories expose orchestrations, aggregates, and application services only  
-- Reusable helpers discovered in domain code are relocated to `/frameworks` or `/lib`  
-- Code review blocks merges that add framework-style abstractions under domain paths
+- Reusable helpers discovered in domain code are relocated to `/lib`  
+- Code review blocks merges that add core-library-style abstractions under domain paths
 
 **ARCH-03: Dependency Direction (MUST)**  
-Principle: Domain code may depend on frameworks; frameworks must never depend on domain packages.  
+Principle: Domain code may depend on core libraries; core libraries must never depend on domain packages.  
 Rationale: Enforces a clean dependency graph and enables framework reuse across domains.  
 Implementation:  
-- Static analysis forbids imports from `/market_data`, `/pricing`, or other domain packages within framework code  
-- Domain layers wrap framework services behind domain-facing interfaces  
+- Static analysis forbids imports from `/market_data`, `/pricing`, or other domain packages within `/lib/**` code  
+- Domain layers wrap core-library services behind domain-facing interfaces  
 - Violations trigger architectural review before merge
 
-**ARCH-04: Framework API Lifecycle (MUST)**  
-Principle: Framework APIs are documented, versioned, and covered by automated contract tests.  
+**ARCH-04: Core Library API Lifecycle (MUST)**  
+Principle: Core library APIs are documented, versioned, and covered by automated contract tests.  
 Rationale: Guarantees predictable upgrades and confidence in cross-domain reuse.  
 Implementation:  
-- Document framework APIs with Godoc plus usage guides in `/frameworks/docs/`  
-- Version framework modules using semantic versioning with changelogs capturing migration steps  
+- Document `/lib/**` APIs with Godoc plus usage guides (e.g., `/lib/docs/`)  
+- Version library modules using semantic versioning with changelogs capturing migration steps  
 - Provide unit coverage and contract tests that validate integration expectations for each public API
+
+**ARCH-05: Zero Domain Leakage (MUST)**  
+Principle: No domain-specific naming, types, or documentation leaks into `/lib/**`.  
+Rationale: Keeps `/lib` reusable across multiple domains and prevents implicit coupling.  
+Implementation:  
+- Prohibit domain nouns (e.g., "orderbook", "trade") in `/lib` package names and exported identifiers  
+- Prohibit domain-specific structs/enums in `/lib`; use generic types and interfaces  
+- Prohibit domain examples in `/lib` godoc; use abstract examples
+
+**ARCH-06: Stable Package Names (MUST)**  
+Principle: Package import paths are stable; renames require an RFC and spec-flagged breaking change with deprecation shims.  
+Rationale: Preserves import stability for downstream users.  
+Implementation:  
+- No package renames or moves that change import paths unless GOV-08 process is followed  
+- Provide `deprecated` wrappers/aliases for one release when import paths change  
+- Static analysis in CI flags import changes for review
 
 ### Appendix: Severity Levels
 
@@ -351,4 +403,4 @@ Implementation:
 - **SHOULD**: Failing warns; may block in strict mode; requires justification to override  
 - **INFO**: Advisory; best practice recommendation
 
-**Version**: 1.3.0 | **Ratified**: 2025-10-08 | **Last Amended**: 2025-10-11
+**Version**: 1.4.0 | **Ratified**: 2025-10-08 | **Last Amended**: 2025-10-11
