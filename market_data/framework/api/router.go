@@ -11,6 +11,7 @@ import (
 	json "github.com/goccy/go-json"
 
 	"github.com/coachpo/meltica/errs"
+	apiwsrouting "github.com/coachpo/meltica/market_data/framework/api/wsrouting"
 )
 
 // HandlerFunc represents a request handler returning an error for centralized encoding.
@@ -24,8 +25,9 @@ type ErrorEncoder func(context.Context, http.ResponseWriter, error)
 
 // RouterConfig configures router behavior.
 type RouterConfig struct {
-	Middlewares  []Middleware
-	ErrorEncoder ErrorEncoder
+	Middlewares    []Middleware
+	ErrorEncoder   ErrorEncoder
+	SessionManager *apiwsrouting.Manager
 }
 
 type route struct {
@@ -55,6 +57,11 @@ func NewRouter(cfg RouterConfig) *Router {
 		r.errorEncoder = cfg.ErrorEncoder
 	} else {
 		r.errorEncoder = defaultErrorEncoder
+	}
+	if cfg.SessionManager != nil {
+		if handler := NewSessionHandler(cfg.SessionManager); handler != nil {
+			handler.Register(r)
+		}
 	}
 	return r
 }

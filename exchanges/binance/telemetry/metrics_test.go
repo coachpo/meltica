@@ -3,13 +3,13 @@ package telemetry
 import (
 	"testing"
 
+	bnwsrouting "github.com/coachpo/meltica/exchanges/binance/wsrouting"
 	framework "github.com/coachpo/meltica/market_data/framework"
-	frameworkrouter "github.com/coachpo/meltica/market_data/framework/router"
 )
 
 func TestCollectProducesRoutingSnapshot(t *testing.T) {
 	conn := framework.MetricsSnapshot{MessagesTotal: 42, ErrorsTotal: 2, Allocated: 1024}
-	routingMetrics := frameworkrouter.NewRoutingMetrics()
+	routingMetrics := bnwsrouting.NewRoutingMetrics()
 	routingMetrics.RecordError()
 	layers := Collect(conn, routingMetrics, BridgeSnapshot{RESTRequests: 7}, FilterSnapshot{Forwarded: 11, Dropped: 1})
 
@@ -32,7 +32,7 @@ func TestCollectProducesRoutingSnapshot(t *testing.T) {
 
 func TestLayerSnapshotsFlatten(t *testing.T) {
 	conn := framework.MetricsSnapshot{MessagesTotal: 10, ErrorsTotal: 1, Allocated: 2048}
-	routingMetrics := frameworkrouter.NewRoutingMetrics()
+	routingMetrics := bnwsrouting.NewRoutingMetrics()
 	routingMetrics.RecordError()
 	routingMetrics.RecordBackpressureStart("binance.trade")
 	layers := Collect(conn, routingMetrics, BridgeSnapshot{RESTRequests: 5, RESTFailures: 1}, FilterSnapshot{Forwarded: 9, Dropped: 2})

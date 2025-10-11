@@ -13,7 +13,7 @@ import (
 	"github.com/coachpo/meltica/core/stream"
 	"github.com/coachpo/meltica/errs"
 	"github.com/coachpo/meltica/market_data/framework"
-	"github.com/coachpo/meltica/market_data/framework/connection"
+	apiwsrouting "github.com/coachpo/meltica/market_data/framework/api/wsrouting"
 	"github.com/coachpo/meltica/market_data/framework/handler"
 )
 
@@ -21,27 +21,27 @@ const handlersMetadataKey = "handlers"
 
 // SessionHandler exposes lifecycle endpoints for streaming sessions.
 type SessionHandler struct {
-	engine stream.Engine
+	manager *apiwsrouting.Manager
 }
 
-// NewSessionHandler constructs a SessionHandler bound to the provided engine.
-func NewSessionHandler(engine stream.Engine) *SessionHandler {
-	if engine == nil {
+// NewSessionHandler constructs a SessionHandler bound to the provided manager.
+func NewSessionHandler(manager *apiwsrouting.Manager) *SessionHandler {
+	if manager == nil {
 		return nil
 	}
-	return &SessionHandler{engine: engine}
+	return &SessionHandler{manager: manager}
 }
 
 // Register wires the handler into the router.
 func (h *SessionHandler) Register(router *Router) {
-	if h == nil || router == nil || h.engine == nil {
+	if h == nil || router == nil || h.manager == nil {
 		return
 	}
 	router.Handle(http.MethodPost, "/v1/stream/sessions", h.create)
 }
 
 func (h *SessionHandler) create(ctx context.Context, w http.ResponseWriter, req *http.Request) error {
-	if h == nil || h.engine == nil {
+	if h == nil || h.manager == nil {
 		return errs.New("", errs.CodeInvalid, errs.WithMessage("session handler not configured"))
 	}
 	defer req.Body.Close()
@@ -53,20 +53,11 @@ func (h *SessionHandler) create(ctx context.Context, w http.ResponseWriter, req 
 	if err != nil {
 		return err
 	}
-	options := connection.DialOptions{
-		Endpoint:         normalized.Endpoint,
-		Protocols:        normalized.Protocols,
-		AuthToken:        normalized.AuthToken,
-		InvalidThreshold: normalized.InvalidThreshold,
-		Metadata:         normalized.Metadata,
-		Bindings:         normalized.Bindings,
-	}
-	ctx = connection.WithDialOptions(ctx, options)
-	session, err := h.engine.Dial(ctx)
+	result, err := h.manager.CreateSession(ctx, toSessionConfig(normalized))
 	if err != nil {
 		return err
 	}
-	return encodeSessionResponse(w, session)
+	return encodeSessionResponse(w, result.Stream)
 }
 
 type rawSessionRequest struct {
@@ -190,6 +181,33 @@ func normalizeSessionRequest(payload rawSessionRequest) (sessionRequest, error) 
 		Metadata:         metadata,
 		Bindings:         bindings,
 	}, nil
+}
+
+func toSessionConfig(req sessionRequest) apiwsrouting.SessionConfig {
+	bindingsCopy := make([]handler.Binding, 0, len(req.Bindings))
+	for _, binding := range req.Bindings {
+		channels := make([]string, len(binding.Channels))
+		copy(channels, binding.Channels)
+		bindingsCopy = append(bindingsCopy, handler.Binding{
+			Name:           binding.Name,
+			Channels:       channels,
+			MaxConcurrency: binding.MaxConcurrency,
+		})
+	}
+	metadataCopy := make(map[string]string, len(req.Metadata))
+	for k, v := range req.Metadata {
+		metadataCopy[k] = v
+	}
+	protocolsCopy := make([]string, len(req.Protocols))
+	copy(protocolsCopy, req.Protocols)
+	return apiwsrouting.SessionConfig{
+		Endpoint:         req.Endpoint,
+		Protocols:        protocolsCopy,
+		AuthToken:        req.AuthToken,
+		InvalidThreshold: req.InvalidThreshold,
+		Metadata:         metadataCopy,
+		Bindings:         bindingsCopy,
+	}
 }
 
 func encodeSessionResponse(w http.ResponseWriter, sess stream.Session) error {

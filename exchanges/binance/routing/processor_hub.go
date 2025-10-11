@@ -6,7 +6,7 @@ import (
 
 	corestreams "github.com/coachpo/meltica/core/streams"
 	"github.com/coachpo/meltica/errs"
-	frameworkrouter "github.com/coachpo/meltica/market_data/framework/router"
+	bnwsrouting "github.com/coachpo/meltica/exchanges/binance/wsrouting"
 )
 
 type processedResult struct {
@@ -17,11 +17,11 @@ type processedResult struct {
 type processorHub struct {
 	ctx        context.Context
 	cancel     context.CancelFunc
-	dispatcher *frameworkrouter.RouterDispatcher
+	dispatcher *bnwsrouting.RouterDispatcher
 	outputs    map[string]chan processedResult
 }
 
-func newProcessorHub(parent context.Context, table *frameworkrouter.RoutingTable, dispatcher *frameworkrouter.RouterDispatcher, descriptors []*frameworkrouter.MessageTypeDescriptor) *processorHub {
+func newProcessorHub(parent context.Context, table *bnwsrouting.RoutingTable, dispatcher *bnwsrouting.RouterDispatcher, descriptors []*bnwsrouting.MessageTypeDescriptor) *processorHub {
 	ctx, cancel := context.WithCancel(parent)
 	hub := &processorHub{
 		ctx:        ctx,
@@ -70,7 +70,7 @@ func (h *processorHub) Dispatch(messageTypeID string, raw []byte) processedResul
 	}
 }
 
-func (h *processorHub) runWorker(reg *frameworkrouter.ProcessorRegistration, inbox <-chan []byte, output chan<- processedResult) {
+func (h *processorHub) runWorker(reg *bnwsrouting.ProcessorRegistration, inbox <-chan []byte, output chan<- processedResult) {
 	for {
 		select {
 		case <-h.ctx.Done():

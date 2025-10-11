@@ -1,0 +1,3 @@
+package pass
+
+func noop() {}

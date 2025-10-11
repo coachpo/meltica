@@ -6,6 +6,8 @@ Auto-generated from all feature plans. Last updated: 2025-10-10
 - Go 1.25 (003-we-ve-built)
 - Go 1.25 + gorilla/websocket, goccy/go-json, golang.org/x/tools (for static analysis) (008-architecture-requirements-req)
 - N/A (in-memory state management only) (008-architecture-requirements-req)
+- Go 1.25 + `github.com/gorilla/websocket`, `github.com/goccy/go-json`, internal `errs` and `core` packages (009-goals-extract-the)
+- N/A (in-memory streaming only) (009-goals-extract-the)
 
 ## Project Structure
 ```
@@ -20,6 +22,7 @@ tests/
 Go 1.25: Follow standard conventions
 
 ## Recent Changes
+- 009-goals-extract-the: Added Go 1.25 + `github.com/gorilla/websocket`, `github.com/goccy/go-json`, internal `errs` and `core` packages
 - 008-architecture-requirements-req: Added Go 1.25 + gorilla/websocket, goccy/go-json, golang.org/x/tools (for static analysis)
 - 003-we-ve-built: Added Go 1.25
 

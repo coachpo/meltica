@@ -58,6 +58,7 @@ func CheckPackages(patterns []string) ([]string, error) {
 
 func runChecks(pkgPath string, files []*ast.File, fset *token.FileSet, report func(token.Pos, string)) {
 	pkgLayer := resolveLayer(pkgPath)
+	isFrameworkPkg := strings.HasPrefix(pkgPath, modulePath+"/lib/ws-routing")
 	for _, file := range files {
 		for _, importSpec := range file.Imports {
 			if importSpec.Path == nil {
@@ -65,6 +66,10 @@ func runChecks(pkgPath string, files []*ast.File, fset *token.FileSet, report fu
 			}
 
 			path := strings.Trim(importSpec.Path.Value, "\"")
+			if isFrameworkPkg && strings.HasPrefix(path, modulePath+"/market_data") {
+				report(importSpec.Path.Pos(), fmt.Sprintf("framework package %q cannot import domain package %q", pkgPath, path))
+				continue
+			}
 			targetLayer := resolveLayer(path)
 			if isAllowedDependency(pkgLayer, targetLayer) {
 				continue

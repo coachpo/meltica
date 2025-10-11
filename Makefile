@@ -1,6 +1,6 @@
 GO111MODULE=on
 
-.PHONY: test lint vet tidy build build-linux-arm64 standards ci clean binance-ws-test lint-layers coverage-architecture coverage-full coverage-gates
+.PHONY: test lint vet tidy build build-linux-arm64 standards ci clean binance-ws-test lint-layers coverage-architecture coverage-full coverage-gates contract-ws-routing
 
 lint:
 	golangci-lint run || true
@@ -10,6 +10,9 @@ vet:
 
 test:
 	go test ./... -race -count=1
+
+contract-ws-routing:
+	go test ./tests/contract/ws-routing -race -count=1
 
 build:
 	go build -o out/ ./...
