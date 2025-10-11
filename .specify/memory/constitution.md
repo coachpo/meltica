@@ -1,26 +1,28 @@
 <!--
 Sync Impact Report
-Version: 1.3.0 → 1.4.0
+Version: 1.5.0 → 1.6.0
 Modified Principles:
-- ARCH-01: Now explicitly mandates business-agnostic core libraries live under /lib only; clarified import rules and added naming/types/docs neutrality
-- ARCH-02/ARCH-03/ARCH-04: Reworded to refer to core libraries and /lib (removed /frameworks references)
-- CQ-02: Clarified API boundaries by tying contracts to core/layers/* and requiring boundary ownership
-- GOV-01/GOV-04: Updated architecture boundary references to ARCH-01 through ARCH-06
+- GOV-01: Clarified pre-1.0 phase decision authority; removed architecture council references
+- GOV-02: Simplified enforcement for solo/small team; updated exception process
+- GOV-02b: NEW - Added automated enforcement inventory and expansion roadmap
+- GOV-03: Simplified implementation choices for solo developer workflow
+- GOV-05: Removed RFC requirement; replaced with spec or direct commit
+- CQ-08: Renamed to "Interface Stability Roadmap"; added pre-1.0 vs post-1.0 phases
+- CQ-09: Added /internal/observability as acceptable location for internal helpers
+- TS-01: Added coverage exclusions and practical notes for integration-heavy code
+- PERF-01: Relaxed from MUST to SHOULD; changed target from <10ms to <100ms
+- PERF-02: Removed specific ms targets for pre-1.0 phase
+- PERF-07: Relaxed from MUST to SHOULD; changed from strict baselines to trend tracking
 Added Sections:
-- CQ-09: Structured Logging & Metrics Interfaces (MUST)
-- TS-10: Exhaustive Boundary Tests (MUST)
-- PERF-07: Routing Hot Path Baselines (MUST)
-- ARCH-05: Zero Domain Leakage (MUST)
-- ARCH-06: Stable Package Names (MUST)
-- GOV-08: Spec-Authorized Breaking Changes (MUST)
+- GOV-02b: Automated Enforcement Inventory
+- Version History: Added comprehensive changelog at end of document
 Removed Sections:
 - None
 Template Updates:
-- ✅ .specify/templates/spec-template.md (compatibility note updated; /lib only; added observability/perf gates)
-- ✅ .specify/templates/plan-template.md (constitution check aligned to /lib; perf/observability/stability gates)
-- ✅ .specify/templates/tasks-template.md (/lib reference; migration tasks guidance retained)
+- None required
 Follow-up TODOs:
-- None
+- Consider adding float detection linter (Q1 2026 roadmap item in GOV-02b)
+- Consider adding import path stability checks (Q1 2026 roadmap item in GOV-02b)
 -->
 
 # Code Quality Principles
@@ -89,18 +91,25 @@ Implementation:
 - Include examples for non-obvious APIs  
 - Link to relevant exchange documentation for adapter-specific quirks
 
-**CQ-08: Immutable Interfaces (MUST)**  
-Principle: Public interfaces freeze after 1.0 release; changes require protocol version bump.  
-Rationale: API stability guarantees for SDK consumers.  
-Implementation:  
+**CQ-08: Interface Stability Roadmap (MUST)**  
+Principle: Public interfaces are versioned; breaking changes permitted pre-1.0 with documentation.  
+Current Phase (Pre-1.0):  
+- Core interfaces may change between minor versions  
+- Breaking changes documented in specs and BREAKING_CHANGES_v2.md  
+- Adapters must stay synchronized with core interface versions  
+
+Post-1.0 Commitment:  
+- Public interfaces freeze; changes require protocol version bump  
+- New capabilities added via optional interfaces, not interface changes  
 - core.ProtocolVersion follows SemVer  
-- Adapters return matching version via SupportedProtocolVersion()  
-- New capabilities added via optional participant interfaces, not interface changes
+- Adapters return matching version via SupportedProtocolVersion()
 
 **CQ-09: Structured Logging & Metrics Interfaces (MUST)**  
-Principle: Observability is exposed via narrow, vendor-neutral interfaces housed in `/lib` (e.g., `/lib/log`, `/lib/metrics`).  
+Principle: Observability is exposed via narrow, vendor-neutral interfaces housed in `/lib` (e.g., `/lib/log`, `/lib/metrics`) or `/internal/observability` for internal-only use.  
 Rationale: Enables consistent structured logs and metrics without coupling to a specific provider.  
 Implementation:  
+- Public-facing observability interfaces → `/lib/observability` or `/lib/log`  
+- Internal-only observability helpers → `/internal/observability`  
 - Logging interface supports leveled, structured fields: Debug/Info/Warn/Error(ctx, msg, fields...)  
 - Metrics interfaces for counters, gauges, histograms with label support  
 - No direct dependencies on logging/metrics vendors in domain or routing code; wiring occurs at composition roots  
@@ -114,9 +123,14 @@ Rationale: Ensures comprehensive testing and prevents untested code from reachin
 Implementation:  
 - Overall repository coverage: ≥80%  
 - Per-package minimum: ≥70%  
-- Coverage checks block CI pipeline on violations  
+- Coverage checks block CI pipeline on violations via `make coverage-check`  
 - Use `go test -cover` and coverage reports to track compliance  
+- Exclusions: Generated code, main.go entry points, and example packages exempt  
 Enforcement: CI fails if coverage drops below thresholds
+
+Practical Notes:  
+- If a package falls below 70%, either add tests or document why it's difficult to test (e.g., integration-heavy adapter code)  
+- Integration tests (with `//go:build integration` tag) count toward coverage when run
 
 **TS-02: Test Design Discipline (MUST)**  
 Principle: Enforce table-driven unit tests; prefer small, focused tests over end-to-end where possible.  
@@ -244,14 +258,14 @@ Implementation:
 
 ## 4. Performance Requirements
 
-**PERF-01: WebSocket Message Latency (MUST)**  
-Target: P99 < 10ms from wire receipt to routed event emission  
-Measurement: Instrument message timestamps at entry/exit points  
-Rationale: Low-latency trading requires minimal processing overhead
+**PERF-01: Reasonable WebSocket Latency (SHOULD)**  
+Target: Process messages within human-perceptible time (<100ms P99)  
+Measurement: Benchmark tests in hot paths; monitor for regressions  
+Rationale: Performance matters but ultra-low latency isn't required for this project's use case
 
 **PERF-02: REST API Response Time (SHOULD)**  
-Target: P95 < 500ms for public endpoints (tickers, instruments)  
-Target: P95 < 1s for authenticated endpoints (orders, balances)  
+Target: Reasonable timeouts; don't add unnecessary overhead  
+Implementation: Profile when optimizing; no specific ms targets pre-1.0  
 Excludes: Network RTT (out of SDK control)
 
 **PERF-03: Memory Efficiency (MUST)**  
@@ -282,31 +296,49 @@ Implementation:
 - http.Client with MaxIdleConnsPerHost tuned per exchange  
 - WebSocket reconnect on errors, not per-subscription connections
 
-**PERF-07: Routing Hot Path Baselines (MUST)**  
-Target: Router dispatch in `/lib/ws-routing` performs with zero allocations and median < 500ns, P99 < 2µs per event on reference hardware.  
-Measurement: Benchmarks in `lib/ws-routing` cover decode → route → emit; include `-benchmem` and allocation checks.  
-Rationale: Routing is a critical latency path; strict baselines prevent regressions.
+**PERF-07: Hot Path Efficiency (SHOULD)**  
+Target: Zero allocations in message routing hot paths where practical  
+Measurement: Benchmarks with `-benchmem` flag; track trends, not absolutes  
+Rationale: Memory efficiency prevents resource leaks in long-running processes
 
 ## 5. Governance Framework
 
 ### 5.1 How Principles Guide Technical Decisions
 
-**GOV-01: Decision Authority**  
-- Code Quality (CQ-01 through CQ-09): All MUST principles are CI-enforced and non-negotiable  
-- Testing Standards (TS-01 through TS-10): Coverage thresholds and test discipline are CI-enforced; SHOULD principles warn but don't block  
-- User Experience (UX-01 through UX-06): MUST principles require code review approval; SHOULD principles are advisory  
-- Performance (PERF-01 through PERF-07): MUST principles validated via benchmarks; SHOULD principles tracked as metrics  
-- Architecture Boundaries (ARCH-01 through ARCH-06): MUST principles owned by architecture council; violations require design review sign-off
+**GOV-01: Decision Authority (Pre-1.0 Phase)**  
+During pre-1.0 development:
+- Code Quality (CQ-01 through CQ-09): CI-enforced MUST principles are non-negotiable
+- Testing Standards (TS-01, TS-02, TS-04, TS-08, TS-09, TS-10): CI-enforced and blocking
+- Performance (PERF-03, PERF-05, PERF-06): Best-effort; tracked but not blocking
+- Architecture Boundaries (ARCH-01 through ARCH-06): CI-enforced via static analysis
+- Breaking Changes: Permitted with migration documentation (see GOV-07)
 
-**GOV-02: Standard Enforcement**  
-- Automated CI checks: Block merge on MUST violations  
-- Code review: Verify adherence to all principles; may override SHOULD violations with justification  
-- Exception process: Requires written rationale and 2 core maintainer approvals for MUST principle exceptions
+Post-1.0: This section will be updated to include formal review processes.
+
+**GOV-02: Standard Enforcement (Solo/Small Team Mode)**  
+- Automated CI checks: Block merge on MUST violations where automated
+- Self-review checklist: Verify adherence to principles without automated checks
+- Exception process (Pre-1.0): Document rationale in commit message; log in BREAKING_CHANGES_v2.md if user-facing
+- Exception process (Post-1.0): Will require documented review and migration notes
+
+**GOV-02b: Automated Enforcement Inventory**  
+The following principles have CI automation:
+- TS-01: Coverage thresholds (≥80% overall, ≥70% per package) via `make coverage-check`
+- TS-03: Race detector via `go test -race`
+- ARCH-03: Dependency direction via custom linter in `/internal/linter/`
+
+The following are enforced via code review:
+- CQ-03: Zero floating-point policy
+- CQ-04: Canonical symbol format
+- CQ-05: Exhaustive enum mapping
+- All UX principles
+
+Expansion roadmap: Add float detection and import path stability checks in Q1 2026.
 
 **GOV-03: Implementation Choices**  
-- When principles conflict: Document the conflict and propose alternatives; escalate to core maintainers  
-- When technically infeasible: Provide evidence (benchmark, external constraint); request exception review  
-- When principles are silent: Follow idiomatic Go practices; defer to code review judgment
+- When principles conflict: Document the conflict and choose the path that best serves the project goals
+- When technically infeasible: Provide evidence (benchmark, external constraint); document rationale
+- When principles are silent: Follow idiomatic Go practices and established patterns in the codebase
 
 **GOV-04: Quality Gates**  
 All code changes must satisfy:  
@@ -319,7 +351,7 @@ All code changes must satisfy:
 
 **GOV-05: Principle Evolution**  
 - Review cycle: Principles reviewed annually or after significant project milestones  
-- Update process: Collect feedback from production incidents and developer experience; propose changes via RFC  
+- Update process: Collect feedback from production incidents and developer experience; propose changes via spec or direct commit with rationale  
 - Version control: All changes to principles are versioned and dated in this document
 
 **GOV-06: Innovation Over Compatibility (MUST)**
@@ -330,13 +362,13 @@ Implementation:
 - Pair breaking changes with clear migration notes and protocol version updates
 - Communicate compatibility impacts in release notes and planning artifacts before rollout
 
-**GOV-07: Migration Safety Net (MUST)**
-Principle: Refactors that alter import paths must include migration notes and a one-release deprecation shim.
-Rationale: Provides teams runway to adopt breaking changes without halting delivery.
+**GOV-07: Breaking Change Documentation (MUST)**
+Principle: Refactors that alter import paths or public APIs must include clear migration notes.
+Rationale: Enables teams to understand and adopt breaking changes efficiently without backward compatibility constraints.
 Implementation:
 - Document migration steps in release notes and specs before merging breaking changes
-- Maintain backward-compatible import aliases for at least one release cycle
-- Remove shims only after verifying downstream adoption or obtaining explicit approvals
+- List all affected import paths, function signatures, and types
+- No backward-compatible shims or deprecation cycles required
 
 **GOV-08: Spec-Authorized Breaking Changes (MUST)**  
 Principle: Backward-compatibility-breaking refactors are allowed when explicitly stated in the feature spec.  
@@ -344,7 +376,7 @@ Rationale: Makes intentional breaks visible and reviewable while preserving over
 Implementation:  
 - Spec must include an explicit statement: "This change is backward incompatible"  
 - Spec must document impact scope, migration path, and import path changes (if any)  
-- Plan must include a one-release deprecation shim when import paths change; link to migration notes
+- Plan must link to migration notes detailing all breaking changes
 
 ## 6. Architecture Boundaries
 
@@ -403,4 +435,24 @@ Implementation:
 - **SHOULD**: Failing warns; may block in strict mode; requires justification to override  
 - **INFO**: Advisory; best practice recommendation
 
-**Version**: 1.4.0 | **Ratified**: 2025-10-08 | **Last Amended**: 2025-10-11
+**Version**: 1.6.0 | **Ratified**: 2025-10-08 | **Last Amended**: 2025-10-11
+
+---
+
+## Version History
+
+### v1.6.0 (2025-10-11) - Pre-1.0 Tailoring
+**Modified Principles:**
+- GOV-01: Clarified pre-1.0 phase decision authority; removed architecture council references
+- GOV-02: Simplified enforcement for solo/small team; updated exception process
+- GOV-02b: NEW - Added automated enforcement inventory and expansion roadmap
+- GOV-03: Simplified implementation choices for solo developer workflow
+- GOV-05: Removed RFC requirement; replaced with spec or direct commit
+- CQ-08: Renamed to "Interface Stability Roadmap"; added pre-1.0 vs post-1.0 phases
+- CQ-09: Added `/internal/observability` as acceptable location for internal helpers
+- TS-01: Added coverage exclusions and practical notes for integration-heavy code
+- PERF-01: Relaxed from MUST to SHOULD; changed target from <10ms to <100ms
+- PERF-02: Removed specific ms targets for pre-1.0 phase
+- PERF-07: Relaxed from MUST to SHOULD; changed from strict baselines to trend tracking
+
+**Rationale:** Tailored constitution for pre-1.0, solo/small team environment where breaking changes are expected, ultra-low-latency performance isn't required, and formal governance structures aren't yet established.
