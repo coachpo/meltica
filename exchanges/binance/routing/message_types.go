@@ -3,22 +3,22 @@ package routing
 import (
 	"time"
 
-	frameworkrouter "github.com/coachpo/meltica/market_data/framework/router"
+	bnwsrouting "github.com/coachpo/meltica/exchanges/binance/wsrouting"
 )
 
 // BinanceMessageTypeDescriptors returns framework descriptors for Binance websocket messages.
-func BinanceMessageTypeDescriptors() []*frameworkrouter.MessageTypeDescriptor {
+func BinanceMessageTypeDescriptors() []*bnwsrouting.MessageTypeDescriptor {
 	now := time.Now().UTC()
-	return []*frameworkrouter.MessageTypeDescriptor{
+	return []*bnwsrouting.MessageTypeDescriptor{
 		{
 			ID:            "binance.trade",
 			DisplayName:   "Binance Trade",
 			ProcessorRef:  "binance.trade",
 			SchemaVersion: "v1",
 			CreatedAt:     now,
-			DetectionRules: []frameworkrouter.DetectionRule{
-				{Strategy: frameworkrouter.DetectionStrategyFieldBased, FieldPath: "data.e", ExpectedValue: "trade"},
-				{Strategy: frameworkrouter.DetectionStrategyFieldBased, FieldPath: "e", ExpectedValue: "trade", Priority: 1},
+			DetectionRules: []bnwsrouting.DetectionRule{
+				{Strategy: bnwsrouting.DetectionStrategyFieldBased, FieldPath: "data.e", ExpectedValue: "trade"},
+				{Strategy: bnwsrouting.DetectionStrategyFieldBased, FieldPath: "e", ExpectedValue: "trade", Priority: 1},
 			},
 		},
 		{
@@ -27,9 +27,9 @@ func BinanceMessageTypeDescriptors() []*frameworkrouter.MessageTypeDescriptor {
 			ProcessorRef:  "binance.orderbook",
 			SchemaVersion: "v1",
 			CreatedAt:     now,
-			DetectionRules: []frameworkrouter.DetectionRule{
-				{Strategy: frameworkrouter.DetectionStrategyFieldBased, FieldPath: "data.e", ExpectedValue: "depthUpdate"},
-				{Strategy: frameworkrouter.DetectionStrategyFieldBased, FieldPath: "e", ExpectedValue: "depthUpdate", Priority: 1},
+			DetectionRules: []bnwsrouting.DetectionRule{
+				{Strategy: bnwsrouting.DetectionStrategyFieldBased, FieldPath: "data.e", ExpectedValue: "depthUpdate"},
+				{Strategy: bnwsrouting.DetectionStrategyFieldBased, FieldPath: "e", ExpectedValue: "depthUpdate", Priority: 1},
 			},
 		},
 		{
@@ -38,9 +38,9 @@ func BinanceMessageTypeDescriptors() []*frameworkrouter.MessageTypeDescriptor {
 			ProcessorRef:  "binance.ticker",
 			SchemaVersion: "v1",
 			CreatedAt:     now,
-			DetectionRules: []frameworkrouter.DetectionRule{
-				{Strategy: frameworkrouter.DetectionStrategyFieldBased, FieldPath: "data.e", ExpectedValue: "24hrTicker"},
-				{Strategy: frameworkrouter.DetectionStrategyFieldBased, FieldPath: "e", ExpectedValue: "24hrTicker", Priority: 1},
+			DetectionRules: []bnwsrouting.DetectionRule{
+				{Strategy: bnwsrouting.DetectionStrategyFieldBased, FieldPath: "data.e", ExpectedValue: "24hrTicker"},
+				{Strategy: bnwsrouting.DetectionStrategyFieldBased, FieldPath: "e", ExpectedValue: "24hrTicker", Priority: 1},
 			},
 		},
 		{
@@ -49,9 +49,9 @@ func BinanceMessageTypeDescriptors() []*frameworkrouter.MessageTypeDescriptor {
 			ProcessorRef:  "binance.user.order",
 			SchemaVersion: "v1",
 			CreatedAt:     now,
-			DetectionRules: []frameworkrouter.DetectionRule{
-				{Strategy: frameworkrouter.DetectionStrategyFieldBased, FieldPath: "data.e", ExpectedValue: "ORDER_TRADE_UPDATE"},
-				{Strategy: frameworkrouter.DetectionStrategyFieldBased, FieldPath: "e", ExpectedValue: "ORDER_TRADE_UPDATE", Priority: 1},
+			DetectionRules: []bnwsrouting.DetectionRule{
+				{Strategy: bnwsrouting.DetectionStrategyFieldBased, FieldPath: "data.e", ExpectedValue: "ORDER_TRADE_UPDATE"},
+				{Strategy: bnwsrouting.DetectionStrategyFieldBased, FieldPath: "e", ExpectedValue: "ORDER_TRADE_UPDATE", Priority: 1},
 			},
 		},
 		{
@@ -60,11 +60,11 @@ func BinanceMessageTypeDescriptors() []*frameworkrouter.MessageTypeDescriptor {
 			ProcessorRef:  "binance.user.balance",
 			SchemaVersion: "v1",
 			CreatedAt:     now,
-			DetectionRules: []frameworkrouter.DetectionRule{
-				{Strategy: frameworkrouter.DetectionStrategyFieldBased, FieldPath: "data.e", ExpectedValue: "balanceUpdate"},
-				{Strategy: frameworkrouter.DetectionStrategyFieldBased, FieldPath: "data.e", ExpectedValue: "outboundAccountPosition", Priority: 1},
-				{Strategy: frameworkrouter.DetectionStrategyFieldBased, FieldPath: "e", ExpectedValue: "balanceUpdate", Priority: 2},
-				{Strategy: frameworkrouter.DetectionStrategyFieldBased, FieldPath: "e", ExpectedValue: "outboundAccountPosition", Priority: 3},
+			DetectionRules: []bnwsrouting.DetectionRule{
+				{Strategy: bnwsrouting.DetectionStrategyFieldBased, FieldPath: "data.e", ExpectedValue: "balanceUpdate"},
+				{Strategy: bnwsrouting.DetectionStrategyFieldBased, FieldPath: "data.e", ExpectedValue: "outboundAccountPosition", Priority: 1},
+				{Strategy: bnwsrouting.DetectionStrategyFieldBased, FieldPath: "e", ExpectedValue: "balanceUpdate", Priority: 2},
+				{Strategy: bnwsrouting.DetectionStrategyFieldBased, FieldPath: "e", ExpectedValue: "outboundAccountPosition", Priority: 3},
 			},
 		},
 	}

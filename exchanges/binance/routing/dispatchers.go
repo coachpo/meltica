@@ -9,7 +9,7 @@ import (
 	"github.com/coachpo/meltica/core"
 	coretransport "github.com/coachpo/meltica/core/transport"
 	"github.com/coachpo/meltica/exchanges/binance/internal"
-	frameworkrouter "github.com/coachpo/meltica/market_data/framework/router"
+	bnwsrouting "github.com/coachpo/meltica/exchanges/binance/wsrouting"
 )
 
 var privateKeepAliveInterval = 30 * time.Minute
@@ -17,12 +17,12 @@ var privateKeepAliveInterval = 30 * time.Minute
 type PublicDispatcher struct {
 	infra      coretransport.StreamClient
 	deps       WSDependencies
-	table      *frameworkrouter.RoutingTable
-	dispatcher *frameworkrouter.RouterDispatcher
+	table      *bnwsrouting.RoutingTable
+	dispatcher *bnwsrouting.RouterDispatcher
 	hub        *processorHub
 }
 
-func NewPublicDispatcher(infra coretransport.StreamClient, deps WSDependencies, table *frameworkrouter.RoutingTable, dispatcher *frameworkrouter.RouterDispatcher, hub *processorHub) *PublicDispatcher {
+func NewPublicDispatcher(infra coretransport.StreamClient, deps WSDependencies, table *bnwsrouting.RoutingTable, dispatcher *bnwsrouting.RouterDispatcher, hub *processorHub) *PublicDispatcher {
 	return &PublicDispatcher{infra: infra, deps: deps, table: table, dispatcher: dispatcher, hub: hub}
 }
 
@@ -101,12 +101,12 @@ func (d *PublicDispatcher) pumpPublic(sub *wsSub) {
 type PrivateDispatcher struct {
 	infra      coretransport.StreamClient
 	deps       WSDependencies
-	table      *frameworkrouter.RoutingTable
-	dispatcher *frameworkrouter.RouterDispatcher
+	table      *bnwsrouting.RoutingTable
+	dispatcher *bnwsrouting.RouterDispatcher
 	hub        *processorHub
 }
 
-func NewPrivateDispatcher(infra coretransport.StreamClient, deps WSDependencies, table *frameworkrouter.RoutingTable, dispatcher *frameworkrouter.RouterDispatcher, hub *processorHub) *PrivateDispatcher {
+func NewPrivateDispatcher(infra coretransport.StreamClient, deps WSDependencies, table *bnwsrouting.RoutingTable, dispatcher *bnwsrouting.RouterDispatcher, hub *processorHub) *PrivateDispatcher {
 	return &PrivateDispatcher{infra: infra, deps: deps, table: table, dispatcher: dispatcher, hub: hub}
 }
 

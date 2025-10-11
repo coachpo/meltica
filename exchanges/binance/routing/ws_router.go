@@ -8,7 +8,7 @@ import (
 	corestreams "github.com/coachpo/meltica/core/streams"
 	coretransport "github.com/coachpo/meltica/core/transport"
 	"github.com/coachpo/meltica/errs"
-	frameworkrouter "github.com/coachpo/meltica/market_data/framework/router"
+	bnwsrouting "github.com/coachpo/meltica/exchanges/binance/wsrouting"
 	"github.com/coachpo/meltica/market_data/processors"
 )
 
@@ -36,8 +36,8 @@ type WSRouter struct {
 	public     *PublicDispatcher
 	private    *PrivateDispatcher
 	hub        *processorHub
-	table      *frameworkrouter.RoutingTable
-	dispatcher *frameworkrouter.RouterDispatcher
+	table      *bnwsrouting.RoutingTable
+	dispatcher *bnwsrouting.RouterDispatcher
 }
 
 // NewWSRouter creates a websocket routing layer bound to the infrastructure client.
@@ -55,15 +55,15 @@ func NewWSRouter(conn layers.WSConnection, deps WSDependencies) *WSRouter {
 	}
 
 	ctx := context.Background()
-	table := frameworkrouter.NewRoutingTable()
+	table := bnwsrouting.NewRoutingTable()
 	descriptors := BinanceMessageTypeDescriptors()
 
 	if err := registerBinanceProcessors(table, deps, descriptors); err != nil {
 		panic(err)
 	}
 
-	metrics := frameworkrouter.NewRoutingMetrics()
-	dispatcher := frameworkrouter.NewRouterDispatcher(ctx, metrics)
+	metrics := bnwsrouting.NewRoutingMetrics()
+	dispatcher := bnwsrouting.NewRouterDispatcher(ctx, metrics)
 	hub := newProcessorHub(ctx, table, dispatcher, descriptors)
 
 	return &WSRouter{
@@ -134,7 +134,7 @@ func (w *wsPrivateWrapper) Close() error {
 	return w.sub.Close()
 }
 
-func registerBinanceProcessors(table *frameworkrouter.RoutingTable, deps WSDependencies, descriptors []*frameworkrouter.MessageTypeDescriptor) error {
+func registerBinanceProcessors(table *bnwsrouting.RoutingTable, deps WSDependencies, descriptors []*bnwsrouting.MessageTypeDescriptor) error {
 	for _, desc := range descriptors {
 		var proc processors.Processor
 		switch desc.ID {
@@ -159,7 +159,7 @@ func registerBinanceProcessors(table *frameworkrouter.RoutingTable, deps WSDepen
 }
 
 // RegisterProcessors registers Binance message type descriptors and processors with the provided routing table.
-func RegisterProcessors(table *frameworkrouter.RoutingTable, deps WSDependencies) error {
+func RegisterProcessors(table *bnwsrouting.RoutingTable, deps WSDependencies) error {
 	if table == nil {
 		return errs.New("", errs.CodeInvalid, errs.WithMessage("routing table required"))
 	}

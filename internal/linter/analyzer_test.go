@@ -10,10 +10,16 @@ import (
 
 func TestAnalyzer_AllowsValidImports(t *testing.T) {
 	testdata := analysistest.TestData()
-	analysistest.Run(t, testdata, linter.Analyzer, "github.com/coachpo/meltica/exchanges/analyzertest/infra/pass")
+	analysistest.Run(t, testdata, linter.Analyzer,
+		"github.com/coachpo/meltica/exchanges/analyzertest/infra/pass",
+		"github.com/coachpo/meltica/lib/ws-routing/pass",
+	)
 }
 
 func TestAnalyzer_FlagsInvalidImports(t *testing.T) {
 	testdata := analysistest.TestData()
-	analysistest.Run(t, testdata, linter.Analyzer, "github.com/coachpo/meltica/exchanges/analyzertest/infra/fail")
+	analysistest.Run(t, testdata, linter.Analyzer,
+		"github.com/coachpo/meltica/exchanges/analyzertest/infra/fail",
+		"github.com/coachpo/meltica/lib/ws-routing/fail",
+	)
 }

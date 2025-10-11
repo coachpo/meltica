@@ -13,9 +13,9 @@ import (
 	binancebridge "github.com/coachpo/meltica/exchanges/binance/bridge"
 	binancel4 "github.com/coachpo/meltica/exchanges/binance/filter"
 	bnrouting "github.com/coachpo/meltica/exchanges/binance/routing"
+	bnwsrouting "github.com/coachpo/meltica/exchanges/binance/wsrouting"
 	sharedplugin "github.com/coachpo/meltica/exchanges/shared/plugin"
 	sharedrouting "github.com/coachpo/meltica/exchanges/shared/routing"
-	frameworkrouter "github.com/coachpo/meltica/market_data/framework/router"
 	mdfilter "github.com/coachpo/meltica/pipeline"
 )
 
@@ -57,12 +57,12 @@ func init() {
 }
 
 // MessageTypeDescriptors exposes the Binance message descriptors consumed by the routing framework.
-func MessageTypeDescriptors() []*frameworkrouter.MessageTypeDescriptor {
+func MessageTypeDescriptors() []*bnwsrouting.MessageTypeDescriptor {
 	return bnrouting.BinanceMessageTypeDescriptors()
 }
 
 // RegisterRouting registers Binance processors with the provided routing table.
-func RegisterRouting(table *frameworkrouter.RoutingTable, deps bnrouting.WSDependencies) error {
+func RegisterRouting(table *bnwsrouting.RoutingTable, deps bnrouting.WSDependencies) error {
 	return bnrouting.RegisterProcessors(table, deps)
 }
 

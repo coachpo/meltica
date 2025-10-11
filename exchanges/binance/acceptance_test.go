@@ -13,14 +13,14 @@ import (
 	coretransport "github.com/coachpo/meltica/core/transport"
 	"github.com/coachpo/meltica/exchanges/binance/routing"
 	binancetelemetry "github.com/coachpo/meltica/exchanges/binance/telemetry"
+	bnwsrouting "github.com/coachpo/meltica/exchanges/binance/wsrouting"
 	framework "github.com/coachpo/meltica/market_data/framework"
-	frameworkrouter "github.com/coachpo/meltica/market_data/framework/router"
 )
 
 func TestUserStory3Acceptance(t *testing.T) {
 	ctx := context.Background()
 	deps := &perfDeps{}
-	table := frameworkrouter.NewRoutingTable()
+	table := bnwsrouting.NewRoutingTable()
 	require.NoError(t, routing.RegisterProcessors(table, deps))
 
 	payload := tradePayload("BTC-USDT")
@@ -39,7 +39,7 @@ func TestUserStory3Acceptance(t *testing.T) {
 	require.Equal(t, corestreams.RouteTradeUpdate, msg.Route)
 	require.NotNil(t, msg.Parsed)
 
-	routingMetrics := frameworkrouter.NewRoutingMetrics()
+	routingMetrics := bnwsrouting.NewRoutingMetrics()
 	routingMetrics.RecordRoute(typeID)
 	routingMetrics.RecordProcessing(typeID, time.Millisecond, nil)
 	routingMetrics.RecordBackpressureStart(typeID)
@@ -128,7 +128,7 @@ func TestUserStory4Acceptance(t *testing.T) {
 
 	totalMessages := uint64(atomic.LoadInt32(&publicCount) + atomic.LoadInt32(&privateCount))
 	connSnapshot := framework.MetricsSnapshot{MessagesTotal: totalMessages, ErrorsTotal: 0, Allocated: 0}
-	routingMetrics := frameworkrouter.NewRoutingMetrics()
+	routingMetrics := bnwsrouting.NewRoutingMetrics()
 	routingMetrics.RecordRoute("binance.trade")
 	routingMetrics.RecordProcessing("binance.trade", time.Millisecond, nil)
 	routingMetrics.RecordRoute("binance.user.balance")

@@ -11,6 +11,7 @@ const (
 	layerUnknown    layer = "unknown"
 	layerExternal   layer = "external"
 	layerShared     layer = "shared"
+	layerFramework  layer = "framework"
 	layerInterface  layer = "interface"
 	layerConnection layer = "connection"
 	layerRouting    layer = "routing"
@@ -24,17 +25,20 @@ var allowedDependencies = map[layer]map[layer]struct{}{
 	layerInterface: {
 		layerInterface: {},
 		layerShared:    {},
+		layerFramework: {},
 	},
 	layerConnection: {
 		layerConnection: {},
 		layerInterface:  {},
 		layerShared:     {},
+		layerFramework:  {},
 	},
 	layerRouting: {
 		layerRouting:    {},
 		layerConnection: {},
 		layerInterface:  {},
 		layerShared:     {},
+		layerFramework:  {},
 	},
 	layerBusiness: {
 		layerBusiness:   {},
@@ -42,6 +46,7 @@ var allowedDependencies = map[layer]map[layer]struct{}{
 		layerConnection: {},
 		layerInterface:  {},
 		layerShared:     {},
+		layerFramework:  {},
 	},
 	layerFilter: {
 		layerFilter:     {},
@@ -50,8 +55,19 @@ var allowedDependencies = map[layer]map[layer]struct{}{
 		layerConnection: {},
 		layerInterface:  {},
 		layerShared:     {},
+		layerFramework:  {},
 	},
 	layerShared: {
+		layerShared:     {},
+		layerInterface:  {},
+		layerConnection: {},
+		layerRouting:    {},
+		layerBusiness:   {},
+		layerFilter:     {},
+		layerFramework:  {},
+	},
+	layerFramework: {
+		layerFramework:  {},
 		layerShared:     {},
 		layerInterface:  {},
 		layerConnection: {},
@@ -76,6 +92,8 @@ func resolveLayer(pkgPath string) layer {
 	}
 
 	switch {
+	case strings.HasPrefix(rel, "lib/ws-routing"):
+		return layerFramework
 	case strings.HasPrefix(rel, "core/layers"):
 		return layerInterface
 	case strings.Contains(rel, "/infra/"):
