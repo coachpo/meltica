@@ -1,20 +1,21 @@
 <!--
 Sync Impact Report
-Version: 1.1.0 → 1.2.0
+Version: 1.2.0 → 1.3.0
 Modified Principles:
-- Added ARCH-01: Framework Residency
-- Added ARCH-02: Domain Package Purity
-- Added ARCH-03: Dependency Direction
-- Added ARCH-04: Framework API Lifecycle
-- Added GOV-07: Migration Safety Net
+- Updated TS-01: Coverage thresholds now ≥80% overall and ≥70% per package (previously variable thresholds)
+- Expanded TS-02: Added explicit table-driven test enforcement
+- Added TS-08: Integration Test Isolation (build tags)
+- Added TS-09: Test Deduplication and Fixture Sharing
+- Expanded TS-04: Enhanced to include deterministic test requirements (no sleeps, context timeouts)
+- Updated GOV-04: Coverage checks are now blocking in CI
 Added Sections:
-- 6. Architecture Boundaries
+- None
 Removed Sections:
 - None
 Template Updates:
-- ✅ .specify/templates/plan-template.md
-- ✅ .specify/templates/spec-template.md
-- ✅ .specify/templates/tasks-template.md
+- ✅ .specify/templates/plan-template.md (no updates needed - testing principles independent)
+- ✅ .specify/templates/spec-template.md (no updates needed - testing principles independent)
+- ✅ .specify/templates/tasks-template.md (no updates needed - testing principles independent)
 Follow-up TODOs:
 - None
 -->
@@ -95,31 +96,40 @@ Implementation:
 ## 2. Testing Standards
 
 **TS-01: Minimum Coverage Thresholds (MUST)**  
-Coverage targets:  
-- Core packages (core/, errs/, config/): 90%+  
-- Adapter routing (exchanges/*/routing/): 80%+  
-- Transport clients (exchanges/*/infra/): 70%+  
-- Overall repository: 75%+
-
-**TS-02: Test Pyramid Compliance (MUST)**  
-Principle: 70% unit tests, 20% integration tests, 10% end-to-end tests.  
-Rationale: Fast feedback loops; deterministic failures.  
+Principle: Code must maintain ≥80% overall coverage and ≥70% coverage per package.  
+Rationale: Ensures comprehensive testing and prevents untested code from reaching production.  
 Implementation:  
-- Unit tests: Pure functions, mocked dependencies (e.g., routing parsers, numeric helpers)  
-- Integration tests: Real exchange APIs with recorded fixtures (e.g., order placement flows)  
-- E2E tests: Full pipeline with live sandboxes (gated by env vars)
+- Overall repository coverage: ≥80%  
+- Per-package minimum: ≥70%  
+- Coverage checks block CI pipeline on violations  
+- Use `go test -cover` and coverage reports to track compliance  
+Enforcement: CI fails if coverage drops below thresholds
+
+**TS-02: Test Design Discipline (MUST)**  
+Principle: Enforce table-driven unit tests; prefer small, focused tests over end-to-end where possible.  
+Rationale: Table-driven tests improve maintainability, readability, and enable exhaustive scenario coverage with minimal code duplication.  
+Implementation:  
+- Unit tests use table-driven design with named test cases  
+- Each test case specifies: input, expected output, and assertion logic  
+- Prefer testing individual functions/methods over full integration paths  
+- Reserve end-to-end tests for critical user journeys only  
+Test Pyramid Target: 70% unit tests, 20% integration tests, 10% end-to-end tests  
+Anti-pattern: Copy-pasted test functions with minor input variations; monolithic test functions covering multiple scenarios
 
 **TS-03: Race Detector Always (MUST)**  
 Principle: All CI test runs include -race flag.  
 Rationale: Catch concurrency bugs early.
 
-**TS-04: Deterministic Fixtures (MUST)**  
-Principle: Integration tests use recorded HTTP/WebSocket fixtures.  
-Rationale: Reproducible tests without exchange dependencies.  
+**TS-04: Deterministic Fixtures and Tests (MUST)**  
+Principle: Integration tests use recorded HTTP/WebSocket fixtures; require deterministic tests (no sleeps; use context timeouts/fakes).  
+Rationale: Reproducible tests without exchange dependencies; eliminates flaky tests caused by timing issues.  
 Implementation:  
 - Store fixtures in testdata/ directories  
 - Use httptest for REST clients; mock WebSocket frames  
-- Never commit API keys or secrets to fixtures
+- Never commit API keys or secrets to fixtures  
+- Replace time.Sleep() with context.WithTimeout() or fake clock implementations  
+- Use dependency injection to provide controllable time sources in tests  
+Anti-pattern: Tests with arbitrary sleep durations; tests that occasionally fail due to timing
 
 **TS-05: Error Path Coverage (MUST)**  
 Principle: Every error return path has a corresponding test case.  
@@ -144,6 +154,27 @@ Implementation:
 - Benchmark hot paths: decimal parsing, symbol translation, event decoding  
 - Target: <500ns per event decode; zero allocations in message routing  
 - Use testing.B with -benchmem
+
+**TS-08: Integration Test Isolation (MUST)**  
+Principle: Separate integration tests with the build tag 'integration' and exclude them from unit coverage by default.  
+Rationale: Keeps unit test runs fast and focused; allows selective execution of slower integration tests.  
+Implementation:  
+- Tag integration test files with `//go:build integration` at the top  
+- Run unit tests with standard `go test ./...`  
+- Run integration tests separately with `go test -tags=integration ./...`  
+- Exclude integration tests from unit coverage calculations  
+- Document integration test execution requirements in test file comments
+
+**TS-09: Test Deduplication and Fixture Sharing (MUST)**  
+Principle: Avoid duplicate testing: no repeated assertions for the same behavior across unit/integration layers; share fixtures via internal/testhelpers; forbid duplicate test names; use subtests.  
+Rationale: Reduces maintenance burden, prevents test divergence, and improves test suite clarity.  
+Implementation:  
+- Test each behavior at the most appropriate level (unit vs integration) only once  
+- Share common test fixtures and helpers in `internal/testhelpers` package  
+- Use `t.Run()` for subtests to organize related test cases and ensure unique names  
+- Forbid duplicate test function names across the entire test suite  
+- Code review must verify no redundant test assertions for identical behavior  
+Anti-pattern: Testing the same parsing logic in both unit tests and integration tests; copy-pasted test fixtures; multiple tests named "TestValidation"
 
 ## 3. User Experience Consistency
 
@@ -235,7 +266,7 @@ Implementation:
 
 **GOV-01: Decision Authority**  
 - Code Quality (CQ-01 through CQ-08): All MUST principles are CI-enforced and non-negotiable  
-- Testing Standards (TS-01 through TS-07): Coverage thresholds block merges; SHOULD principles warn but don't block  
+- Testing Standards (TS-01 through TS-09): Coverage thresholds and test discipline are CI-enforced; SHOULD principles warn but don't block  
 - User Experience (UX-01 through UX-06): MUST principles require code review approval; SHOULD principles are advisory  
 - Performance (PERF-01 through PERF-06): MUST principles validated via benchmarks; SHOULD principles tracked as metrics  
 - Architecture Boundaries (ARCH-01 through ARCH-04): MUST principles owned by architecture council; violations require design review sign-off
@@ -253,7 +284,8 @@ Implementation:
 **GOV-04: Quality Gates**  
 All code changes must satisfy:  
 - Code quality principles (CQ-01 through CQ-08)  
-- Testing standards coverage thresholds (TS-01)  
+- Testing standards coverage thresholds (TS-01) - **Coverage checks are blocking in CI**  
+- Testing discipline requirements (TS-02, TS-04, TS-08, TS-09)  
 - User experience consistency requirements (UX-01, UX-03, UX-04, UX-06)  
 - Performance benchmarks showing no regressions (PERF-03)  
 - Architecture boundaries (ARCH-01 through ARCH-04)
@@ -319,4 +351,4 @@ Implementation:
 - **SHOULD**: Failing warns; may block in strict mode; requires justification to override  
 - **INFO**: Advisory; best practice recommendation
 
-**Version**: 1.2.0 | **Ratified**: 2025-10-08 | **Last Amended**: 2025-10-11
+**Version**: 1.3.0 | **Ratified**: 2025-10-08 | **Last Amended**: 2025-10-11
