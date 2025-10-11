@@ -36,9 +36,7 @@ coverage/
 # Ignore AI assistant and tooling directories
 .claude/
 .factory/
-.specify/
-
-!specs/
+.cursor/
 
 # Ignore IDE directories
 .idea/
