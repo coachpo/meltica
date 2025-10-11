@@ -14,28 +14,19 @@ A high-performance cryptocurrency exchange adapter framework written in Go.
 
 ## Architecture
 
-Meltica follows a layered architecture with clear separation of concerns:
+The system follows a formal four-layer architecture:
 
-### Level 1: Transport Layer
-- **REST Client**: HTTP request/response handling with rate limiting
-- **WebSocket Client**: Connection management and raw message handling
-- **Shared Infrastructure**: Rate limiting, numeric helpers, bootstrap wiring
+1. **Layer 1 – Connection** (`core/layers/connection.go`): WebSocket and REST transport adapters with legacy provider shims.
+2. **Layer 2 – Routing** (`core/layers/routing.go`): Normalizes transport payloads, manages subscription lifecycles, and translates API requests.
+3. **Layer 3 – Business** (`core/layers/business.go`): Coordinates domain workflows, maintains business state, and bridges routing outputs to filters.
+4. **Layer 4 – Filter** (`core/layers/filter.go`): Final pipeline stage that transforms events for downstream clients and handles cleanup.
 
-### Level 2: Routing Layer
-- **REST Router**: Maps normalized requests to exchange-specific endpoints
-- **WebSocket Router**: Routes raw WebSocket messages to normalized topics
-- **Data Parsing**: Converts exchange-specific formats to normalized types
+Supporting assets:
+- `internal/linter/`: Static analyzer enforcing layer boundaries (also runs via `make lint-layers`).
+- `tests/architecture/`: Contract tests, reusable mocks, and isolation examples.
+- `internal/templates/exchange/` + `scripts/new-exchange.sh`: Exchange skeleton generator aligned with the four layers.
 
-### Level 3: Exchange Layer
-- **Provider Interface**: Unified exchange abstraction
-- **Market Data**: Order books, tickers, trades
-- **Private Data**: Orders, balances, positions
-- **Core Types**: Standardized data structures across all exchanges
-
-### Level 4: Filter & Client Facade
-- **Interaction Facade**: High-level `SubscribePublic`, `SubscribePrivate`, and `FetchREST` helpers
-- **Client Events**: Typed payloads (`BookPayload`, `TradePayload`, `RestResponsePayload`, etc.) wrapped in `ClientEvent` with channel metadata
-- **Pipeline Stages**: Normalization, throttling, aggregation, analytics, reliability, and observer hooks operating on typed events
+See [`specs/008-architecture-requirements-req/quickstart.md`](specs/008-architecture-requirements-req/quickstart.md) for end-to-end guidance.
 
 ## Quick Start
 

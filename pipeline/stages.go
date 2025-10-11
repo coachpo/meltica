@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/coachpo/meltica/core"
+	"github.com/coachpo/meltica/core/layers"
 	corestreams "github.com/coachpo/meltica/core/streams"
 )
 
@@ -487,6 +488,206 @@ func newVWAPStage(enabled bool) PipelineStep {
 
 		return PipelineStepResult{Events: events, Errors: errors}
 	})
+}
+
+func newLayerFilterStage(filter layers.Filter) PipelineStep {
+	name := "layers_filter"
+	if filter != nil && filter.Name() != "" {
+		name = filter.Name()
+	}
+	return NewPipelineStepFunc(name, func(ctx context.Context, input PipelineStepResult) PipelineStepResult {
+		layerInputs := clientEventsToLayerEvents(ctx, input.Events)
+		filtered, err := filter.Apply(ctx, layerInputs)
+		events := make(chan ClientEvent)
+		errors := make(chan error, 1)
+
+		if err != nil {
+			go func() {
+				defer close(events)
+				defer close(errors)
+				select {
+				case errors <- err:
+				case <-ctx.Done():
+				}
+				forwardErrors(ctx, input.Errors, errors)
+			}()
+			return PipelineStepResult{Events: events, Errors: errors}
+		}
+
+		go func() {
+			defer close(events)
+			defer close(errors)
+
+			layerOutputs := layerEventsToClientEvents(ctx, filtered)
+			for layerOutputs != nil || input.Errors != nil {
+				select {
+				case <-ctx.Done():
+					return
+				case evt, ok := <-layerOutputs:
+					if !ok {
+						layerOutputs = nil
+						continue
+					}
+					select {
+					case events <- evt:
+					case <-ctx.Done():
+						return
+					}
+				case err, ok := <-input.Errors:
+					if !ok {
+						input.Errors = nil
+						continue
+					}
+					if err != nil {
+						select {
+						case errors <- err:
+						case <-ctx.Done():
+							return
+						}
+					}
+				}
+			}
+		}()
+
+		return PipelineStepResult{Events: events, Errors: errors}
+	})
+}
+
+func clientEventsToLayerEvents(ctx context.Context, events <-chan ClientEvent) <-chan layers.Event {
+	if events == nil {
+		return nil
+	}
+	out := make(chan layers.Event)
+	go func() {
+		defer close(out)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case evt, ok := <-events:
+				if !ok {
+					return
+				}
+				select {
+				case out <- clientEventToLayerEvent(evt):
+				case <-ctx.Done():
+					return
+				}
+			}
+		}
+	}()
+	return out
+}
+
+func layerEventsToClientEvents(ctx context.Context, events <-chan layers.Event) <-chan ClientEvent {
+	if events == nil {
+		return nil
+	}
+	out := make(chan ClientEvent)
+	go func() {
+		defer close(out)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case evt, ok := <-events:
+				if !ok {
+					return
+				}
+				select {
+				case out <- layerEventToClientEvent(evt):
+				case <-ctx.Done():
+					return
+				}
+			}
+		}
+	}()
+	return out
+}
+
+func forwardErrors(ctx context.Context, src <-chan error, dst chan<- error) {
+	for src != nil {
+		select {
+		case <-ctx.Done():
+			return
+		case err, ok := <-src:
+			if !ok {
+				src = nil
+				continue
+			}
+			if err != nil {
+				select {
+				case dst <- err:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}
+	}
+}
+
+func clientEventToLayerEvent(evt ClientEvent) layers.Event {
+	metadata := make(map[string]string, len(evt.Metadata)+4)
+	for k, v := range evt.Metadata {
+		metadata[k] = fmt.Sprint(v)
+	}
+	if evt.Symbol != "" {
+		metadata["symbol"] = evt.Symbol
+	}
+	if evt.CorrelationID != "" {
+		metadata["correlation_id"] = evt.CorrelationID
+	}
+	if evt.Channel != "" {
+		metadata["channel"] = string(evt.Channel)
+	}
+	return layers.Event{
+		Type:      string(evt.Channel),
+		Payload:   evt.Payload,
+		Metadata:  metadata,
+		Timestamp: evt.At,
+	}
+}
+
+func layerEventToClientEvent(evt layers.Event) ClientEvent {
+	metadata := make(map[string]any, len(evt.Metadata))
+	for k, v := range evt.Metadata {
+		metadata[k] = v
+	}
+	symbol := lookupAndDelete(metadata, "symbol")
+	correlation := lookupAndDelete(metadata, "correlation_id")
+	channelStr := lookupAndDelete(metadata, "channel")
+	channel := ChannelType(evt.Type)
+	if channelStr != "" {
+		channel = ChannelType(channelStr)
+	}
+	var payload TransportPayload
+	switch p := evt.Payload.(type) {
+	case nil:
+		payload = nil
+	case TransportPayload:
+		payload = p
+	default:
+		payload = UnknownPayload{Detail: p}
+	}
+	return ClientEvent{
+		Channel:       channel,
+		Symbol:        symbol,
+		At:            evt.Timestamp,
+		Payload:       payload,
+		CorrelationID: correlation,
+		Metadata:      metadata,
+	}
+}
+
+func lookupAndDelete(metadata map[string]any, key string) string {
+	if metadata == nil {
+		return ""
+	}
+	if v, ok := metadata[key]; ok {
+		delete(metadata, key)
+		return fmt.Sprint(v)
+	}
+	return ""
 }
 
 func newObserverStage(observer Observer) PipelineStep {

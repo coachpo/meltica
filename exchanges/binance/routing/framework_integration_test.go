@@ -12,9 +12,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/coachpo/meltica/core"
+	"github.com/coachpo/meltica/core/layers"
 	corestreams "github.com/coachpo/meltica/core/streams"
 	"github.com/coachpo/meltica/core/streams/mocks"
 	coretransport "github.com/coachpo/meltica/core/transport"
+	archmocks "github.com/coachpo/meltica/tests/architecture/mocks"
 )
 
 type integrationDeps struct {
@@ -96,6 +98,12 @@ func mustJSON(tb testing.TB, v any) []byte {
 	return b
 }
 
+func newMockWSConnection(client coretransport.StreamClient) layers.WSConnection {
+	conn := archmocks.NewMockWSConnection()
+	conn.StreamClient = client
+	return conn
+}
+
 func TestFrameworkIntegrationRoutesPublicMessages(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -113,7 +121,7 @@ func TestFrameworkIntegrationRoutesPublicMessages(t *testing.T) {
 		return subscription, nil
 	}
 
-	router := NewWSRouter(client, deps)
+	router := NewWSRouter(newMockWSConnection(client), deps)
 	t.Cleanup(func() {
 		require.NoError(t, router.Close())
 	})
@@ -173,7 +181,7 @@ func TestFrameworkIntegrationRoutesPrivateMessages(t *testing.T) {
 		return subscription, nil
 	}
 
-	router := NewWSRouter(client, deps)
+	router := NewWSRouter(newMockWSConnection(client), deps)
 	t.Cleanup(func() {
 		require.NoError(t, router.Close())
 	})
@@ -221,7 +229,7 @@ func TestPrivateDispatcherKeepsListenKeyAlive(t *testing.T) {
 		return subscription, nil
 	}
 
-	router := NewWSRouter(client, deps)
+	router := NewWSRouter(newMockWSConnection(client), deps)
 	t.Cleanup(func() {
 		require.NoError(t, router.Close())
 	})

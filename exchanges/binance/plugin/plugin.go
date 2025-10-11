@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/coachpo/meltica/core"
+	"github.com/coachpo/meltica/core/layers"
 	coreregistry "github.com/coachpo/meltica/core/registry"
 	corestreams "github.com/coachpo/meltica/core/streams"
 	"github.com/coachpo/meltica/exchanges/binance"
@@ -100,8 +101,17 @@ func NewFilterAdapter(exchange core.Exchange) (mdfilter.Adapter, *mdfilter.AuthC
 		RESTRouter() interface{}
 	}); ok {
 		if router := restParticipant.RESTRouter(); router != nil {
-			if dispatcher, ok := router.(sharedrouting.RESTDispatcher); ok {
-				restBridge = binancebridge.NewRouterBridge(dispatcher)
+			var restRouting layers.RESTRouting
+			switch v := router.(type) {
+			case layers.RESTRouting:
+				restRouting = v
+			case interface{ AsLayerInterface() layers.RESTRouting }:
+				restRouting = v.AsLayerInterface()
+			case sharedrouting.RESTDispatcher:
+				restRouting = bnrouting.LegacyRESTRoutingAdapter(v)
+			}
+			if restRouting != nil {
+				restBridge = binancebridge.NewRouterBridge(restRouting)
 			}
 		}
 	}

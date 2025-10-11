@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/coachpo/meltica/core/layers"
 	"github.com/coachpo/meltica/exchanges/binance/infra/rest"
 	"github.com/coachpo/meltica/exchanges/shared/routing"
 	mdfilter "github.com/coachpo/meltica/pipeline"
@@ -22,9 +23,17 @@ type routerBridge struct {
 	router routing.RESTDispatcher
 }
 
+type restDispatcherProvider interface {
+	LegacyRESTDispatcher() routing.RESTDispatcher
+}
+
 // NewRouterBridge creates a dispatcher that bridges InteractionRequest to routing.RESTMessage.
-func NewRouterBridge(router routing.RESTDispatcher) Dispatcher {
-	return &routerBridge{router: router}
+func NewRouterBridge(router layers.RESTRouting) Dispatcher {
+	var dispatcher routing.RESTDispatcher
+	if provider, ok := router.(restDispatcherProvider); ok {
+		dispatcher = provider.LegacyRESTDispatcher()
+	}
+	return &routerBridge{router: dispatcher}
 }
 
 // Dispatch implements the Dispatcher interface by mapping InteractionRequest to RESTMessage.

@@ -12,6 +12,8 @@ jobs:
       - run: go mod download
       - run: make build
       - run: go test ./... -race -count=1
+      - name: Run layer static analyzer
+        run: make lint-layers
       - name: Ensure protocol version bump
         run: |
           git fetch origin main --depth=1 || true

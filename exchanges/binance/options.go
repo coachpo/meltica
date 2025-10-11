@@ -5,12 +5,21 @@ import (
 
 	"github.com/coachpo/meltica/config"
 	"github.com/coachpo/meltica/core/exchanges/bootstrap"
+	"github.com/coachpo/meltica/core/layers"
 	coretransport "github.com/coachpo/meltica/core/transport"
 	"github.com/coachpo/meltica/exchanges/binance/infra/rest"
 	"github.com/coachpo/meltica/exchanges/binance/infra/ws"
 	bnrouting "github.com/coachpo/meltica/exchanges/binance/routing"
 	routingrest "github.com/coachpo/meltica/exchanges/shared/routing"
 )
+
+type wsLayerProvider interface {
+	AsLayerInterface() layers.WSConnection
+}
+
+type restLayerProvider interface {
+	AsLayerInterface() layers.RESTConnection
+}
 
 // Option is a functional option for configuring Binance exchange construction.
 type Option = bootstrap.Option
@@ -41,10 +50,24 @@ func defaultConstructionParams() *bootstrap.ConstructionParams {
 
 	params.Routers = bootstrap.RouterFactories{
 		NewRESTRouter: func(client coretransport.RESTClient) interface{} {
-			return bnrouting.NewRESTRouter(client)
+			if client == nil {
+				return nil
+			}
+			provider, ok := client.(restLayerProvider)
+			if !ok {
+				panic("binance options: REST client must expose AsLayerInterface")
+			}
+			return bnrouting.NewRESTRouter(provider.AsLayerInterface())
 		},
 		NewWSRouter: func(client coretransport.StreamClient, deps interface{}) interface{} {
-			return bnrouting.NewWSRouter(client, deps.(bnrouting.WSDependencies))
+			if client == nil {
+				return nil
+			}
+			provider, ok := client.(wsLayerProvider)
+			if !ok {
+				panic("binance options: WS client must expose AsLayerInterface")
+			}
+			return bnrouting.NewWSRouter(provider.AsLayerInterface(), deps.(bnrouting.WSDependencies))
 		},
 	}
 

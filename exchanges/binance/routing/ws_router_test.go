@@ -82,7 +82,7 @@ func TestWSRouterSubscribePublicUsesStreamClient(t *testing.T) {
 		captured = append(captured, topicsCopy)
 		return newMockSubscription(), nil
 	}
-	router := NewWSRouter(streamClient, deps)
+	router := NewWSRouter(newMockWSConnection(streamClient), deps)
 	defer router.Close()
 
 	sub, err := router.SubscribePublic(ctx, Trade("BTC-USDT"))
@@ -121,7 +121,7 @@ func TestWSRouterSubscribePrivateUsesStreamClient(t *testing.T) {
 		captured = append(captured, topicsCopy)
 		return newMockSubscription(), nil
 	}
-	router := NewWSRouter(streamClient, deps)
+	router := NewWSRouter(newMockWSConnection(streamClient), deps)
 	defer router.Close()
 
 	sub, err := router.SubscribePrivate(ctx)
@@ -156,7 +156,7 @@ func TestWSRouterCloseClosesStreamClient(t *testing.T) {
 	// This test now verifies that Close() returns without error.
 	deps := &stubDeps{}
 	streamClient := &mocks.StreamClient{}
-	router := NewWSRouter(streamClient, deps)
+	router := NewWSRouter(newMockWSConnection(streamClient), deps)
 	if err := router.Close(); err != nil {
 		t.Fatalf("close returned error: %v", err)
 	}

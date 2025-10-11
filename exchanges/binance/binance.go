@@ -2,6 +2,7 @@ package binance
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"strings"
 	"sync"
@@ -11,6 +12,7 @@ import (
 	"github.com/coachpo/meltica/core"
 	"github.com/coachpo/meltica/core/exchanges/bootstrap"
 	exchangecap "github.com/coachpo/meltica/core/exchanges/capabilities"
+	"github.com/coachpo/meltica/core/layers"
 	corestreams "github.com/coachpo/meltica/core/streams"
 	"github.com/coachpo/meltica/exchanges/binance/infra/rest"
 	"github.com/coachpo/meltica/exchanges/binance/internal"
@@ -43,6 +45,35 @@ type tradingSuite struct {
 	spot    bootstrap.TradingService
 	linear  bootstrap.TradingService
 	inverse bootstrap.TradingService
+}
+
+type restDispatcherProvider interface {
+	LegacyRESTDispatcher() routingrest.RESTDispatcher
+}
+
+func resolveRESTRouting(router interface{}) (layers.RESTRouting, routingrest.RESTDispatcher) {
+	if router == nil {
+		return nil, nil
+	}
+	switch v := router.(type) {
+	case layers.RESTRouting:
+		return v, extractRESTDispatcher(v)
+	case interface{ AsLayerInterface() layers.RESTRouting }:
+		restRouting := v.AsLayerInterface()
+		return restRouting, extractRESTDispatcher(restRouting)
+	case routingrest.RESTDispatcher:
+		restRouting := bnrouting.LegacyRESTRoutingAdapter(v)
+		return restRouting, v
+	default:
+		return nil, nil
+	}
+}
+
+func extractRESTDispatcher(r layers.RESTRouting) routingrest.RESTDispatcher {
+	if provider, ok := r.(restDispatcherProvider); ok {
+		return provider.LegacyRESTDispatcher()
+	}
+	return nil
 }
 
 var capabilities = core.Capabilities(
@@ -95,13 +126,16 @@ func newExchangeWithFactories(settings config.Settings, transports bootstrap.Tra
 		SymbolRefreshInterval: binCfg.SymbolRefreshInterval,
 	}
 	bundle := bootstrap.BuildTransportBundle(transports, routers, transportCfg)
-	restRouter := bundle.Router().(routingrest.RESTDispatcher)
-	symbolSvc := newSymbolService(restRouter)
-	listenKeySvc := newListenKeyService(restRouter)
+	_, restDispatcher := resolveRESTRouting(bundle.Router())
+	if restDispatcher == nil {
+		return nil, fmt.Errorf("binance: rest router unavailable")
+	}
+	symbolSvc := newSymbolService(restDispatcher)
+	listenKeySvc := newListenKeyService(restDispatcher)
 	wsDeps := newWSDependencies(exchangeName, symbolSvc, listenKeySvc, nil)
 	bundle.SetWS(routers.NewWSRouter(bundle.WSInfra(), wsDeps))
 
-	bookSvc := newBookService(bundle.WS().(wsRouter), restRouter, symbolSvc)
+	bookSvc := newBookService(bundle.WS().(wsRouter), restDispatcher, symbolSvc)
 
 	x := &Exchange{
 		name:                  string(exchangeName),
@@ -115,7 +149,7 @@ func newExchangeWithFactories(settings config.Settings, transports bootstrap.Tra
 		symbolRefreshInterval: binCfg.SymbolRefreshInterval,
 		symbolRefreshDone:     make(chan struct{}),
 	}
-	services, err := x.buildTradingServices(restRouter, symbolSvc)
+	services, err := x.buildTradingServices(restDispatcher, symbolSvc)
 	if err != nil {
 		return nil, err
 	}
@@ -157,14 +191,17 @@ func (x *Exchange) UpdateConfig(opts ...config.Option) error {
 	}
 
 	transportBundle := bootstrap.BuildTransportBundle(x.transportFactories, x.routerFactories, transportCfg)
-	restRouter := transportBundle.Router().(routingrest.RESTDispatcher)
-	symbolSvc := newSymbolService(restRouter)
-	listenKeySvc := newListenKeyService(restRouter)
+	_, restDispatcher := resolveRESTRouting(transportBundle.Router())
+	if restDispatcher == nil {
+		return fmt.Errorf("binance: rest router unavailable")
+	}
+	symbolSvc := newSymbolService(restDispatcher)
+	listenKeySvc := newListenKeyService(restDispatcher)
 	wsDeps := newWSDependencies(exchangeName, symbolSvc, listenKeySvc, nil)
 	transportBundle.SetWS(x.routerFactories.NewWSRouter(transportBundle.WSInfra(), wsDeps))
 
-	bookSvc := newBookService(transportBundle.WS().(wsRouter), restRouter, symbolSvc)
-	services, err := x.buildTradingServices(restRouter, symbolSvc)
+	bookSvc := newBookService(transportBundle.WS().(wsRouter), restDispatcher, symbolSvc)
+	services, err := x.buildTradingServices(restDispatcher, symbolSvc)
 	if err != nil {
 		return err
 	}
@@ -381,11 +418,8 @@ func (x *Exchange) restRouter() routingrest.RESTDispatcher {
 	if x.transportBundle == nil {
 		return nil
 	}
-	router := x.transportBundle.Router()
-	if router == nil {
-		return nil
-	}
-	return router.(routingrest.RESTDispatcher)
+	_, dispatcher := resolveRESTRouting(x.transportBundle.Router())
+	return dispatcher
 }
 
 func (x *Exchange) wsRouter() wsRouter {

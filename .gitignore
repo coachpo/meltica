@@ -1,3 +1,4 @@
+coverage/
 # Allowlisting gitignore template for GO projects prevents us
 # from adding various unwanted local files, such as generated
 # files, developer configurations or IDE-specific files etc.
@@ -36,6 +37,8 @@
 .claude/
 .factory/
 .specify/
+
+!specs/
 
 # Ignore IDE directories
 .idea/

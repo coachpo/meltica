@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/coachpo/meltica/core"
+	"github.com/coachpo/meltica/core/layers"
 )
 
 // StageFactory constructs a PipelineStep for the given request.
@@ -16,6 +17,7 @@ type Coordinator struct {
 	adapter Adapter
 	auth    *AuthContext
 	hooks   AdapterHooks
+	filters []layers.Filter
 }
 
 // NewCoordinator creates a coordinator backed by the provided adapter.
@@ -58,6 +60,11 @@ func (c *Coordinator) Close() {
 	if c.adapter != nil {
 		c.adapter.Close()
 	}
+	for _, filter := range c.filters {
+		if filter != nil {
+			_ = filter.Close()
+		}
+	}
 }
 
 // SetAdapterHooks configures observability callbacks on the underlying adapter.
@@ -66,6 +73,14 @@ func (c *Coordinator) SetAdapterHooks(h AdapterHooks) {
 	if instrumented, ok := c.adapter.(InstrumentedAdapter); ok {
 		instrumented.SetAdapterHooks(h)
 	}
+}
+
+// AddFilter registers a layers.Filter to be applied within the pipeline.
+func (c *Coordinator) AddFilter(filter layers.Filter) {
+	if filter == nil {
+		return
+	}
+	c.filters = append(c.filters, filter)
 }
 
 func (c *Coordinator) buildStages(ctx context.Context, req PipelineRequest) ([]PipelineStep, *snapshotCache) {
@@ -105,6 +120,13 @@ func (c *Coordinator) buildStages(ctx context.Context, req PipelineRequest) ([]P
 
 	if req.SamplingInterval > 0 {
 		stages = append(stages, newSamplingStage(req.SamplingInterval))
+	}
+
+	for _, filter := range c.filters {
+		if filter == nil {
+			continue
+		}
+		stages = append(stages, newLayerFilterStage(filter))
 	}
 
 	// Dispatch stage ensures result channels are initialized even if no previous stages ran.

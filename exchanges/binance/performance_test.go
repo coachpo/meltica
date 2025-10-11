@@ -20,9 +20,9 @@ import (
 )
 
 type perfDeps struct {
-	listenKey      string
-	keepAliveCount int32
-	closeCount     int32
+	listenKey       string
+	keepAliveCount  int32
+	closeCount      int32
 	keepAliveSignal chan struct{}
 	closeSignal     chan struct{}
 }
@@ -135,7 +135,7 @@ func TestBinanceRoutingThroughput(t *testing.T) {
 		return sub, nil
 	}
 
-	router := routing.NewWSRouter(client, deps)
+	router := routing.NewWSRouter(newMockWSConnection(client), deps)
 	t.Cleanup(func() { require.NoError(t, router.Close()) })
 
 	streams := make([]corestreams.Subscription, 0, streamCount)
@@ -219,7 +219,7 @@ func BenchmarkBinanceFrameworkRouting(b *testing.B) {
 		},
 	}
 
-	router := routing.NewWSRouter(client, deps)
+	router := routing.NewWSRouter(newMockWSConnection(client), deps)
 	b.Cleanup(func() { _ = router.Close() })
 
 	stream, err := router.SubscribePublic(ctx, routing.Trade("BTC-USDT"))

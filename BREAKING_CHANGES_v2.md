@@ -7,6 +7,7 @@ Meltica SDK v2.0.0 removes the final backward compatibility layer that proxied l
 - Protocol version increases from `1.2.0` to `2.0.0` and all exchanges must advertise the new value via `SupportedProtocolVersion`.
 - The deprecated `market_data/framework/parser` package has been deleted, along with helper APIs such as `parser.NewJSONPipeline`, `parser.NewValidationStage`, and `parser.WithInvalidThreshold`.
 - Session decoding now flows directly through the connection runtime using pooled JSON decoders and the router/processor architecture introduced in v1.2.0.
+- Exchange integrations must now use the four-layer architecture (`layers.Connection` → `layers.Routing` → `layers.Business` → `layers.Filter`) enforced by the static analyzer.
 
 ## Removed Components
 
@@ -85,6 +86,12 @@ Session runtime now decodes payloads internally; configure routing by wiring `Ro
 
 - Replace references to parser helpers inside internal documentation or onboarding scripts with router/processor equivalents.
 - Regenerate any examples that previously showed parser setup to instead demonstrate router dispatch and processor registration.
+
+### 6. Four-Layer Architecture Adoption
+
+- Update exchange adapters to return the new layer interfaces (`core/layers` package). Adapters that previously exposed concrete Binance types must now satisfy `layers.Connection`, `layers.Routing`, and `layers.Business` contracts.
+- Run `make lint-layers` to ensure layer boundary rules are honored; violations will fail CI once coverage gates are enabled.
+- For incremental migrations, use the provided legacy adapter helpers (e.g., `LegacyRESTDispatcher`) to bridge old entry points until the exchange is fully migrated.
 
 ## Version Timeline
 

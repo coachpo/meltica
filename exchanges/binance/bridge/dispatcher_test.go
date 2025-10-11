@@ -4,9 +4,11 @@ import (
 	"context"
 	"testing"
 
+	"github.com/coachpo/meltica/core/layers"
 	"github.com/coachpo/meltica/exchanges/binance/infra/rest"
 	"github.com/coachpo/meltica/exchanges/shared/routing"
 	mdfilter "github.com/coachpo/meltica/pipeline"
+	archmocks "github.com/coachpo/meltica/tests/architecture/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -21,6 +23,10 @@ func (m *mockRESTDispatcher) Dispatch(ctx context.Context, msg routing.RESTMessa
 	}
 	return nil
 }
+
+type noopDispatcher struct{}
+
+func (noopDispatcher) Dispatch(context.Context, mdfilter.InteractionRequest, any) error { return nil }
 
 func TestMapInteractionToREST(t *testing.T) {
 	tests := []struct {
@@ -148,7 +154,9 @@ func TestRouterBridge_Dispatch(t *testing.T) {
 			},
 		}
 
-		dispatcher := NewRouterBridge(mockRouter)
+		mockRouting := archmocks.NewMockRESTRouting()
+		mockRouting.LegacyRESTDispatcherFn = func() routing.RESTDispatcher { return mockRouter }
+		dispatcher := NewRouterBridge(mockRouting)
 		interactionReq := mdfilter.InteractionRequest{
 			Method:        "GET",
 			Path:          "/api/v3/ticker/price?symbol=BTCUSDT",
@@ -165,7 +173,7 @@ func TestRouterBridge_Dispatch(t *testing.T) {
 	})
 
 	t.Run("router not available", func(t *testing.T) {
-		dispatcher := NewRouterBridge(nil)
+		dispatcher := NewRouterBridge(archmocks.NewMockRESTRouting())
 		var result any
 		err := dispatcher.Dispatch(ctx, mdfilter.InteractionRequest{Method: "GET", Path: "/api/v3/ticker/price"}, &result)
 		require.Error(t, err)
@@ -173,7 +181,9 @@ func TestRouterBridge_Dispatch(t *testing.T) {
 	})
 
 	t.Run("payload serialization error", func(t *testing.T) {
-		dispatcher := NewRouterBridge(&mockRESTDispatcher{})
+		mockRouting := archmocks.NewMockRESTRouting()
+		mockRouting.LegacyRESTDispatcherFn = func() routing.RESTDispatcher { return &mockRESTDispatcher{} }
+		dispatcher := NewRouterBridge(mockRouting)
 		req := mdfilter.InteractionRequest{Method: "POST", Path: "/api/v3/order", Payload: make(chan int)}
 		var result any
 		err := dispatcher.Dispatch(ctx, req, &result)
@@ -244,4 +254,10 @@ func TestNormalizePath(t *testing.T) {
 			assert.Equal(t, tt.expected, normalizePath(tt.input))
 		})
 	}
+}
+
+func TestWrapperAsLayerInterface(t *testing.T) {
+	wrapper := NewWrapper(noopDispatcher{}, 0, nil)
+	business := wrapper.AsLayerInterface()
+	require.Implements(t, (*layers.Business)(nil), business)
 }

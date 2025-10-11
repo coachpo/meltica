@@ -16,6 +16,7 @@ Provides the fundamental infrastructure for network communication.
 - Acts as the entry and exit point for all inbound and outbound data.
 - Handles request signing for authenticated API calls.
 - Reports connection-related errors and exchange errors to Level 2 for parsing and routing.
+- **Interface reference:** [`core/layers.Connection`](../core/layers/connection.go), [`core/layers.WSConnection`](../core/layers/connection.go), [`core/layers.RESTConnection`](../core/layers/connection.go)
 
 ---
 
@@ -33,6 +34,7 @@ Handles message routing, translation, and request/response formatting between th
 - **REST:**
   - Builds and formats **HTTP requests** (URL, path, headers, payload).
   - Converts raw **HTTP responses** into a standardized internal format for business processing.
+- **Interface reference:** [`core/layers.Routing`](../core/layers/routing.go), [`core/layers.WSRouting`](../core/layers/routing.go), [`core/layers.RESTRouting`](../core/layers/routing.go)
 
 **Error Handling:**
 - Receives error notifications from Level 1.
@@ -51,6 +53,7 @@ Implements the domain and business logic.
 - Processes normalized responses and messages received from **Level 2**.
 - Distributes results to client interfaces, services, or other consumers.
 - Handles error messages from Level 2, performing recovery actions, user notifications, or logging based on business rules.
+- **Interface reference:** [`core/layers.Business`](../core/layers/business.go), [`core/layers.OrderBusiness`](../core/layers/business.go), [`core/layers.BookBusiness`](../core/layers/business.go)
 
 ---
 
@@ -66,6 +69,7 @@ Creates exchange-agnostic market-data pipelines that orchestrate Level 3 service
 - Manages lifecycle concerns for feed pipelines: context propagation, retries, error fan-in, and graceful teardown.
 - Provides a single facade for interactive CLIs and services to consume filtered market data without touching Level 3 primitives directly.
 - Orchestrates authentication context for private streams and correlation IDs for REST request/response tracking.
+- **Interface reference:** [`core/layers.Filter`](../core/layers/filter.go), [`core/layers.Pipeline`](../core/layers/filter.go)
 
 **Channel Types:**
 - `public_ws` – Public WebSocket streams (order books, trades, tickers)

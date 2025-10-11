@@ -8,10 +8,18 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/coachpo/meltica/core/layers"
 	"github.com/coachpo/meltica/core/streams/mocks"
 	coretransport "github.com/coachpo/meltica/core/transport"
 	"github.com/coachpo/meltica/exchanges/binance/routing"
+	archmocks "github.com/coachpo/meltica/tests/architecture/mocks"
 )
+
+func newMockWSConnection(client coretransport.StreamClient) layers.WSConnection {
+	conn := archmocks.NewMockWSConnection()
+	conn.StreamClient = client
+	return conn
+}
 
 func TestSessionKeepsListenKeyAliveAndCloses(t *testing.T) {
 	restore := routing.SetPrivateKeepAliveInterval(10 * time.Millisecond)
@@ -28,7 +36,7 @@ func TestSessionKeepsListenKeyAliveAndCloses(t *testing.T) {
 		return sub, nil
 	}
 
-	router := routing.NewWSRouter(client, deps)
+	router := routing.NewWSRouter(newMockWSConnection(client), deps)
 	t.Cleanup(func() { require.NoError(t, router.Close()) })
 
 	svc := newWSService(router)

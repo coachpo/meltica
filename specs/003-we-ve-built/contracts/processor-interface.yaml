@@ -1,0 +1,246 @@
+# Processor Interface Implementation Checklist
+# Requirements for implementing a new message type processor
+
+version: "1.0"
+date: "2025-01-09"
+status: "draft"
+
+processor_implementation_requirements:
+  initialization:
+    - requirement: "Initialize() must complete within 5 seconds"
+      rationale: "Router enforces 5-second timeout; exceeding marks processor unavailable"
+      validation: "Add test with context.WithTimeout(ctx, 5*time.Second)"
+      example: |
+        func (p *TradeProcessor) Initialize(ctx context.Context) error {
+            // Fast initialization only - defer heavy work to first Process() if needed
+            select {
+            case <-time.After(100 * time.Millisecond): // Your init work
+                return nil
+            case <-ctx.Done():
+                return ctx.Err()
+            }
+        }
+
+    - requirement: "Initialize() must respect context cancellation"
+      rationale: "Allows router to abort slow initialization gracefully"
+      validation: "Test with cancelled context; verify prompt return"
+      example: |
+        for {
+            select {
+            case <-ctx.Done():
+                return ctx.Err() // Exit immediately on cancellation
+            default:
+                // Continue init work in chunks
+            }
+        }
+
+    - requirement: "Initialize() errors mark processor unavailable (non-fatal)"
+      rationale: "System continues with partial processor availability"
+      validation: "Verify router routes messages to default handler after init failure"
+      action: "Return descriptive error with errs.E; router logs and continues"
+
+  processing:
+    - requirement: "Process() must handle malformed input gracefully (never panic)"
+      rationale: "Single bad message should not crash router"
+      validation: "Fuzz test with random bytes; verify no panics"
+      example: |
+        func (p *TradeProcessor) Process(ctx context.Context, raw []byte) (interface{}, error) {
+            defer func() {
+                if r := recover(); r != nil {
+                    // Should never happen - indicates bug in processor
+                    log.Error("processor panic", "processor", p.MessageTypeID(), "panic", r)
+                }
+            }()
+            // Safe parsing...
+        }
+
+    - requirement: "Process() must respect context cancellation within 100ms"
+      rationale: "Ensures router can shut down cleanly"
+      validation: "Cancel context mid-processing; verify return within 100ms"
+      example: |
+        func (p *TradeProcessor) Process(ctx context.Context, raw []byte) (interface{}, error) {
+            select {
+            case <-ctx.Done():
+                return nil, ctx.Err()
+            default:
+                // Fast path - process immediately if not cancelled
+            }
+            
+            // For long processing, check periodically:
+            for step := range steps {
+                if ctx.Err() != nil {
+                    return nil, ctx.Err()
+                }
+                // Process step...
+            }
+        }
+
+    - requirement: "Process() must use *big.Rat for all decimal fields"
+      rationale: "Constitution CQ-03: Zero floating-point policy"
+      validation: "Code review + CI lint checks for float32/float64 in structs"
+      example: |
+        type TradePayload struct {
+            Price    *big.Rat // ✅ Correct
+            Quantity *big.Rat // ✅ Correct
+            // BadPrice float64 // ❌ CI fails
+        }
+        
+        price, ok := new(big.Rat).SetString("123.456")
+        if !ok {
+            return nil, errs.New(errs.CodeInvalid, "invalid_price", fmt.Errorf("price parse failed"))
+        }
+
+    - requirement: "Process() must NOT retain references to input []byte"
+      rationale: "Prevents memory leaks when raw buffers are pooled"
+      validation: "Verify processor doesn't store raw in struct fields"
+      example: |
+        // ❌ BAD - retains reference
+        type BadProcessor struct {
+            lastRaw []byte
+        }
+        func (p *BadProcessor) Process(ctx context.Context, raw []byte) (interface{}, error) {
+            p.lastRaw = raw // Memory leak if raw is pooled
+            return parse(raw), nil
+        }
+        
+        // ✅ GOOD - copies data if needed
+        func (p *GoodProcessor) Process(ctx context.Context, raw []byte) (interface{}, error) {
+            copied := make([]byte, len(raw))
+            copy(copied, raw)
+            return parse(copied), nil
+        }
+
+    - requirement: "Process() return value must match expected payload type"
+      rationale: "Type assertions in consumers must succeed"
+      validation: "Test that returned interface{} can be asserted to expected type"
+      example: |
+        func (p *TradeProcessor) Process(ctx context.Context, raw []byte) (interface{}, error) {
+            payload := &market_data.TradePayload{}
+            // ... populate payload ...
+            return payload, nil // Returns *TradePayload
+        }
+        
+        // Consumer code:
+        result, err := processor.Process(ctx, raw)
+        trade, ok := result.(*market_data.TradePayload)
+        if !ok {
+            // Should never happen if processor correct
+        }
+
+  error_handling:
+    - requirement: "Process() errors must use errs.E with canonical codes"
+      rationale: "Constitution CQ-06: Typed errors for programmatic handling"
+      validation: "All errors wrapped with errs.New() or errs.Wrap()"
+      example: |
+        import "github.com/coachpo/meltica/errs"
+        
+        if err := json.Unmarshal(raw, &envelope); err != nil {
+            return nil, errs.New(errs.CodeInvalid, "trade_parse_failed", err).
+                WithValue("raw_length", len(raw))
+        }
+        
+        if price.Sign() <= 0 {
+            return nil, errs.New(errs.CodeInvalid, "trade_invalid_price",
+                fmt.Errorf("price must be positive, got %s", price.String()))
+        }
+
+    - requirement: "Process() must return nil model on error"
+      rationale: "Prevents partial/invalid data propagation"
+      validation: "Test error cases; verify model is nil when error returned"
+      pattern: "return nil, err (not partially populated model)"
+
+  interface_compliance:
+    - requirement: "MessageTypeID() must be deterministic"
+      rationale: "Called frequently for routing table validation"
+      validation: "Test calls MessageTypeID() 1000 times; verify same value"
+      example: |
+        func (p *TradeProcessor) MessageTypeID() string {
+            return "trade" // Constant, never changes
+        }
+
+    - requirement: "MessageTypeID() must match registration"
+      rationale: "Routing table uses this for lookup validation"
+      validation: "Test RegisterProcessor() with mismatched ID; verify error"
+      pattern: "Return same value passed to router.RegisterProcessor()"
+
+  thread_safety:
+    - requirement: "Processor must be safe for concurrent Process() calls"
+      rationale: "Router may call Process() from multiple goroutines"
+      validation: "Run 100 concurrent Process() calls; check for races with -race"
+      example: |
+        type TradeProcessor struct {
+            mu sync.RWMutex // Protect any shared state
+            config *ProcessorConfig
+        }
+        
+        func (p *TradeProcessor) Process(ctx context.Context, raw []byte) (interface{}, error) {
+            p.mu.RLock()
+            cfg := p.config // Read config safely
+            p.mu.RUnlock()
+            
+            // Local variables only - no shared state mutation
+            payload := &market_data.TradePayload{}
+            // ... parse using cfg ...
+            return payload, nil
+        }
+
+  performance:
+    - requirement: "Process() target latency: <3ms p95"
+      rationale: "Contributes to SC-002: <5ms p95 end-to-end routing latency"
+      validation: "Benchmark with realistic payloads; verify p95 < 3ms"
+      example: |
+        func BenchmarkTradeProcessor(b *testing.B) {
+            processor := NewTradeProcessor()
+            processor.Initialize(context.Background())
+            raw := loadTestPayload("trade_fixture.json")
+            
+            b.ResetTimer()
+            for i := 0; i < b.N; i++ {
+                _, err := processor.Process(context.Background(), raw)
+                if err != nil {
+                    b.Fatal(err)
+                }
+            }
+        }
+        // Target: ~1-2µs per op (excluding allocation)
+
+    - requirement: "Minimize allocations in Process() hot path"
+      rationale: "Constitution PERF-03: Memory efficiency"
+      validation: "Run benchmark with -benchmem; optimize high-allocation paths"
+      tips:
+        - "Reuse buffers with sync.Pool"
+        - "Pre-allocate slices with known capacity"
+        - "Avoid fmt.Sprintf in hot path (use strings.Builder)"
+
+testing_checklist:
+  unit_tests:
+    - "Test Initialize() with valid config → no error"
+    - "Test Initialize() with timeout → context.DeadlineExceeded"
+    - "Test Process() with valid payload → correct typed model"
+    - "Test Process() with malformed JSON → error, no panic"
+    - "Test Process() with missing required fields → validation error"
+    - "Test Process() with cancelled context → prompt return"
+    - "Test MessageTypeID() returns expected constant"
+
+  integration_tests:
+    - "Register processor with router → status Available"
+    - "Router routes message to processor → Process() called"
+    - "Processor init failure → status Unavailable, routes to default"
+    - "Processor returns error → logged, metrics incremented"
+
+  performance_tests:
+    - "Benchmark Process() latency → <3ms p95"
+    - "Benchmark with race detector → no data races"
+    - "Memory allocation profile → <1KB per Process() call"
+
+code_review_checklist:
+  - "[ ] No float32/float64 in payload structs"
+  - "[ ] All errors use errs.E with canonical codes"
+  - "[ ] No panic() in Process() code path"
+  - "[ ] Context cancellation checked in long operations"
+  - "[ ] No retention of input []byte slice"
+  - "[ ] Thread-safe if accessing shared state"
+  - "[ ] MessageTypeID() matches registration"
+  - "[ ] Godoc comments on exported types/functions"
+  - "[ ] Unit tests cover error paths"
+  - "[ ] Benchmark included and passes targets"

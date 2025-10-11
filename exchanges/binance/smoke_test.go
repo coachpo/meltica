@@ -38,7 +38,7 @@ func TestBinanceSmokeSuite(t *testing.T) {
 		return sub, nil
 	}
 
-	router := routing.NewWSRouter(client, deps)
+	router := routing.NewWSRouter(newMockWSConnection(client), deps)
 	t.Cleanup(func() { require.NoError(t, router.Close()) })
 
 	svc := newWSService(router)

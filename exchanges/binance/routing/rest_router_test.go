@@ -5,12 +5,37 @@ import (
 	"errors"
 	"net/http"
 	"testing"
+	"time"
 
+	"github.com/coachpo/meltica/core/layers"
 	"github.com/coachpo/meltica/core/streams/mocks"
 	coretransport "github.com/coachpo/meltica/core/transport"
 	"github.com/coachpo/meltica/exchanges/binance/infra/rest"
 	routingrest "github.com/coachpo/meltica/exchanges/shared/routing"
 )
+
+type stubRESTConnection struct {
+	client coretransport.RESTClient
+}
+
+var _ layers.RESTConnection = (*stubRESTConnection)(nil)
+
+func newStubRESTConnection(client coretransport.RESTClient) *stubRESTConnection {
+	return &stubRESTConnection{client: client}
+}
+
+func (s *stubRESTConnection) Connect(context.Context) error    { return nil }
+func (s *stubRESTConnection) Close() error                     { return nil }
+func (s *stubRESTConnection) IsConnected() bool                { return true }
+func (s *stubRESTConnection) SetReadDeadline(time.Time) error  { return nil }
+func (s *stubRESTConnection) SetWriteDeadline(time.Time) error { return nil }
+func (s *stubRESTConnection) Do(context.Context, *layers.HTTPRequest) (*layers.HTTPResponse, error) {
+	return nil, nil
+}
+func (s *stubRESTConnection) SetRateLimit(int) {}
+func (s *stubRESTConnection) LegacyRESTClient() coretransport.RESTClient {
+	return s.client
+}
 
 func TestRESTRouterDispatchSuccess(t *testing.T) {
 	ctx := context.Background()
@@ -28,7 +53,7 @@ func TestRESTRouterDispatchSuccess(t *testing.T) {
 		}
 		return nil
 	}
-	router := NewRESTRouter(client)
+	router := NewRESTRouter(newStubRESTConnection(client))
 	msg := routingrest.RESTMessage{API: string(rest.SpotAPI), Method: http.MethodGet, Path: "/api/v3/time"}
 	if err := router.Dispatch(ctx, msg, nil); err != nil {
 		t.Fatalf("dispatch returned error: %v", err)
@@ -57,7 +82,7 @@ func TestRESTRouterDispatchError(t *testing.T) {
 		}
 		return returnedErr
 	}
-	router := NewRESTRouter(client)
+	router := NewRESTRouter(newStubRESTConnection(client))
 	msg := routingrest.RESTMessage{API: string(rest.LinearAPI), Method: http.MethodGet, Path: "/fapi/v1/time"}
 	err := router.Dispatch(ctx, msg, nil)
 	if !handleErrorCalled {

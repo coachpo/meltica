@@ -4,12 +4,17 @@ import (
 	"context"
 
 	"github.com/coachpo/meltica/core"
+	"github.com/coachpo/meltica/core/layers"
 	corestreams "github.com/coachpo/meltica/core/streams"
 	coretransport "github.com/coachpo/meltica/core/transport"
 	"github.com/coachpo/meltica/errs"
 	frameworkrouter "github.com/coachpo/meltica/market_data/framework/router"
 	"github.com/coachpo/meltica/market_data/processors"
 )
+
+type streamClientProvider interface {
+	LegacyStreamClient() coretransport.StreamClient
+}
 
 // WSDependencies exposes the exchange hooks required by the websocket routing layer.
 type WSDependencies interface {
@@ -36,7 +41,19 @@ type WSRouter struct {
 }
 
 // NewWSRouter creates a websocket routing layer bound to the infrastructure client.
-func NewWSRouter(infra coretransport.StreamClient, deps WSDependencies) *WSRouter {
+func NewWSRouter(conn layers.WSConnection, deps WSDependencies) *WSRouter {
+	if conn == nil {
+		panic("binance routing: nil WSConnection")
+	}
+	provider, ok := conn.(streamClientProvider)
+	if !ok {
+		panic("binance routing: WSConnection missing legacy stream client provider")
+	}
+	infra := provider.LegacyStreamClient()
+	if infra == nil {
+		panic("binance routing: legacy stream client required")
+	}
+
 	ctx := context.Background()
 	table := frameworkrouter.NewRoutingTable()
 	descriptors := BinanceMessageTypeDescriptors()
@@ -147,4 +164,12 @@ func RegisterProcessors(table *frameworkrouter.RoutingTable, deps WSDependencies
 		return errs.New("", errs.CodeInvalid, errs.WithMessage("routing table required"))
 	}
 	return registerBinanceProcessors(table, deps, BinanceMessageTypeDescriptors())
+}
+
+// AsLayerInterface exposes the router as a layers.WSRouting implementation.
+func (w *WSRouter) AsLayerInterface() layers.WSRouting {
+	if w == nil {
+		return nil
+	}
+	return &layerWSRouting{router: w}
 }
