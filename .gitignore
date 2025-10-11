@@ -37,7 +37,7 @@ coverage/
 .claude/
 .factory/
 .specify/
-
+.cursor/
 !specs/
 
 # Ignore IDE directories
