@@ -19,7 +19,7 @@ func TestBinanceArchitectureNoCrossLayerImports(t *testing.T) {
 			pattern: "github.com/coachpo/meltica/exchanges/binance/filter/...",
 			forbid: []string{
 				"github.com/coachpo/meltica/exchanges/binance/routing",
-				"github.com/coachpo/meltica/market_data/framework/router",
+				"github.com/coachpo/meltica/lib/ws-routing",
 			},
 			descr: "L4 filter layer must not depend on routing layers",
 		},
@@ -58,8 +58,8 @@ func TestBinanceArchitectureLayerAssignments(t *testing.T) {
 		prefixes []layerPrefix
 	}{
 		{"L1/Infra", []layerPrefix{{value: "github.com/coachpo/meltica/exchanges/binance/infra"}, {value: "github.com/coachpo/meltica/exchanges/shared/infra"}}},
-		{"L2/Routing", []layerPrefix{{value: "github.com/coachpo/meltica/exchanges/binance/routing"}, {value: "github.com/coachpo/meltica/exchanges/binance/internal"}, {value: "github.com/coachpo/meltica/exchanges/binance/wsrouting"}, {value: "github.com/coachpo/meltica/market_data/framework/router"}}},
-		{"L3/Business", []layerPrefix{{value: "github.com/coachpo/meltica/exchanges/binance/bridge"}, {value: "github.com/coachpo/meltica/exchanges/binance", exact: true}, {value: "github.com/coachpo/meltica/exchanges/binance/plugin"}, {value: "github.com/coachpo/meltica/exchanges/binance/telemetry"}, {value: "github.com/coachpo/meltica/market_data/processors"}}},
+		{"L2/Routing", []layerPrefix{{value: "github.com/coachpo/meltica/exchanges/binance/routing"}, {value: "github.com/coachpo/meltica/exchanges/binance/internal"}, {value: "github.com/coachpo/meltica/exchanges/binance/wsrouting"}, {value: "github.com/coachpo/meltica/lib/ws-routing"}}},
+		{"L3/Business", []layerPrefix{{value: "github.com/coachpo/meltica/exchanges/binance/bridge"}, {value: "github.com/coachpo/meltica/exchanges/binance", exact: true}, {value: "github.com/coachpo/meltica/exchanges/binance/plugin"}, {value: "github.com/coachpo/meltica/exchanges/binance/telemetry"}, {value: "github.com/coachpo/meltica/exchanges/processors"}}},
 		{"L4/Filter", []layerPrefix{{value: "github.com/coachpo/meltica/exchanges/binance/filter"}}},
 	}
 

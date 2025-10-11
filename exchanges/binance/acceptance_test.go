@@ -14,7 +14,7 @@ import (
 	"github.com/coachpo/meltica/exchanges/binance/routing"
 	binancetelemetry "github.com/coachpo/meltica/exchanges/binance/telemetry"
 	bnwsrouting "github.com/coachpo/meltica/exchanges/binance/wsrouting"
-	framework "github.com/coachpo/meltica/market_data/framework"
+	wsrouting "github.com/coachpo/meltica/lib/ws-routing"
 )
 
 func TestUserStory3Acceptance(t *testing.T) {
@@ -44,7 +44,7 @@ func TestUserStory3Acceptance(t *testing.T) {
 	routingMetrics.RecordProcessing(typeID, time.Millisecond, nil)
 	routingMetrics.RecordBackpressureStart(typeID)
 
-	connMetrics := framework.MetricsSnapshot{MessagesTotal: 1, ErrorsTotal: 0, Allocated: 512}
+	connMetrics := wsrouting.MetricsSnapshot{MessagesTotal: 1, ErrorsTotal: 0, Allocated: 512}
 	bridgeMetrics := binancetelemetry.BridgeSnapshot{RESTRequests: 3, RESTFailures: 0}
 	filterMetrics := binancetelemetry.FilterSnapshot{Forwarded: 5, Dropped: 0}
 
@@ -127,7 +127,7 @@ func TestUserStory4Acceptance(t *testing.T) {
 	}
 
 	totalMessages := uint64(atomic.LoadInt32(&publicCount) + atomic.LoadInt32(&privateCount))
-	connSnapshot := framework.MetricsSnapshot{MessagesTotal: totalMessages, ErrorsTotal: 0, Allocated: 0}
+	connSnapshot := wsrouting.MetricsSnapshot{MessagesTotal: totalMessages, ErrorsTotal: 0, Allocated: 0}
 	routingMetrics := bnwsrouting.NewRoutingMetrics()
 	routingMetrics.RecordRoute("binance.trade")
 	routingMetrics.RecordProcessing("binance.trade", time.Millisecond, nil)

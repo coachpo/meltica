@@ -9,7 +9,7 @@ import (
 	coretransport "github.com/coachpo/meltica/core/transport"
 	"github.com/coachpo/meltica/errs"
 	bnwsrouting "github.com/coachpo/meltica/exchanges/binance/wsrouting"
-	"github.com/coachpo/meltica/market_data/processors"
+	"github.com/coachpo/meltica/exchanges/processors"
 )
 
 type streamClientProvider interface {

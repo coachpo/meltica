@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/coachpo/meltica/errs"
-	"github.com/coachpo/meltica/market_data/processors"
+	"github.com/coachpo/meltica/exchanges/processors"
 )
 
 // RoutingTable maintains processor registrations and descriptors for routing decisions.

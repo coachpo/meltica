@@ -8,20 +8,20 @@ This migration extracts the generic WebSocket routing infrastructure from `marke
 
 - Eliminate duplicated router logic across exchanges
 - Provide contract-tested lifecycle primitives that downstream teams can adopt confidently
-- Reduce risk during adapter refactors by supplying deprecation shims and smoke tests
+- Reduce risk during adapter refactors by supplying exhaustive smoke tests and contract suites
 
 ## Scope
 
 | Area | Change |
 | ---- | ------ |
 | Framework | New package `github.com/coachpo/meltica/lib/ws-routing` with shared session + routing primitives |
-| Market Data | `market_data/framework/api/wsrouting.Manager` bridges the engine into the framework. Legacy router internals have been removed in favour of a re-export shim. |
+| Market Data | `market_data/framework/api/wsrouting.Manager` bridged the engine into the framework. Legacy router internals and shims have been fully removed; adapters consume `lib/ws-routing` directly. |
 | Exchanges | Binance pipeline now lives under `exchanges/binance/wsrouting` and consumes the shared framework |
 | Tooling | Contract, smoke, and architecture tests were updated to enforce parity |
 
 ## Migration Steps
 
-1. Replace imports of `market_data/framework/router` with the deprecation shim (`market_data/framework/router/shim.go`) or directly with `lib/ws-routing`
+1. Replace imports of `market_data/framework/router` with `github.com/coachpo/meltica/lib/ws-routing`
 2. Initialize sessions via `wsrouting.Init(ctx, options)` where `options` injects your dialer, parser, publisher, and backoff policy
 3. Queue subscriptions using `wsrouting.Subscribe` before calling `Start`; the session replays them once the dialer succeeds
 4. Register middleware for metrics/validation using `wsrouting.UseMiddleware`
@@ -37,6 +37,6 @@ This migration extracts the generic WebSocket routing infrastructure from `marke
 
 ## Rollout Guidance
 
-- The shim in `market_data/framework/router/shim.go` will remain for one release. Consumers should pin to `lib/ws-routing` before the shim is removed.
+- The deprecated `market_data/framework/router/shim.go` entry point has been removed. Consumers must import `lib/ws-routing` directly before upgrading.
 - Communicate the migration using the release checklist in `specs/009-goals-extract-the/spec.md` and link to the quickstart guide.
 - Capture structured log snapshots from the smoke test to prove runtime parity before and after adoption.

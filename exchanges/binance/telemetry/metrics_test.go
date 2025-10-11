@@ -4,11 +4,11 @@ import (
 	"testing"
 
 	bnwsrouting "github.com/coachpo/meltica/exchanges/binance/wsrouting"
-	framework "github.com/coachpo/meltica/market_data/framework"
+	wsrouting "github.com/coachpo/meltica/lib/ws-routing"
 )
 
 func TestCollectProducesRoutingSnapshot(t *testing.T) {
-	conn := framework.MetricsSnapshot{MessagesTotal: 42, ErrorsTotal: 2, Allocated: 1024}
+	conn := wsrouting.MetricsSnapshot{MessagesTotal: 42, ErrorsTotal: 2, Allocated: 1024}
 	routingMetrics := bnwsrouting.NewRoutingMetrics()
 	routingMetrics.RecordError()
 	layers := Collect(conn, routingMetrics, BridgeSnapshot{RESTRequests: 7}, FilterSnapshot{Forwarded: 11, Dropped: 1})
@@ -31,7 +31,7 @@ func TestCollectProducesRoutingSnapshot(t *testing.T) {
 }
 
 func TestLayerSnapshotsFlatten(t *testing.T) {
-	conn := framework.MetricsSnapshot{MessagesTotal: 10, ErrorsTotal: 1, Allocated: 2048}
+	conn := wsrouting.MetricsSnapshot{MessagesTotal: 10, ErrorsTotal: 1, Allocated: 2048}
 	routingMetrics := bnwsrouting.NewRoutingMetrics()
 	routingMetrics.RecordError()
 	routingMetrics.RecordBackpressureStart("binance.trade")

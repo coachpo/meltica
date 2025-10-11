@@ -13,6 +13,7 @@ Meltica implements a layered trading framework that separates concerns across fo
 
 ## Supporting Components
 
+- **Routing Library**: [`lib/ws-routing`](lib/ws-routing) provides the reusable session lifecycle, per-symbol router, middleware, telemetry, and admin API packages consumed by exchange adapters. All domain code imports the library via `github.com/coachpo/meltica/lib/ws-routing`.
 - **Static Analysis**: [`internal/linter`](internal/linter) enforces package boundaries via `make lint-layers` and runs in CI.
 - **Tests**: [`tests/architecture`](tests/architecture) hosts contract tests, reusable mocks, and isolated usage examples.
 - **Templates**: [`internal/templates/exchange`](internal/templates/exchange) plus [`scripts/new-exchange.sh`](scripts/new-exchange.sh) scaffold new exchanges following the four-layer pattern.

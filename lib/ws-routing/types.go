@@ -217,3 +217,35 @@ func (s SubscriptionSpec) Key() string {
 	}
 	return fmt.Sprintf("%s|%s|%s|%s", strings.TrimSpace(s.Exchange), strings.TrimSpace(s.Channel), strings.Join(symbols, ","), string(s.QoS))
 }
+
+// MetricsSnapshot captures rolling telemetry for a routing session.
+type MetricsSnapshot struct {
+	Session       string
+	WindowLength  time.Duration
+	MessagesTotal uint64
+	ErrorsTotal   uint64
+	P50           time.Duration
+	P95           time.Duration
+	Allocated     uint64
+}
+
+// SessionID returns the associated session identifier.
+func (m MetricsSnapshot) SessionID() string { return m.Session }
+
+// Window returns the aggregation window length.
+func (m MetricsSnapshot) Window() time.Duration { return m.WindowLength }
+
+// Messages returns the total messages processed during the window.
+func (m MetricsSnapshot) Messages() uint64 { return m.MessagesTotal }
+
+// Errors returns the total errors recorded during the window.
+func (m MetricsSnapshot) Errors() uint64 { return m.ErrorsTotal }
+
+// P50Latency returns the median processing latency for the window.
+func (m MetricsSnapshot) P50Latency() time.Duration { return m.P50 }
+
+// P95Latency returns the 95th percentile processing latency for the window.
+func (m MetricsSnapshot) P95Latency() time.Duration { return m.P95 }
+
+// AllocBytes returns the approximate bytes allocated during the window.
+func (m MetricsSnapshot) AllocBytes() uint64 { return m.Allocated }

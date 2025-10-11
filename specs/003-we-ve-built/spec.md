@@ -3,7 +3,7 @@
 **Feature Branch**: `003-we-ve-built`  
 **Created**: 2025-01-09  
 **Status**: Draft  
-**Input**: User description: "We've built a high-performance, lightweight Go framework that efficiently handles high-throughput WebSocket message streams. It currently lives in the market_data folder. Its developing documents live in specs/002-build-a-lightweight New requirements: 1. Mixed-flow support [object Object] routing: Support mixed subscription flows where a single stream pushes multiple message types. The framework must route each message type to the appropriate parser, which converts the payload into its corresponding instance/model. 2. Architecture integration [object Object] replacement: After requirement 1 is complete, this framework should replace the current exchanges/binance implementation and conform to the four-level architecture defined in @exchanges/sys_arch_overview.md."
+**Input**: User description: "We've built a high-performance, lightweight Go framework that efficiently handles high-throughput WebSocket message streams. It currently lives in the market_data folder. Its developing documents live in specs/002-build-a-lightweight New requirements: 1. Mixed-flow support routing: Support mixed subscription flows where a single stream pushes multiple message types. The framework must route each message type to the appropriate parser, which converts the payload into its corresponding instance/model. 2. Architecture integration replacement: After requirement 1 is complete, this framework should replace the current exchanges/binance implementation and conform to the four-level architecture defined in @exchanges/sys_arch_overview.md."
 
 ## Clarifications
 

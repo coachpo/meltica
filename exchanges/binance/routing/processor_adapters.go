@@ -6,7 +6,7 @@ import (
 
 	corestreams "github.com/coachpo/meltica/core/streams"
 	"github.com/coachpo/meltica/errs"
-	"github.com/coachpo/meltica/market_data/processors"
+	"github.com/coachpo/meltica/exchanges/processors"
 	gojson "github.com/goccy/go-json"
 )
 

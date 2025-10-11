@@ -57,6 +57,6 @@ Existing projects can move from `market_data/framework/router` to this package b
 
 1. Replacing direct router imports with `github.com/coachpo/meltica/lib/ws-routing`
 2. Wiring engine dialers and domain publishers into `wsrouting.Options`
-3. Leveraging the temporary shim in `market_data/framework/router/shim.go` for incremental adoption
+3. Removing any remaining references to the deprecated shim and depending on `lib/ws-routing` directly
 
 Refer to [`specs/009-goals-extract-the`](../../specs/009-goals-extract-the) for migration planning and architectural guidance.

@@ -8,7 +8,7 @@ Meltica SDK v2.0.0 removes the final backward compatibility layer that proxied l
 - The deprecated `market_data/framework/parser` package has been deleted, along with helper APIs such as `parser.NewJSONPipeline`, `parser.NewValidationStage`, and `parser.WithInvalidThreshold`.
 - Session decoding now flows directly through the connection runtime using pooled JSON decoders and the router/processor architecture introduced in v1.2.0.
 - Exchange integrations must now use the four-layer architecture (`layers.Connection` → `layers.Routing` → `layers.Business` → `layers.Filter`) enforced by the static analyzer.
-- WebSocket routing logic previously embedded in `market_data/framework/router` now lives under `lib/ws-routing`. Adapters should depend on the public API rather than internal packages. A temporary shim re-exports the new API during the transition.
+- WebSocket routing logic previously embedded in `market_data/framework/router` now lives under `lib/ws-routing`. Adapters must depend on the public API rather than internal packages. The temporary shim has been removed; downstream modules must update imports to the new library before upgrading.
 
 ## Removed Components
 
@@ -24,9 +24,9 @@ Meltica SDK v2.0.0 removes the final backward compatibility layer that proxied l
 
 ### 1. Update Imports
 
-- Migrate WebSocket adapters to `github.com/coachpo/meltica/lib/ws-routing`. The temporary shim (`market_data/framework/router/shim.go`) can be used while downstream packages adopt the new module.
+- Migrate WebSocket adapters to `github.com/coachpo/meltica/lib/ws-routing`.
 - Remove `github.com/coachpo/meltica/market_data/framework/parser` from all modules.
-- Add or retain imports for `market_data/framework/router`, `market_data/processors`, or exchange processors as appropriate.
+- Update processor imports to `github.com/coachpo/meltica/exchanges/processors`.
 
 ### 2. Replace Parser Pipeline Construction
 
@@ -107,7 +107,7 @@ Session runtime now decodes payloads internally; configure routing by wiring `Ro
 
 - Deployment runbook: `docs/guides/multi_stream_router_runbook.md`
 - Troubleshooting tips: `docs/guides/router_troubleshooting.md`
-- Processor examples: `market_data/processors`
+- Processor examples: `exchanges/processors`
 - Community support: open an issue in the Meltica repository or contact Meltica support via the usual channels.
 
 Please upgrade all integrations before deploying Meltica SDK v2.0.0. The legacy parser architecture is no longer available and new features will target the streamlined processor/router stack exclusively.

@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/coachpo/meltica/errs"
-	"github.com/coachpo/meltica/market_data/processors"
+	"github.com/coachpo/meltica/exchanges/processors"
 )
 
 // MessageTypeDescriptor describes how to detect and route a specific message type.

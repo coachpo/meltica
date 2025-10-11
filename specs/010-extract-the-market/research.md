@@ -44,6 +44,12 @@
 9) Test Strategy
 - Decision: Move unit tests to new packages; keep integration under `tests/integration/market_data` and update imports; add adapter conformance helper under `internal/testhelpers`.
 - Rationale: TS‑10 boundary coverage; maintain parity and reduce duplication.
+- Alternatives: Split tests by domain (duplicates effort); rely solely on integration (reduces failure localization).
+
+10) Library Dependency Surface
+- Decision: Retain dependencies to Go stdlib, `github.com/gorilla/websocket` for transport adapters, `github.com/goccy/go-json` for admin API encoding, and internal packages (`core/stream`, `errs`, `/lib` telemetry/logging); avoid introducing new third-party libraries.
+- Rationale: Matches current framework behavior while keeping the new library business-agnostic and minimizing migration risk.
+- Alternatives: Replace gorilla/websocket with native net/http (loses features like permessage-deflate); introduce new routing/JSON frameworks (expands attack surface without necessity).
 
 ## Open Questions (resolved in this plan)
 - Admin authentication: NONE (local dev/CI only); production deployments wire auth at composition root.

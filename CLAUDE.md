@@ -8,6 +8,7 @@ Auto-generated from all feature plans. Last updated: 2025-10-10
 - N/A (in-memory state management only) (008-architecture-requirements-req)
 - Go 1.25 + `github.com/gorilla/websocket`, `github.com/goccy/go-json`, internal `errs` and `core` packages (009-goals-extract-the)
 - N/A (in-memory streaming only) (009-goals-extract-the)
+- Go 1.25 + Go stdlib packages, `github.com/gorilla/websocket`, `github.com/goccy/go-json`, internal `core/stream`, `errs`, and `/lib` observability helpers (010-extract-the-market)
 
 ## Project Structure
 ```
@@ -22,9 +23,9 @@ tests/
 Go 1.25: Follow standard conventions
 
 ## Recent Changes
+- 010-extract-the-market: Added Go 1.25 + Go stdlib packages, `github.com/gorilla/websocket`, `github.com/goccy/go-json`, internal `core/stream`, `errs`, and `/lib` observability helpers
 - 010-extract-the-market: Added [if applicable, e.g., PostgreSQL, CoreData, files or N/A]
 - 009-goals-extract-the: Added Go 1.25 + `github.com/gorilla/websocket`, `github.com/goccy/go-json`, internal `errs` and `core` packages
-- 008-architecture-requirements-req: Added Go 1.25 + gorilla/websocket, goccy/go-json, golang.org/x/tools (for static analysis)
 
 <!-- MANUAL ADDITIONS START -->
 ## Architecture Notes

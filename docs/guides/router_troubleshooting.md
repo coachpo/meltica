@@ -4,7 +4,7 @@
 
 ### Processor Not Invoked
 - Ensure the message type descriptor matches the incoming payload.
-- Run `go test ./market_data/framework/router -run Detect` to verify detection logic.
+- Run `go test ./lib/ws-routing/router -run Detect` to verify detection logic.
 - Enable `RoutingMetrics.RecordRoute` logging to confirm detection events.
 
 ### Backpressure Warnings

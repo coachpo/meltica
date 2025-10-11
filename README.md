@@ -22,6 +22,7 @@ The system follows a formal four-layer architecture:
 4. **Layer 4 – Filter** (`core/layers/filter.go`): Final pipeline stage that transforms events for downstream clients and handles cleanup.
 
 Supporting assets:
+- `lib/ws-routing/`: Business-agnostic routing session, router, middleware, telemetry, and admin API packages imported via `github.com/coachpo/meltica/lib/ws-routing`.
 - `internal/linter/`: Static analyzer enforcing layer boundaries (also runs via `make lint-layers`).
 - `tests/architecture/`: Contract tests, reusable mocks, and isolation examples.
 - `internal/templates/exchange/` + `scripts/new-exchange.sh`: Exchange skeleton generator aligned with the four layers.
@@ -32,8 +33,12 @@ See [`specs/008-architecture-requirements-req/quickstart.md`](specs/008-architec
 
 ```go
 import (
+    "context"
+    "time"
+
     "github.com/coachpo/meltica/core/registry"
     binanceplugin "github.com/coachpo/meltica/exchanges/binance/plugin"
+    wsrouting "github.com/coachpo/meltica/lib/ws-routing"
 )
 
 // Create a Binance provider
@@ -44,6 +49,20 @@ if err != nil {
 defer exchange.Close()
 
 // Use the exchange for market data or trading operations
+
+ctx := context.Background()
+
+// Configure a universal routing session via lib/ws-routing
+session, err := wsrouting.Init(ctx, wsrouting.Options{
+    SessionID: "binance-stream",
+    Dialer:    myDialer,
+    Parser:    myParser,
+    Publish:   myPublisher,
+    Backoff:   wsrouting.BackoffConfig{Initial: 250 * time.Millisecond},
+})
+if err != nil {
+    log.Fatal(err)
+}
 ```
 
 ## Features

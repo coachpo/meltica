@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	bnwsrouting "github.com/coachpo/meltica/exchanges/binance/wsrouting"
-	framework "github.com/coachpo/meltica/market_data/framework"
+	wsrouting "github.com/coachpo/meltica/lib/ws-routing"
 )
 
 // BridgeSnapshot captures Layer-3 (business) dispatch metrics.
@@ -21,14 +21,14 @@ type FilterSnapshot struct {
 
 // LayerSnapshots materializes telemetry for each architecture layer.
 type LayerSnapshots struct {
-	Connection framework.MetricsSnapshot
+	Connection wsrouting.MetricsSnapshot
 	Routing    *bnwsrouting.RoutingMetrics
 	Bridge     BridgeSnapshot
 	Filter     FilterSnapshot
 }
 
 // Collect aggregates the supplied layer-specific telemetry into a single view.
-func Collect(connection framework.MetricsSnapshot, routingMetrics *bnwsrouting.RoutingMetrics, bridge BridgeSnapshot, filter FilterSnapshot) LayerSnapshots {
+func Collect(connection wsrouting.MetricsSnapshot, routingMetrics *bnwsrouting.RoutingMetrics, bridge BridgeSnapshot, filter FilterSnapshot) LayerSnapshots {
 	var routingSnapshot *bnwsrouting.RoutingMetrics
 	if routingMetrics != nil {
 		routingSnapshot = routingMetrics.Snapshot()
