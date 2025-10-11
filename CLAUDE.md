@@ -22,9 +22,9 @@ tests/
 Go 1.25: Follow standard conventions
 
 ## Recent Changes
+- 010-extract-the-market: Added [if applicable, e.g., PostgreSQL, CoreData, files or N/A]
 - 009-goals-extract-the: Added Go 1.25 + `github.com/gorilla/websocket`, `github.com/goccy/go-json`, internal `errs` and `core` packages
 - 008-architecture-requirements-req: Added Go 1.25 + gorilla/websocket, goccy/go-json, golang.org/x/tools (for static analysis)
-- 003-we-ve-built: Added Go 1.25
 
 <!-- MANUAL ADDITIONS START -->
 ## Architecture Notes

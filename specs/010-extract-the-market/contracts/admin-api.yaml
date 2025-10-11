@@ -1,0 +1,42 @@
+openapi: 3.0.3
+info:
+  title: ws-routing Admin API
+  version: 1.0.0
+  description: Read-only admin endpoints for ws-routing library
+servers:
+  - url: http://localhost:8080
+paths:
+  /admin/ws-routing/v1/health:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+  /admin/ws-routing/v1/subscriptions:
+    get:
+      summary: List active subscriptions
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        symbol:
+                          type: string
+                        stream:
+                          type: string
