@@ -9,18 +9,12 @@ participant "Dispatcher" as Disp
 participant "Provider Adapter" as Prov
 queue "Data Bus" as DBus
 
-' Subscribe with atomic flip
-CON -> CB : ControlCommand{cmd=Subscribe, consistency=at_version, reply_to=CON}
+' Subscribe (no staging)
+CON -> CB : ControlCommand{cmd=Subscribe, reply_to=CON}
 CB -> Ctrl : deliver
-Ctrl -> Disp : stage NEXT routing table (v+1)
-Ctrl -> Orc : stage NEXT merge configs (v+1)
-alt ready
-  Ctrl -> Ctrl : flip current_version v -> v+1
-  Ctrl -> CB : RoutingFlip{from:v,to:v+1}
-  Ctrl -> CB : CommandAck{accepted}
-else fail
-  Ctrl -> CB : CommandAck{rejected}
-end
+Ctrl -> Disp : upsert route (merge filters)
+Ctrl -> Orc : refresh merge rules (if any)
+Ctrl -> CB : CommandAck{accepted, routing_version=v+1}
 
 ' Submit Order (immediate)
 CON -> CB : ControlCommand{cmd=SubmitOrder, reply_to=CON, client_order_id=xyz}
@@ -37,7 +31,5 @@ CON -> CB : ControlCommand{cmd=QueryOrder, reply_to=CON}
 CB -> Ctrl : deliver
 Ctrl -> Prov : QueryREST{...}
 Prov -> Ctrl : QueryResultRaw{...}
-Ctrl -> Disp : CommandResult{routing_version=(current), reply_to=CON}
-Disp -> DBus : publish (critical)
-DBus --> CON : CommandResult
+Ctrl -> CB : CommandResult{routing_version=(current)}
 @enduml

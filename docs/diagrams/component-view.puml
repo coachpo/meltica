@@ -6,7 +6,6 @@ package "Monolith Process" {
   [Orchestrator] as Orc
   [Dispatcher] as Disp
   [Data Bus] as DBus
-  [Telemetry] as Tlm
   [Recycler] as Recycler
 
   package "Provider" {
@@ -34,7 +33,4 @@ Ctrl --> Orc : Merge Configs
 Ctrl --> Disp : Routing Tables (versioned)
 
 Disp --> PO : Provider Orders (idempotent)
-
-Orc --> Tlm : merge.suppressed_partial / book.resync
-Disp --> Tlm : backpressure.drop / dup.drop / throttle
 @enduml

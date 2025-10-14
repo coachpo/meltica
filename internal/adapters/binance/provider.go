@@ -40,6 +40,8 @@ type Provider struct {
 	orderMu   sync.RWMutex
 	orderBook map[string]schema.OrderRequest
 	reports   map[string]schema.ExecReport
+	bookMu    sync.Mutex
+	books     map[string]*BookAssembler
 }
 
 type routeHandle struct {
@@ -64,6 +66,7 @@ func NewProvider(name string, ws *WSClient, rest *RESTClient, opts ProviderOptio
 	provider.routes = make(map[string]*routeHandle)
 	provider.orderBook = make(map[string]schema.OrderRequest)
 	provider.reports = make(map[string]schema.ExecReport)
+	provider.books = make(map[string]*BookAssembler)
 	return provider
 }
 
@@ -344,6 +347,61 @@ func (p *Provider) pipeErrors(ctx context.Context, errs <-chan error) {
 	}
 }
 
+func (p *Provider) bookAssembler(symbol string) *BookAssembler {
+	symbol = strings.ToUpper(strings.TrimSpace(symbol))
+	if symbol == "" {
+		return nil
+	}
+	p.bookMu.Lock()
+	defer p.bookMu.Unlock()
+	assembler, ok := p.books[symbol]
+	if !ok {
+		assembler = NewBookAssembler()
+		p.books[symbol] = assembler
+	}
+	return assembler
+}
+
+func (p *Provider) prepareOrderBook(evt *schema.Event) error {
+	if evt == nil {
+		return nil
+	}
+	switch evt.Type {
+	case schema.EventTypeBookSnapshot:
+		payload, ok := coerceBookSnapshot(evt.Payload)
+		if !ok {
+			return fmt.Errorf("provider %s: invalid book snapshot payload", p.name)
+		}
+		assembler := p.bookAssembler(evt.Symbol)
+		if assembler == nil {
+			return nil
+		}
+		snap, err := assembler.ApplySnapshot(payload, evt.SeqProvider)
+		if err != nil {
+			return err
+		}
+		evt.Payload = snap
+	case schema.EventTypeBookUpdate:
+		payload, ok := coerceBookUpdate(evt.Payload)
+		if !ok {
+			return fmt.Errorf("provider %s: invalid book update payload", p.name)
+		}
+		assembler := p.bookAssembler(evt.Symbol)
+		if assembler == nil {
+			return nil
+		}
+		update, err := assembler.ApplyUpdate(payload, evt.SeqProvider)
+		if err != nil {
+			if errors.Is(err, ErrBookNotInitialized) {
+				return nil
+			}
+			return err
+		}
+		evt.Payload = update
+	}
+	return nil
+}
+
 func (p *Provider) emitEvent(evt *schema.Event) {
 	if evt == nil {
 		return
@@ -353,6 +411,10 @@ func (p *Provider) emitEvent(evt *schema.Event) {
 	}
 	if evt.EmitTS.IsZero() {
 		evt.EmitTS = p.clock().UTC()
+	}
+	if err := p.prepareOrderBook(evt); err != nil {
+		p.emitError(err)
+		return
 	}
 	if p.ctx == nil {
 		return
@@ -404,4 +466,32 @@ func pollersFromRoute(restFns []dispatcher.RestFn) []RESTPoller {
 		})
 	}
 	return pollers
+}
+
+func coerceBookSnapshot(value any) (schema.BookSnapshotPayload, bool) {
+	switch v := value.(type) {
+	case schema.BookSnapshotPayload:
+		return v, true
+	case *schema.BookSnapshotPayload:
+		if v == nil {
+			return schema.BookSnapshotPayload{}, false
+		}
+		return *v, true
+	default:
+		return schema.BookSnapshotPayload{}, false
+	}
+}
+
+func coerceBookUpdate(value any) (schema.BookUpdatePayload, bool) {
+	switch v := value.(type) {
+	case schema.BookUpdatePayload:
+		return v, true
+	case *schema.BookUpdatePayload:
+		if v == nil {
+			return schema.BookUpdatePayload{}, false
+		}
+		return *v, true
+	default:
+		return schema.BookUpdatePayload{}, false
+	}
 }

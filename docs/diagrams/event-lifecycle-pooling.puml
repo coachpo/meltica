@@ -15,7 +15,7 @@ group Control plane
   CON_A -> ControlBus : Subscribe / SubscribeMerged / Unsubscribe
   CON_B -> ControlBus : SubmitOrder / QueryOrder
   ControlBus -> Orchestrator : merge configs (keys, window, partial=suppress)
-  ControlBus -> Dispatcher : routing updates (stage and flip version)
+  ControlBus -> Dispatcher : routing updates (versioned)
 end group
 
 loop Event lifecycle (per canonical or merged event)
@@ -59,4 +59,3 @@ Consumers may ignore market-data during flips using routing_version.
 Critical kinds (ExecReport, ControlAck, ControlResult) are never ignored.
 end note
 @enduml
-

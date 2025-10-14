@@ -7,14 +7,13 @@ actor "Consumer C (lambda)" as CON_C
 
 queue "Control Bus" as ControlBus
 queue "Data Bus (Meltica Events)" as DataBus
-queue "Telemetry (ops-only)" as Telemetry
 
 box "Provider (WS + REST + Adapter + Book Assembler)"
   participant "Binance" as PRV_O
 end box
 
 participant "Event Orchestrator\n(windowed merge: late=drop, partial=suppress)" as Orchestrator
-participant "Dispatcher\n(route + per-stream ordering + fair-share + coalesce)" as Dispatcher
+participant "Dispatcher\n(route + per-stream ordering)" as Dispatcher
 
 ' Ingress
 PRV_O -> Orchestrator : canonical events (BookUpdate/Snapshot/ExecReport)
@@ -26,8 +25,7 @@ end
 
 ' Dispatch
 Dispatcher -> Dispatcher : order (seq_provider -> ingest_ts)
-Dispatcher -> Dispatcher : coalesce latest-wins for Ticker/Book/KlineSummary
-Dispatcher --> DataBus : publish (fair-share fan-out)
+Dispatcher --> DataBus : publish (fan-out)
 
 ' Delivery
 DataBus --> CON_A : deliver by routing table
@@ -40,10 +38,9 @@ CON_B -> ControlBus : control commands
 CON_C -> ControlBus : control commands
 ControlBus -> Orchestrator : merge configs (keys, window, partial=suppress)
 ControlBus -> Dispatcher : routing updates (versioned)
-ControlBus -> Telemetry : audit acks/results (optional)
 
 note over Dispatcher,DataBus
 Always deliver critical kinds: ExecReport, ControlAck, ControlResult.
-Consumers may ignore market-data during flips based on routing_version.
+Market-data events held during routing flips (routing_version guard).
 end note
 @enduml

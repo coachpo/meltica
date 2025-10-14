@@ -5,7 +5,6 @@ participant "Provider O" as O
 participant "Provider P" as P
 participant "Orchestrator" as Orc
 participant "Dispatcher" as Disp
-queue "Telemetry" as Tel
 
 O -> Orc : Canonical X{k=abc}
 P -> Orc : Canonical Y{k=abc}
@@ -17,6 +16,6 @@ alt Complete (X,Y,Z present)
   Orc -> Orc : tag routing_version
   Orc -> Disp : Merged{X,Y,Z}
 else Partial
-  Orc -> Tel : merge.suppressed_partial{key=abc, missing=[...]}
+  Orc -> Orc : drop incomplete window
 end
 @enduml

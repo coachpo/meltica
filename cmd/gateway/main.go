@@ -148,17 +148,34 @@ func main() {
 	}
 
 	eventTypes := collectEventTypes(table.Routes())
-	printer := consumer.NewLambda("gateway", bus, rec, logger)
-	if lambdaErrs, err := printer.Start(ctx, eventTypes); err != nil {
-		logger.Printf("lambda consumer: %v", err)
-	} else {
-		go func() {
-			for err := range lambdaErrs {
+
+	startLambda := func(name string, lambda *consumer.Lambda, types []schema.EventType) {
+		if lambda == nil || len(types) == 0 {
+			return
+		}
+		errCh, err := lambda.Start(ctx, types)
+		if err != nil {
+			logger.Printf("%s: %v", name, err)
+			return
+		}
+		go func(label string, errs <-chan error) {
+			for err := range errs {
 				if err != nil {
-					logger.Printf("lambda consumer: %v", err)
+					logger.Printf("%s: %v", label, err)
 				}
 			}
-		}()
+		}(name, errCh)
+	}
+
+	if _, ok := eventTypes[schema.EventTypeTrade]; ok {
+		startLambda("trade lambda", consumer.NewTradePrinter(bus, rec, logger), []schema.EventType{schema.EventTypeTrade})
+	}
+	if _, ok := eventTypes[schema.EventTypeTicker]; ok {
+		startLambda("ticker lambda", consumer.NewTickerPrinter(bus, rec, logger), []schema.EventType{schema.EventTypeTicker})
+	}
+	orderbookEvents := selectPresentTypes(eventTypes, schema.EventTypeBookSnapshot, schema.EventTypeBookUpdate)
+	if len(orderbookEvents) > 0 {
+		startLambda("orderbook lambda", consumer.NewOrderbookPrinter(bus, rec, logger), orderbookEvents)
 	}
 	controller := dispatcher.NewController(
 		table,
@@ -201,16 +218,22 @@ func main() {
 	}
 }
 
-func collectEventTypes(routes map[schema.CanonicalType]dispatcher.Route) []schema.EventType {
+func collectEventTypes(routes map[schema.CanonicalType]dispatcher.Route) map[schema.EventType]struct{} {
 	set := make(map[schema.EventType]struct{})
 	for canonical := range routes {
 		if evtType, ok := canonicalToEventType(canonical); ok {
 			set[evtType] = struct{}{}
 		}
 	}
-	out := make([]schema.EventType, 0, len(set))
-	for evtType := range set {
-		out = append(out, evtType)
+	return set
+}
+
+func selectPresentTypes(set map[schema.EventType]struct{}, candidates ...schema.EventType) []schema.EventType {
+	var out []schema.EventType
+	for _, candidate := range candidates {
+		if _, ok := set[candidate]; ok {
+			out = append(out, candidate)
+		}
 	}
 	return out
 }
