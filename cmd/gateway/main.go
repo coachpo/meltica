@@ -102,7 +102,7 @@ func main() {
 	restClient := binance.NewRESTClient(restFetcher, parser, time.Now)
 
 	// WSClient will be created in NewProvider with book assembler
-	wsClient := binance.NewWSClient("binance", wsProvider, parser, time.Now, poolMgr, nil) // BookAssembler added in provider
+	wsClient := binance.NewWSClient("binance", wsProvider, parser, time.Now, poolMgr)
 
 	var providerOpts binance.ProviderOptions
 	provider := binance.NewProvider("binance", wsClient, restClient, providerOpts)

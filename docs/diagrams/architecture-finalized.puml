@@ -2,7 +2,7 @@
 title Finalized Architecture (Providers -> Orchestrator -> Dispatcher -> Data Bus -> Consumers)
 
 actor "Trade Lambda" as Trade
-actor "Ticker Lambda" as Ticker  
+actor "Ticker Lambda" as Ticker
 actor "OrderBook Lambda" as OrderBook
 
 queue "Control Bus" as ControlBus

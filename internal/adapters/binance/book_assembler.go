@@ -3,314 +3,227 @@ package binance
 
 import (
 	"fmt"
+	"hash/crc32"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/coachpo/meltica/internal/schema"
 )
 
-// BookAssembler assembles order books from snapshots and updates with checksum verification.
+const (
+	bookDepthChecksum = 10
+)
+
+var (
+	// ErrBookNotInitialized is returned when updates arrive before the first snapshot.
+	ErrBookNotInitialized = fmt.Errorf("binance book assembler: snapshot required before updates")
+	// ErrBookStaleUpdate is returned when an update with an older sequence is applied.
+	ErrBookStaleUpdate = fmt.Errorf("binance book assembler: stale update")
+)
+
+// BookAssembler keeps a canonical representation of the Binance order book,
+// validates checksum integrity, and produces normalised payloads for downstream consumers.
 type BookAssembler struct {
-	mu            sync.RWMutex
-	provider      string
-	books         map[string]*orderBook
-	checksumRange int // Number of levels to include in checksum verification
-	clock         func() time.Time
+	mu       sync.Mutex
+	bids     map[string]string
+	asks     map[string]string
+	seq      uint64
+	ready    bool
+	checksum uint32
 }
 
-// orderBook represents the current state of an order book for a symbol.
-type orderBook struct {
-	symbol     string
-	lastUpdate uint64
-	bids       []schema.PriceLevel
-	asks       []schema.PriceLevel
-	updateID   uint64
-	lastSeq    uint64
-}
-
-// NewBookAssembler creates a new book assembler for the given provider.
-func NewBookAssembler(provider string, clock func() time.Time) *BookAssembler {
-	if clock == nil {
-		clock = time.Now
-	}
+// NewBookAssembler constructs an empty order book assembler.
+func NewBookAssembler() *BookAssembler {
 	return &BookAssembler{
-		provider:      provider,
-		books:         make(map[string]*orderBook),
-		checksumRange: 1000, // Binance includes top 1000 levels in checksum
-		clock:         clock,
+		bids: make(map[string]string),
+		asks: make(map[string]string),
 	}
 }
 
-// ApplySnapshot applies a full order book snapshot, replacing any existing book.
-func (ba *BookAssembler) ApplySnapshot(symbol string, snapshot *schema.BookSnapshotPayload) error {
-	if snapshot == nil {
-		return fmt.Errorf("snapshot payload is nil")
+// ApplySnapshot ingests a full depth snapshot, resets internal state, and verifies checksum integrity.
+func (a *BookAssembler) ApplySnapshot(snapshot schema.BookSnapshotPayload, seq uint64) (schema.BookSnapshotPayload, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	a.resetBooks()
+	for _, level := range snapshot.Bids {
+		a.upsertLevel(a.bids, level)
+	}
+	for _, level := range snapshot.Asks {
+		a.upsertLevel(a.asks, level)
 	}
 
-	symbol = strings.ToUpper(strings.TrimSpace(symbol))
-	if symbol == "" {
-		return fmt.Errorf("snapshot symbol is empty")
-	}
-
-	ba.mu.Lock()
-	defer ba.mu.Unlock()
-
-	book := &orderBook{
-		symbol:     symbol,
-		lastUpdate: uint64(snapshot.LastUpdate.UnixNano()),
-		bids:       make([]schema.PriceLevel, len(snapshot.Bids)),
-		asks:       make([]schema.PriceLevel, len(snapshot.Asks)),
-		updateID:   0, // Will be set from lastUpdateID
-		lastSeq:    0,
-	}
-
-	// Copy bids (already price-sorted from highest to lowest)
-	copy(book.bids, snapshot.Bids)
-	
-	// Copy asks (already price-sorted from lowest to highest)
-	copy(book.asks, snapshot.Asks)
-
-	// Verify checksum if provided
+	checksum := a.computeChecksumLocked()
 	if snapshot.Checksum != "" {
-		if err := ba.verifyChecksum(book, snapshot.Checksum); err != nil {
-			return fmt.Errorf("snapshot checksum verification failed: %w", err)
+		if err := verifyChecksumValue(snapshot.Checksum, checksum); err != nil {
+			return schema.BookSnapshotPayload{}, err
 		}
 	}
 
-	ba.books[symbol] = book
-	return nil
+	a.seq = seq
+	a.ready = true
+	a.checksum = checksum
+
+	sanitised := schema.BookSnapshotPayload{
+		Bids:       a.topLevelsLocked(a.bids, true),
+		Asks:       a.topLevelsLocked(a.asks, false),
+		Checksum:   fmt.Sprintf("%d", checksum),
+		LastUpdate: snapshot.LastUpdate,
+	}
+	return sanitised, nil
 }
 
-// ApplyUpdate applies a differential update to the existing order book.
-func (ba *BookAssembler) ApplyUpdate(symbol string, update *schema.BookUpdatePayload) error {
-	if update == nil {
-		return fmt.Errorf("update payload is nil")
+// ApplyUpdate applies a delta update to the maintained order book and validates checksum integrity.
+func (a *BookAssembler) ApplyUpdate(update schema.BookUpdatePayload, seq uint64) (schema.BookUpdatePayload, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if !a.ready {
+		return schema.BookUpdatePayload{}, ErrBookNotInitialized
+	}
+	if seq <= a.seq {
+		return schema.BookUpdatePayload{}, ErrBookStaleUpdate
 	}
 
-	symbol = strings.ToUpper(strings.TrimSpace(symbol))
-	if symbol == "" {
-		return fmt.Errorf("update symbol is empty")
+	for _, level := range update.Bids {
+		a.upsertLevel(a.bids, level)
+	}
+	for _, level := range update.Asks {
+		a.upsertLevel(a.asks, level)
 	}
 
-	ba.mu.Lock()
-	defer ba.mu.Unlock()
-
-	book, exists := ba.books[symbol]
-	if !exists {
-		return fmt.Errorf("no snapshot exists for symbol %s", symbol)
-	}
-
-	// Update the book levels
-	if err := ba.updateBookLevels(book, update); err != nil {
-		return fmt.Errorf("failed to update book levels: %w", err)
-	}
-
-	// Verify checksum if provided
+	checksum := a.computeChecksumLocked()
 	if update.Checksum != "" {
-		if err := ba.verifyChecksum(book, update.Checksum); err != nil {
-			return fmt.Errorf("update checksum verification failed: %w", err)
+		if err := verifyChecksumValue(update.Checksum, checksum); err != nil {
+			return schema.BookUpdatePayload{}, err
 		}
 	}
 
-	return nil
+	a.seq = seq
+	a.checksum = checksum
+
+	payload := schema.BookUpdatePayload{
+		UpdateType: update.UpdateType,
+		Bids:       a.topLevelsLocked(a.bids, true),
+		Asks:       a.topLevelsLocked(a.asks, false),
+		Checksum:   fmt.Sprintf("%d", checksum),
+	}
+	return payload, nil
 }
 
-// GetBook returns the current order book state for a symbol.
-func (ba *BookAssembler) GetBook(symbol string) (*orderBook, bool) {
-	symbol = strings.ToUpper(strings.TrimSpace(symbol))
-	
-	ba.mu.RLock()
-	defer ba.mu.RUnlock()
-
-	book, exists := ba.books[symbol]
-	if !exists {
-		return nil, false
+func (a *BookAssembler) upsertLevel(book map[string]string, level schema.PriceLevel) {
+	price := strings.TrimSpace(level.Price)
+	qty := strings.TrimSpace(level.Quantity)
+	if price == "" {
+		return
 	}
-
-	// Return a copy to prevent external mutation
-	bookCopy := &orderBook{
-		symbol:     book.symbol,
-		lastUpdate: book.lastUpdate,
-		bids:       make([]schema.PriceLevel, len(book.bids)),
-		asks:       make([]schema.PriceLevel, len(book.asks)),
-		updateID:   book.updateID,
-		lastSeq:    book.lastSeq,
+	if qty == "" {
+		delete(book, price)
+		return
 	}
-	copy(bookCopy.bids, book.bids)
-	copy(bookCopy.asks, book.asks)
-
-	return bookCopy, true
+	value, err := strconv.ParseFloat(qty, 64)
+	if err != nil {
+		book[price] = qty
+		return
+	}
+	if value == 0 {
+		delete(book, price)
+		return
+	}
+	book[price] = qty
 }
 
-// RemoveBook removes the order book for a symbol.
-func (ba *BookAssembler) RemoveBook(symbol string) {
-	symbol = strings.ToUpper(strings.TrimSpace(symbol))
-	
-	ba.mu.Lock()
-	defer ba.mu.Unlock()
-	
-	delete(ba.books, symbol)
+func (a *BookAssembler) resetBooks() {
+	a.bids = make(map[string]string, len(a.bids))
+	a.asks = make(map[string]string, len(a.asks))
 }
 
-// updateBookLevels applies price level updates to the order book.
-func (ba *BookAssembler) updateBookLevels(book *orderBook, update *schema.BookUpdatePayload) error {
-	// Update bids
-	for _, bid := range update.Bids {
-		if err := ba.updatePriceLevels(&book.bids, bid, true); err != nil {
-			return fmt.Errorf("failed to update bid: %w", err)
-		}
+func (a *BookAssembler) computeChecksumLocked() uint32 {
+	bids := a.topLevelsLocked(a.bids, true)
+	asks := a.topLevelsLocked(a.asks, false)
+	parts := make([]string, 0, (len(bids)+len(asks))*2)
+
+	for _, level := range bids {
+		parts = append(parts, normaliseDecimal(level.Price))
+		parts = append(parts, normaliseDecimal(level.Quantity))
+	}
+	for _, level := range asks {
+		parts = append(parts, normaliseDecimal(level.Price))
+		parts = append(parts, normaliseDecimal(level.Quantity))
 	}
 
-	// Update asks
-	for _, ask := range update.Asks {
-		if err := ba.updatePriceLevels(&book.asks, ask, false); err != nil {
-			return fmt.Errorf("failed to update ask: %w", err)
-		}
-	}
-
-	book.lastUpdate = uint64(ba.clock().UnixNano())
-	return nil
+	data := strings.Join(parts, ":")
+	return crc32.ChecksumIEEE([]byte(data))
 }
 
-// updatePriceLevels updates a side of the order book with a new price level.
-func (ba *BookAssembler) updatePriceLevels(levels *[]schema.PriceLevel, newLevel schema.PriceLevel, isBid bool) error {
-	if newLevel.Price == "" {
-		return fmt.Errorf("price level has empty price")
-	}
-
-	// Convert price to string comparison
-	newPrice := strings.TrimSpace(newLevel.Price)
-	newQty := strings.TrimSpace(newLevel.Quantity)
-
-	// Find existing level with the same price
-	for i, level := range *levels {
-		if strings.TrimSpace(level.Price) == newPrice {
-			if newQty == "0.00000000" || newQty == "0" {
-				// Remove the level (set quantity to 0 means deletion)
-				*levels = append((*levels)[:i], (*levels)[i+1:]...)
-			} else {
-				// Update the quantity
-				(*levels)[i].Quantity = newQty
-			}
-			return nil
-		}
-	}
-
-	// If quantity is 0, don't add (just ignore)
-	if newQty == "0.00000000" || newQty == "0" {
+func (a *BookAssembler) topLevelsLocked(book map[string]string, desc bool) []schema.PriceLevel {
+	if len(book) == 0 {
 		return nil
 	}
-
-	// Insert new level while maintaining sort order
-	newEntry := schema.PriceLevel{
-		Price:    newPrice,
-		Quantity: newQty,
+	type priceLevel struct {
+		price float64
+		raw   schema.PriceLevel
 	}
-
-	if isBid {
-		// For bids: sort by price descending (highest first)
-		ba.insertSortedDescending(levels, newEntry)
-	} else {
-		// For asks: sort by price ascending (lowest first)
-		ba.insertSortedAscending(levels, newEntry)
-	}
-
-	return nil
-}
-
-// insertSortedDescending inserts a price level into a slice sorted by price descending.
-func (ba *BookAssembler) insertSortedDescending(levels *[]schema.PriceLevel, newLevel schema.PriceLevel) {
-	for i, level := range *levels {
-		if ba.comparePrices(level.Price, newLevel.Price) < 0 {
-			// Insert before this level
-			*levels = append((*levels)[:i], append([]schema.PriceLevel{newLevel}, (*levels)[i:]...)...)
-			return
+	levels := make([]priceLevel, 0, len(book))
+	for price, qty := range book {
+		fv, err := strconv.ParseFloat(price, 64)
+		if err != nil {
+			continue
 		}
+		levels = append(levels, priceLevel{
+			price: fv,
+			raw: schema.PriceLevel{
+				Price:    price,
+				Quantity: qty,
+			},
+		})
 	}
-	// Insert at end
-	*levels = append(*levels, newLevel)
-}
-
-// insertSortedAscending inserts a price level into a slice sorted by price ascending.
-func (ba *BookAssembler) insertSortedAscending(levels *[]schema.PriceLevel, newLevel schema.PriceLevel) {
-	for i, level := range *levels {
-		if ba.comparePrices(level.Price, newLevel.Price) > 0 {
-			// Insert before this level
-			*levels = append((*levels)[:i], append([]schema.PriceLevel{newLevel}, (*levels)[i:]...)...)
-			return
+	sort.Slice(levels, func(i, j int) bool {
+		if desc {
+			return levels[i].price > levels[j].price
 		}
+		return levels[i].price < levels[j].price
+	})
+
+	limit := bookDepthChecksum
+	if len(levels) < limit {
+		limit = len(levels)
 	}
-	// Insert at end
-	*levels = append(*levels, newLevel)
+	out := make([]schema.PriceLevel, 0, limit)
+	for i := 0; i < limit; i++ {
+		out = append(out, levels[i].raw)
+	}
+	return out
 }
 
-// comparePrices compares two price strings as decimal numbers.
-// Returns -1 if a < b, 0 if a == b, 1 if a > b.
-func (ba *BookAssembler) comparePrices(a, b string) int {
-	// Simple string comparison works for fixed-decimal format
-	// In production, you might want to use decimal.Float for robust comparison
-	a = strings.TrimPrefix(strings.TrimRight(a, "0"), ".")
-	b = strings.TrimPrefix(strings.TrimRight(b, "0"), ".")
-	
-	if len(a) < len(b) {
-		return -1
+func normaliseDecimal(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return value
 	}
-	if len(a) > len(b) {
-		return 1
+	value = strings.TrimLeft(value, "+")
+	if !strings.Contains(value, ".") {
+		return value
 	}
-	
-	if a < b {
-		return -1
+	value = strings.TrimRight(value, "0")
+	if strings.HasSuffix(value, ".") {
+		value = strings.TrimSuffix(value, ".")
 	}
-	if a > b {
-		return 1
+	if value == "" || value == "-" {
+		return "0"
 	}
-	return 0
+	return value
 }
 
-// verifyChecksum verifies the Binance checksum for the order book.
-func (ba *BookAssembler) verifyChecksum(book *orderBook, expectedChecksum string) error {
-	// Binance checksum algorithm:
-	// 1. Concatenate top 1000 bids and asks (by price and quantity)
-	// 2. Convert to string and compute CRC32
-	// For simplicity, we'll implement a basic version
-	
-	var checksumStr strings.Builder
-	
-	// Add top bids (up to checksumRange/2)
-	bidCount := ba.checksumRange / 2
-	if bidCount > len(book.bids) {
-		bidCount = len(book.bids)
+func verifyChecksumValue(source string, expected uint32) error {
+	provided, err := strconv.ParseUint(strings.TrimSpace(source), 10, 32)
+	if err != nil {
+		return fmt.Errorf("binance book assembler: parse checksum %q: %w", source, err)
 	}
-	
-	for i := 0; i < bidCount; i++ {
-		checksumStr.WriteString(book.bids[i].Price)
-		checksumStr.WriteString(book.bids[i].Quantity)
+	if uint32(provided) != expected {
+		return fmt.Errorf("binance book assembler: checksum mismatch (expected %d, got %d)", expected, provided)
 	}
-	
-	// Add top asks (up to checksumRange/2)
-	askCount := ba.checksumRange - bidCount
-	if askCount > len(book.asks) {
-		askCount = len(book.asks)
-	}
-	
-	for i := 0; i < askCount; i++ {
-		checksumStr.WriteString(book.asks[i].Price)
-		checksumStr.WriteString(book.asks[i].Quantity)
-	}
-	
-	// In a real implementation, you would compute CRC32 of the string
-	// For now, we'll just check if the expected checksum is provided
-	// TODO: Implement proper CRC32 checksum calculation
-	
-	if expectedChecksum == "" {
-		return nil // Skip verification if no checksum provided
-	}
-	
-	// Placeholder checksum verification
-	// In production, replace this with actual CRC32 calculation
-	_ = checksumStr.String()
-	
 	return nil
 }
