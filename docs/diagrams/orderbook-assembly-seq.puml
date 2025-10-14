@@ -1,27 +1,20 @@
-@startuml orderbook-assembly-seq
-skinparam monochrome true
+@startuml
+title Provider-side Orderbook Assembly (Snapshot + Diffs)
 
-participant "WS Client" as WS
-participant "REST Snapshot" as REST
-participant "Book Assembler" as Assembler
-participant "Telemetry" as Telemetry
-participant "Orchestrator" as Orchestrator
+participant "WS (coder/websocket)" as WS
+participant "REST (snapshot)" as REST
+participant "Book Assembler" as BA
+participant "Orchestrator" as Orc
 
-REST -> REST : GET snapshot(symbol)
-REST --> Assembler : Snapshot(book, seq)
-Assembler -> Assembler : Load snapshot state
-
-loop Diff Stream
-  WS --> Assembler : BookDiff(seq, bids, asks, checksum)
-  Assembler -> Assembler : ApplyDiff(seq)
-  Assembler -> Assembler : VerifyChecksum(expected)
-  alt checksum mismatch or gap
-    Assembler -> Telemetry : book.resync(reason)
-    Assembler -> REST : GET snapshot(symbol)
-    REST --> Assembler : Snapshot(book, seq)
-  end
+WS -> BA : Diff{seq=1001}
+WS -> BA : Diff{seq=1003} (buffer)
+REST -> BA : Snapshot{seq=1000, depth=N}
+BA -> BA : Align snapshot; apply buffered diffs
+WS -> BA : Diff{seq=1002}
+BA -> BA : Apply 1002, then 1003; verify checksum
+alt Gap or checksum mismatch
+  BA -> REST : Snapshot refresh
+  BA -> BA : Realign from fresh snapshot
 end
-
-Assembler --> Orchestrator : BookUpdate canonical event
-
+BA -> Orc : Canonical BookUpdate/BookSnapshot
 @enduml

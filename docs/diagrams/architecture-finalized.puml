@@ -1,0 +1,54 @@
+@startuml
+title Finalized Architecture (Providers -> Orchestrator -> Dispatcher -> Data Bus -> Consumers)
+
+actor "Consumer A (lambda)" as CON_A
+actor "Consumer B (lambda)" as CON_B
+actor "Consumer C (lambda)" as CON_C
+
+queue "Control Bus" as ControlBus
+queue "Data Bus (Meltica Events)" as DataBus
+queue "Telemetry (ops-only)" as Telemetry
+
+box "Providers (WS + REST + Adapter + Book Assembler)"
+  participant "Provider O" as PRV_O
+  participant "Provider P" as PRV_P
+  participant "Provider Q" as PRV_Q
+end box
+
+participant "Event Orchestrator\n(windowed merge: late=drop, partial=suppress)" as Orchestrator
+participant "Dispatcher\n(route + per-stream ordering + fair-share + coalesce)" as Dispatcher
+
+' Ingress
+PRV_O -> Orchestrator : canonical events (incl BookUpdate/Snapshot/ExecReport)
+PRV_P -> Orchestrator : canonical events
+PRV_Q -> Orchestrator : canonical events
+
+group Orchestrator emit
+  Orchestrator -> Orchestrator : tag routing_version (current)
+  Orchestrator -> Dispatcher : merged/canonical event
+end
+
+' Dispatch
+Dispatcher -> Dispatcher : order (seq_provider -> ingest_ts)
+Dispatcher -> Dispatcher : coalesce latest-wins for Ticker/Book/KlineSummary
+Dispatcher --> DataBus : publish (fair-share fan-out)
+
+' Delivery
+DataBus --> CON_A : deliver by routing table
+DataBus --> CON_B : deliver by routing table
+DataBus --> CON_C : deliver by routing table
+
+' Control plane
+CON_A -> ControlBus : control commands (Subscribe*, SubmitOrder, QueryOrder, ...)
+CON_B -> ControlBus : control commands
+CON_C -> ControlBus : control commands
+ControlBus -> Orchestrator : merge configs (keys, window, partial=suppress)
+ControlBus -> Dispatcher : routing updates (versioned)
+ControlBus -> Telemetry : audit acks/results (optional)
+
+note over Dispatcher,DataBus
+Always deliver critical kinds: ExecReport, ControlAck, ControlResult.
+Consumers may ignore market-data during flips based on routing_version.
+end note
+@enduml
+

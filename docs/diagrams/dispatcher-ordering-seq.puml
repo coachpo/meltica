@@ -1,36 +1,23 @@
-@startuml dispatcher-ordering-seq
-skinparam monochrome true
+@startuml
+title Dispatcher Ordering + Fair-share + Coalesce Latest-wins
 
-participant "Dispatcher" as Dispatcher
-participant "Stream Buffer" as Buffer
-participant "Coalescer" as Coalescer
-participant "Limiter" as Limiter
-participant "Data Bus" as DataBus
-participant "Consumer" as Consumer
+actor "Consumer A" as A
+actor "Consumer B" as B
+participant "Dispatcher" as D
+queue "Data Bus" as Bus
 
-Dispatcher -> Buffer : Push(event)
-Buffer -> Buffer : Heap insert by seq_provider
-Buffer -> Dispatcher : Ready batch (<= lateness tolerance)
-Dispatcher -> Coalescer : Handle(event)
-alt coalescable
-  Coalescer -> Coalescer : Replace latest
-  Coalescer --> Dispatcher : Suppress emit
-else non-coalescable
-  Coalescer --> Dispatcher : Emit immediately
-end
+D -> D : receive events (O,BTC,Trade)\nreorder seq_provider -> ingest_ts
+D -> D : coalesce map for Ticker/Book/KlineSummary
+D -> D : fair-share schedule A,B (token buckets)
+D -> Bus : publish ev#101
+Bus -> A : deliver ev#101
+Bus -> B : deliver ev#101
+D -> Bus : publish ev#102
+Bus -> A : deliver ev#102
+Bus -> B : deliver ev#102
 
-Dispatcher -> Limiter : Allow(event)
-alt allowed
-  Limiter --> Dispatcher : ok
-  Dispatcher -> DataBus : Publish(event)
-  DataBus --> Consumer : Deliver(event)
-else throttled
-  Limiter --> Dispatcher : wait/backpressure
-  alt exec report
-    Dispatcher -> DataBus : Queue without dropping
-  else market data
-    Dispatcher -> Coalescer : Latest wins
-  end
-end
-
+note over D
+- Never coalesce ExecReport (lossless).
+- Coalesce only stateful latest-wins kinds.
+end note
 @enduml

@@ -1,34 +1,22 @@
-@startuml windowed-merge-seq
-skinparam monochrome true
+@startuml
+title Orchestrator Windowed Merge (late=drop, partial=suppress)
 
-participant "Provider A" as ProviderA
-participant "Provider B" as ProviderB
-participant "Orchestrator" as Orchestrator
-participant "Merge Window" as Window
-participant "Telemetry" as Telemetry
-participant "Dispatcher" as Dispatcher
+participant "Provider O" as O
+participant "Provider P" as P
+participant "Orchestrator" as Orc
+participant "Dispatcher" as Disp
+queue "Telemetry" as Tel
 
-ProviderA -> Orchestrator : Event(symbol, type, seqA)
-Orchestrator -> Window : Open(symbol,type)
-Window -> Window : Record(providerA,eventA)
-
-loop events until close
-  ProviderB -> Orchestrator : Event(symbol, type, seqB)
-  Orchestrator -> Window : Record(providerB,eventB)
+O -> Orc : Canonical X{k=abc}
+P -> Orc : Canonical Y{k=abc}
+Orc -> Orc : open window for k=abc (t0)
+... within window ...
+O -> Orc : Canonical Z{k=abc}
+Orc -> Orc : close by time<=10s OR count<=1000
+alt Complete (X,Y,Z present)
+  Orc -> Orc : tag routing_version
+  Orc -> Disp : Merged{X,Y,Z}
+else Partial
+  Orc -> Tel : merge.suppressed_partial{key=abc, missing=[...]}
 end
-
-Orchestrator -> Window : Check thresholds
-alt complete window
-  Window --> Orchestrator : Complete(all providers)
-  Orchestrator -> Dispatcher : Emit merged event
-else partial window
-  Window --> Orchestrator : Missing providers
-  Orchestrator -> Telemetry : merge.suppressed_partial
-end
-
-alt late fragment
-  ProviderA -> Orchestrator : Late event
-  Orchestrator -> Telemetry : late_event.dropped
-end
-
 @enduml

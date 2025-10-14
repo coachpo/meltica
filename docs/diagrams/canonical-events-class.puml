@@ -1,126 +1,89 @@
-@startuml canonical-events-class
-skinparam classAttributeIconSize 0
-skinparam monochrome true
+@startuml
+title Canonical Contracts (Class Diagram)
 
-class Event {
-  +EventID: string
-  +MergeID: string?
-  +RoutingVersion: int
-  +Provider: string
-  +Symbol: string
-  +Type: EventType
-  +SeqProvider: uint64
-  +IngestTS: time.Time
-  +EmitTS: time.Time
+class CanonicalEvent {
+  +event_id: String
+  +provider: String
+  +symbol: String
+  +event_type: String
+  +event_ts: Instant
+  +ingest_ts: Instant
+  +seq_provider: Long?
+  +routing_version: Long
+  +payload: Any
 }
 
-enum EventType {
-  BookSnapshot
-  BookUpdate
-  Trade
-  Ticker
-  ExecReport
-  KlineSummary
+class MergedEvent {
+  +merge_id: String
+  +providers: List<String>
+  +symbols: List<String>
+  +event_types: List<String>
+  +merge_key: Map<String,Any>
+  +window_start: Instant
+  +window_end: Instant
+  +duration_ms: Long
+  +count: Int
+  +routing_version: Long
+  +items: List<ItemRef>
 }
 
-class BookSnapshotPayload {
-  +Bids: []PriceLevel
-  +Asks: []PriceLevel
-  +Checksum: string
-  +LastUpdate: time.Time
+class ItemRef { 
+  +ref_event_id: String
+  +payload: Any 
 }
 
-class BookUpdatePayload {
-  +UpdateType: BookUpdateType
-  +Bids: []PriceLevel
-  +Asks: []PriceLevel
-  +Checksum: string
+class OrderRequest {
+  +client_order_id: String
+  +provider: String
+  +account: String
+  +symbol: String
+  +side: String
+  +type: String
+  +qty: Decimal
+  +price: Decimal?
+  +tif: String?
+  +meta: Map<String,Any>
 }
 
-enum BookUpdateType {
-  Delta
-  Full
+class ExecReport {
+  +provider: String
+  +account: String
+  +symbol: String
+  +client_order_id: String
+  +provider_order_id: String?
+  +status: String
+  +filled_qty: Decimal
+  +remaining_qty: Decimal
+  +avg_price: Decimal?
+  +reason: String?
+  +event_ts: Instant
+  +ingest_ts: Instant
+  +routing_version: Long
 }
 
-class TradePayload {
-  +TradeID: string
-  +Side: TradeSide
-  +Price: string
-  +Quantity: string
-  +Timestamp: time.Time
+class ControlCommand {
+  +command_id: String
+  +type: String
+  +reply_to: String
+  +consistency: String
+  +timeout_ms: Long?
+  +payload: Any
+  +meta: Map<String,Any>
 }
 
-enum TradeSide {
-  Buy
-  Sell
+class CommandAck {
+  +command_id: String
+  +accepted: Boolean
+  +reason: String?
 }
 
-class TickerPayload {
-  +LastPrice: string
-  +BidPrice: string
-  +AskPrice: string
-  +Volume24h: string
-  +Timestamp: time.Time
+class CommandResult {
+  +command_id: String
+  +result: Any
+  +routing_version: Long
+  +reply_to: String
 }
 
-class ExecReportPayload {
-  +ClientOrderID: string
-  +ExchangeOrderID: string
-  +State: ExecReportState
-  +Side: TradeSide
-  +OrderType: OrderType
-  +Price: string
-  +Quantity: string
-  +FilledQuantity: string
-  +RemainingQty: string
-  +AvgFillPrice: string
-  +Timestamp: time.Time
-  +RejectReason: string?
-}
-
-enum ExecReportState {
-  ACK
-  PARTIAL
-  FILLED
-  CANCELLED
-  REJECTED
-  EXPIRED
-}
-
-enum OrderType {
-  Limit
-  Market
-}
-
-class KlineSummaryPayload {
-  +OpenPrice: string
-  +ClosePrice: string
-  +HighPrice: string
-  +LowPrice: string
-  +Volume: string
-  +OpenTime: time.Time
-  +CloseTime: time.Time
-}
-
-class PriceLevel {
-  +Price: string
-  +Quantity: string
-}
-
-Event --> EventType
-Event *-- "1" BookSnapshotPayload
-Event *-- "1" BookUpdatePayload
-Event *-- "1" TradePayload
-Event *-- "1" TickerPayload
-Event *-- "1" ExecReportPayload
-Event *-- "1" KlineSummaryPayload
-
-BookSnapshotPayload *-- "*" PriceLevel
-BookUpdatePayload *-- "*" PriceLevel
-ExecReportPayload --> ExecReportState
-ExecReportPayload --> TradeSide
-ExecReportPayload --> OrderType
-BookUpdatePayload --> BookUpdateType
-TradePayload --> TradeSide
-
+CanonicalEvent "1" o- "*" ItemRef : payload
+MergedEvent "1" o- "*" ItemRef
 @enduml

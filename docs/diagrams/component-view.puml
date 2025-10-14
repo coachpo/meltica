@@ -1,46 +1,46 @@
-@startuml component-view
-skinparam componentStyle rectangle
-skinparam monochrome true
+@startuml
+title Component View (Monolith Boundaries)
 
-component "Provider Adapter" as Provider {
-  [WS Client]
-  [REST Snapshot]
-  [Parser]
-  [Book Assembler]
+package "Monolith Process" {
+  [Control Bus Handler] as Ctrl
+  [Orchestrator] as Orc
+  [Dispatcher] as Disp
+  [Data Bus] as DBus
+  [Telemetry] as Tlm
+  [Recycler] as Recycler
+
+  package "Providers" {
+    component "Provider O\nWS+REST+Adapter\n+ Book Assembler" as PO
+    component "Provider P\nWS+REST+Adapter\n+ Book Assembler" as PP
+    component "Provider Q\nWS+REST+Adapter\n+ Book Assembler" as PQ
+  }
+
+  package "Consumers" {
+    component "Consumer A (lambda)" as CA
+    component "Consumer B (lambda)" as CB
+    component "Consumer C (lambda)" as CC
+  }
 }
 
-component "Orchestrator" as Orchestrator {
-  [Window Manager]
-  [Merge Evaluator]
-}
+PO --> Orc : Canonical Events
+PP --> Orc
+PQ --> Orc
+Orc --> Disp : Merged/Canonical Events
+Disp --> DBus
+DBus --> CA
+DBus --> CB
+DBus --> CC
 
-component "Dispatcher" as Dispatcher {
-  [Stream Ordering]
-  [Routing Table]
-  [Backpressure]
-  [Coalescer]
-}
+CA --> Ctrl : Control Commands
+CB --> Ctrl : Control Commands
+CC --> Ctrl : Control Commands
+Ctrl --> Orc : Merge Configs
+Ctrl --> Disp : Routing Tables (versioned)
 
-component "Data Bus" as DataBus
-component "Control Bus" as ControlBus
-component "Telemetry Bus" as TelemetryBus
+Disp --> PO : Provider Orders (idempotent)
+Disp --> PP
+Disp --> PQ
 
-component "Consumers" as Consumers {
-  [Strategy α]
-  [Strategy β]
-  [CLI]
-}
-
-Provider --> Orchestrator : Canonical Events
-Orchestrator --> Dispatcher : Merged Events
-Dispatcher --> DataBus
-DataBus --> Consumers
-Consumers --> ControlBus : Subscribe / Orders / Trading Switch
-ControlBus --> Orchestrator : Merge Rules
-ControlBus --> Dispatcher : Routing Updates
-Dispatcher --> Provider : Order Requests
-Provider --> TelemetryBus
-Orchestrator --> TelemetryBus
-Dispatcher --> TelemetryBus
-
+Orc --> Tlm : merge.suppressed_partial / book.resync
+Disp --> Tlm : backpressure.drop / dup.drop / throttle
 @enduml
