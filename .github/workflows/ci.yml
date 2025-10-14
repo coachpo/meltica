@@ -42,12 +42,12 @@ jobs:
       - name: Check coverage threshold
         run: |
           echo "Checking coverage threshold (≥70% required by TS-01)..."
-          COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
-          echo "Total coverage: $COVERAGE%"
+          COVERAGE=$(go tool cover -func=coverage.out | awk '/^total:/ {print $3}' | sed 's/%//')
+          echo "Total coverage: ${COVERAGE}%"
           if (( $(echo "$COVERAGE < 70.0" | bc -l) )); then
-            echo "::warning::Coverage $COVERAGE% is below 70% threshold (TS-01)"
+            echo "::warning::Coverage ${COVERAGE}% is below 70% threshold (TS-01)"
           else
-            echo "✓ Coverage threshold satisfied: $COVERAGE% ≥ 70%"
+            echo "✓ Coverage threshold satisfied: ${COVERAGE}% ≥ 70%"
           fi
       - name: Publish coverage to Job Summary
         if: always()
@@ -57,7 +57,6 @@ jobs:
             echo
             if [ -f coverage.out ]; then
               TOTAL=$(go tool cover -func=coverage.out | awk '/^total:/ {print $3}')
-              # Threshold status (70%)
               THRESH=70.0
               below=$(awk -v t=$THRESH -v v=${TOTAL%\%} 'BEGIN{print (v+0<t)?"1":"0"}')
               if [ "$below" -eq 1 ]; then
@@ -68,7 +67,6 @@ jobs:
               echo
               echo "| Package | Coverage |"
               echo "|---|---:|"
-              # go tool cover -func is tab-delimited: name\tstmts\tpercent
               go tool cover -func=coverage.out \
                 | grep -v "^total:" \
                 | awk -F'\t' '{split($1,p,":"); printf("| `%s` | %s |\n", p[1], $3)}'
@@ -78,7 +76,11 @@ jobs:
               echo "> ❗ No \`coverage.out\` found."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
-
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.out
 
   integration-race:
     runs-on: ubuntu-latest
