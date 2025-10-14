@@ -14,11 +14,13 @@ jobs:
           go-version: '1.25'
       - run: go version
       - run: go mod download
+
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v8
         with:
           version: latest
           only-new-issues: true
+
       - name: Ban backward-compatibility code
         run: |
           echo "Checking for banned backward-compatibility patterns..."
@@ -28,6 +30,7 @@ jobs:
             exit 1
           fi
           echo "✓ No backward-compatibility code found"
+
       - name: Ban async/pool imports
         run: |
           echo "Checking for banned async/pool imports (PERF-09)..."
@@ -37,8 +40,10 @@ jobs:
           fi
           echo "✓ No banned async/pool imports found"
       - run: make build
+
       - name: Test with coverage
         run: go test ./... -race -coverprofile=coverage.out -count=1 -timeout=30s
+
       - name: Check coverage threshold
         run: |
           echo "Checking coverage threshold (≥70% required by TS-01)..."
@@ -49,6 +54,7 @@ jobs:
           else
             echo "✓ Coverage threshold satisfied: ${COVERAGE}% ≥ 70%"
           fi
+
       - name: Publish coverage to Job Summary
         if: always()
         run: |
@@ -167,12 +173,6 @@ jobs:
             coverage.out
             coverage.html
 
-      - name: Upload coverage report
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-report
-          path: coverage.out
-
   integration-race:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -183,5 +183,6 @@ jobs:
         with:
           go-version: '1.25'
       - run: go version
+
       - name: Run integration tests with race detector
         run: go test ./tests/integration -race -count=1 -timeout=5m
