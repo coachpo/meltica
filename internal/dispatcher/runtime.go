@@ -8,6 +8,7 @@ import (
 	"github.com/coachpo/meltica/internal/bus/databus"
 	"github.com/coachpo/meltica/internal/observability"
 	"github.com/coachpo/meltica/internal/pool"
+	"github.com/coachpo/meltica/internal/recycler"
 	"github.com/coachpo/meltica/internal/schema"
 )
 
@@ -15,6 +16,7 @@ import (
 type Runtime struct {
 	bus            databus.Bus
 	pools          *pool.PoolManager
+	rec            recycler.Interface
 	cfg            config.DispatcherRuntimeConfig
 	metrics        *observability.RuntimeMetrics
 	ordering       *StreamOrdering
@@ -25,7 +27,7 @@ type Runtime struct {
 }
 
 // NewRuntime constructs a dispatcher runtime instance.
-func NewRuntime(bus databus.Bus, pools *pool.PoolManager, cfg config.DispatcherRuntimeConfig, metrics *observability.RuntimeMetrics) *Runtime {
+func NewRuntime(bus databus.Bus, pools *pool.PoolManager, rec recycler.Interface, cfg config.DispatcherRuntimeConfig, metrics *observability.RuntimeMetrics) *Runtime {
 	if metrics == nil {
 		metrics = observability.NewRuntimeMetrics()
 	}
@@ -34,6 +36,7 @@ func NewRuntime(bus databus.Bus, pools *pool.PoolManager, cfg config.DispatcherR
 	runtime := new(Runtime)
 	runtime.bus = bus
 	runtime.pools = pools
+	runtime.rec = rec
 	runtime.cfg = cfg
 	runtime.metrics = metrics
 	runtime.ordering = ordering
@@ -143,6 +146,13 @@ func (r *Runtime) gcDedupe(now time.Time) {
 
 func (r *Runtime) releaseEvent(evt *schema.Event) {
 	if evt == nil || r.pools == nil {
+		if r.rec != nil {
+			r.rec.RecycleEvent(evt)
+		}
+		return
+	}
+	if r.rec != nil {
+		r.rec.RecycleEvent(evt)
 		return
 	}
 	r.pools.Put("CanonicalEvent", evt)

@@ -64,7 +64,7 @@ func BenchmarkEndToEndLatency(b *testing.B) {
 			MaxBufferSize:     2048,
 		},
 	}
-	dispatch := dispatcher.NewRuntime(bus, pools, dispatchCfg, observability.NewRuntimeMetrics())
+	dispatch := dispatcher.NewRuntime(bus, pools, nil, dispatchCfg, observability.NewRuntimeMetrics())
 	dispatchErrs := dispatch.Start(ctx, orch.Events())
 
 	_, tradeCh, err := bus.Subscribe(ctx, schema.EventTypeTrade)

@@ -51,7 +51,7 @@ func TestSubscriptionManagementLifecycle(t *testing.T) {
 			TokenBurst:         100,
 		},
 	}
-	dispatch := dispatcher.NewRuntime(bus, nil, runtimeCfg, observability.NewRuntimeMetrics())
+	dispatch := dispatcher.NewRuntime(bus, nil, nil, runtimeCfg, observability.NewRuntimeMetrics())
 	dispatchErrs := dispatch.Start(ctx, eventOrchestrator.Events())
 	go drainErrors(t, dispatchErrs)
 

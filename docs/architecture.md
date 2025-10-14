@@ -1,30 +1,18 @@
 ## Architecture Overview
 
-The monolithic auto-trading application runs as a single Go process with immutable component boundaries. Providers ingest exchange-specific market and order events, the orchestrator performs windowed merging, and the dispatcher enforces per-stream ordering, fair-share backpressure, and delivery to consumers via the in-process data bus. Control commands travel through a separate control bus that updates routing tables and orchestrator merge rules.
+The monolithic auto-trading application runs as a single Go process with immutable component boundaries. A single Binance provider ingests market and order events, the orchestrator performs windowed merging, and the dispatcher enforces per-stream ordering, fair-share backpressure, and delivery to consumers via the in-process data bus. Control commands travel through a separate control bus that updates routing tables and orchestrator merge rules.
 
 ```plantuml
 @startuml
 skinparam componentStyle rectangle
 skinparam monochrome true
 
-rectangle "Providers" {
+rectangle "Provider" {
   frame "Binance" {
     [WS Client]
     [REST Snapshot]
     [Parser]
     [Book Assembler]
-  }
-  frame "Coinbase" {
-    [WS Client ]
-    [REST Snapshot ]
-    [Parser ]
-    [Book Assembler ]
-  }
-  frame "Kraken" {
-    [WS Client  ]
-    [REST Snapshot  ]
-    [Parser  ]
-    [Book Assembler  ]
   }
 }
 

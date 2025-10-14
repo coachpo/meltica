@@ -3,6 +3,8 @@ package binance
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -27,13 +29,17 @@ type Provider struct {
 
 	events chan *schema.Event
 	errs   chan error
+	orders chan schema.OrderRequest
 
 	started atomic.Bool
 
-	mu     sync.Mutex
-	routes map[string]*routeHandle
-	ctx    context.Context
-	cancel context.CancelFunc
+	mu        sync.Mutex
+	routes    map[string]*routeHandle
+	ctx       context.Context
+	cancel    context.CancelFunc
+	orderMu   sync.RWMutex
+	orderBook map[string]schema.OrderRequest
+	reports   map[string]schema.ExecReport
 }
 
 type routeHandle struct {
@@ -54,7 +60,10 @@ func NewProvider(name string, ws *WSClient, rest *RESTClient, opts ProviderOptio
 	provider.clock = time.Now
 	provider.events = make(chan *schema.Event, 128)
 	provider.errs = make(chan error, 8)
+	provider.orders = make(chan schema.OrderRequest, 128)
 	provider.routes = make(map[string]*routeHandle)
+	provider.orderBook = make(map[string]schema.OrderRequest)
+	provider.reports = make(map[string]schema.ExecReport)
 	return provider
 }
 
@@ -76,7 +85,10 @@ func (p *Provider) Start(ctx context.Context) error {
 		p.stopAll()
 		close(p.events)
 		close(p.errs)
+		close(p.orders)
 	}()
+
+	go p.consumeOrders(ctx)
 
 	if len(p.opts.Topics) > 0 || len(p.opts.Snapshots) > 0 {
 		p.mu.Lock()
@@ -95,6 +107,24 @@ func (p *Provider) Events() <-chan *schema.Event {
 // Errors returns asynchronous provider errors.
 func (p *Provider) Errors() <-chan error {
 	return p.errs
+}
+
+// SubmitOrder enqueues an order for asynchronous processing.
+func (p *Provider) SubmitOrder(ctx context.Context, req schema.OrderRequest) error {
+	if !p.started.Load() {
+		return errors.New("provider not started")
+	}
+	if req.Provider == "" {
+		req.Provider = p.name
+	}
+	select {
+	case <-ctx.Done():
+		return fmt.Errorf("submit order context: %w", ctx.Err())
+	case <-p.ctx.Done():
+		return fmt.Errorf("provider shutting down")
+	case p.orders <- req:
+		return nil
+	}
 }
 
 // SubscribeRoute activates streaming for the specified dispatcher route.
@@ -155,6 +185,82 @@ func (p *Provider) stopAll() {
 		handle.cancel()
 		handle.wg.Wait()
 	}
+}
+
+func (p *Provider) consumeOrders(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-p.ctx.Done():
+			return
+		case order, ok := <-p.orders:
+			if !ok {
+				return
+			}
+			p.handleOrder(order)
+		}
+	}
+}
+
+func (p *Provider) handleOrder(order schema.OrderRequest) {
+	key := orderKey(order.Provider, order.ClientOrderID)
+	p.orderMu.Lock()
+	p.orderBook[key] = order
+	p.orderMu.Unlock()
+
+	report := schema.ExecReport{
+		ClientOrderID: order.ClientOrderID,
+		Provider:      order.Provider,
+		Symbol:        order.Symbol,
+		Status:        schema.ExecReportStateACK,
+		TransactTime:  time.Now().UTC().UnixNano(),
+		TraceID:       order.ClientOrderID,
+		DecisionID:    order.ConsumerID,
+	}
+	p.orderMu.Lock()
+	p.reports[key] = report
+	p.orderMu.Unlock()
+
+	evt := &schema.Event{
+		EventID:     fmt.Sprintf("execreport:%s", order.ClientOrderID),
+		Provider:    order.Provider,
+		Symbol:      order.Symbol,
+		Type:        schema.EventTypeExecReport,
+		SeqProvider: uint64(time.Now().UTC().UnixNano()),
+		IngestTS:    p.clock().UTC(),
+		EmitTS:      p.clock().UTC(),
+		Payload: schema.ExecReportPayload{
+			ClientOrderID:   order.ClientOrderID,
+			ExchangeOrderID: order.ClientOrderID,
+			State:           schema.ExecReportStateACK,
+			Side:            order.Side,
+			OrderType:       order.OrderType,
+			Price:           valueOrDefault(order.Price),
+			Quantity:        order.Quantity,
+			FilledQuantity:  "0",
+			RemainingQty:    order.Quantity,
+			AvgFillPrice:    "0",
+			Timestamp:       time.Now().UTC(),
+		},
+	}
+	p.emitEvent(evt)
+}
+
+// QueryOrder returns the latest execution report for the provided identifiers.
+func (p *Provider) QueryOrder(_ context.Context, provider, clientOrderID string) (schema.ExecReport, bool, error) {
+	if provider = strings.TrimSpace(provider); provider == "" {
+		provider = p.name
+	}
+	key := orderKey(provider, clientOrderID)
+	p.orderMu.RLock()
+	report, ok := p.reports[key]
+	p.orderMu.RUnlock()
+	if !ok {
+		var empty schema.ExecReport
+		return empty, false, nil
+	}
+	return report, true, nil
 }
 
 func (p *Provider) startRouteLocked(_ string, topics []string, pollers []RESTPoller) *routeHandle {
@@ -271,6 +377,17 @@ func (p *Provider) emitError(err error) {
 	case p.errs <- err:
 	default:
 	}
+}
+
+func orderKey(provider, clientOrderID string) string {
+	return fmt.Sprintf("%s:%s", strings.ToLower(strings.TrimSpace(provider)), strings.TrimSpace(clientOrderID))
+}
+
+func valueOrDefault(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 func pollersFromRoute(restFns []dispatcher.RestFn) []RESTPoller {

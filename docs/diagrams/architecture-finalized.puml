@@ -9,19 +9,15 @@ queue "Control Bus" as ControlBus
 queue "Data Bus (Meltica Events)" as DataBus
 queue "Telemetry (ops-only)" as Telemetry
 
-box "Providers (WS + REST + Adapter + Book Assembler)"
-  participant "Provider O" as PRV_O
-  participant "Provider P" as PRV_P
-  participant "Provider Q" as PRV_Q
+box "Provider (WS + REST + Adapter + Book Assembler)"
+  participant "Binance" as PRV_O
 end box
 
 participant "Event Orchestrator\n(windowed merge: late=drop, partial=suppress)" as Orchestrator
 participant "Dispatcher\n(route + per-stream ordering + fair-share + coalesce)" as Dispatcher
 
 ' Ingress
-PRV_O -> Orchestrator : canonical events (incl BookUpdate/Snapshot/ExecReport)
-PRV_P -> Orchestrator : canonical events
-PRV_Q -> Orchestrator : canonical events
+PRV_O -> Orchestrator : canonical events (BookUpdate/Snapshot/ExecReport)
 
 group Orchestrator emit
   Orchestrator -> Orchestrator : tag routing_version (current)
@@ -51,4 +47,3 @@ Always deliver critical kinds: ExecReport, ControlAck, ControlResult.
 Consumers may ignore market-data during flips based on routing_version.
 end note
 @enduml
-

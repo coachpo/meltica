@@ -59,7 +59,7 @@ func TestMarketDataEndToEndDelivery(t *testing.T) {
 			MaxBufferSize:     16,
 		},
 	}
-	dispatch := dispatcher.NewRuntime(bus, nil, dispatcherCfg, metrics)
+	dispatch := dispatcher.NewRuntime(bus, nil, nil, dispatcherCfg, metrics)
 
 	orch := conductor.NewEventOrchestrator()
 	orch.AddProvider("binance", provider.Events(), provider.Errors())

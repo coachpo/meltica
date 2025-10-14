@@ -9,10 +9,8 @@ package "Monolith Process" {
   [Telemetry] as Tlm
   [Recycler] as Recycler
 
-  package "Providers" {
-    component "Provider O\nWS+REST+Adapter\n+ Book Assembler" as PO
-    component "Provider P\nWS+REST+Adapter\n+ Book Assembler" as PP
-    component "Provider Q\nWS+REST+Adapter\n+ Book Assembler" as PQ
+  package "Provider" {
+    component "Binance\nWS+REST+Adapter\n+ Book Assembler" as PO
   }
 
   package "Consumers" {
@@ -23,8 +21,6 @@ package "Monolith Process" {
 }
 
 PO --> Orc : Canonical Events
-PP --> Orc
-PQ --> Orc
 Orc --> Disp : Merged/Canonical Events
 Disp --> DBus
 DBus --> CA
@@ -38,8 +34,6 @@ Ctrl --> Orc : Merge Configs
 Ctrl --> Disp : Routing Tables (versioned)
 
 Disp --> PO : Provider Orders (idempotent)
-Disp --> PP
-Disp --> PQ
 
 Orc --> Tlm : merge.suppressed_partial / book.resync
 Disp --> Tlm : backpressure.drop / dup.drop / throttle

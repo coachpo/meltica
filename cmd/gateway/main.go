@@ -20,6 +20,7 @@ import (
 	"github.com/coachpo/meltica/internal/dispatcher"
 	"github.com/coachpo/meltica/internal/observability"
 	"github.com/coachpo/meltica/internal/pool"
+	"github.com/coachpo/meltica/internal/recycler"
 	"github.com/coachpo/meltica/internal/schema"
 	"github.com/coachpo/meltica/lib/telemetry"
 )
@@ -72,8 +73,12 @@ func main() {
 		}
 	}()
 
+	rec := recycler.NewManager(poolMgr)
+
 	bus := databus.NewMemoryBus(databus.MemoryConfig{
-		BufferSize: streamingCfg.Databus.BufferSize,
+		BufferSize:    streamingCfg.Databus.BufferSize,
+		FanoutWorkers: 8,
+		Recycler:      rec,
 	})
 	defer bus.Close()
 
@@ -128,13 +133,14 @@ func main() {
 		CoalescableTypes: []string{"Ticker", "BookUpdate", "KlineSummary"},
 	}
 
-	dispatcherRuntime := dispatcher.NewRuntime(bus, poolMgr, runtimeCfg, observability.NewRuntimeMetrics())
+	dispatcherRuntime := dispatcher.NewRuntime(bus, poolMgr, rec, runtimeCfg, observability.NewRuntimeMetrics())
 	dispatchErrs := dispatcherRuntime.Start(ctx, eventOrchestrator.Events())
 
 	go logErrors(logger, "orchestrator", eventOrchestrator.Errors())
 	go logErrors(logger, "dispatcher", dispatchErrs)
 
 	subscriptionManager := binance.NewSubscriptionManager(provider)
+	tradingState := dispatcher.NewTradingState()
 	for _, route := range table.Routes() {
 		if err := subscriptionManager.Activate(ctx, route); err != nil {
 			logger.Printf("subscribe route %s: %v", route.Type, err)
@@ -142,10 +148,26 @@ func main() {
 	}
 
 	eventTypes := collectEventTypes(table.Routes())
-	gatewayConsumer := consumer.NewConsumer("gateway", bus, logger)
-	consumerEvents, consumerErrs := gatewayConsumer.Start(ctx, eventTypes)
-	go drainConsumer(logger, consumerEvents, consumerErrs)
-	controller := dispatcher.NewController(table, controlBus, subscriptionManager)
+	printer := consumer.NewLambda("gateway", bus, rec, logger)
+	if lambdaErrs, err := printer.Start(ctx, eventTypes); err != nil {
+		logger.Printf("lambda consumer: %v", err)
+	} else {
+		go func() {
+			for err := range lambdaErrs {
+				if err != nil {
+					logger.Printf("lambda consumer: %v", err)
+				}
+			}
+		}()
+	}
+	controller := dispatcher.NewController(
+		table,
+		controlBus,
+		subscriptionManager,
+		dispatcher.WithOrderSubmitter(provider),
+		dispatcher.WithTradingState(tradingState),
+		dispatcher.WithMergeConfigurator(eventOrchestrator),
+	)
 	go func() {
 		if err := controller.Start(ctx); err != nil && err != context.Canceled {
 			logger.Printf("controller: %v", err)
@@ -193,6 +215,29 @@ func collectEventTypes(routes map[schema.CanonicalType]dispatcher.Route) []schem
 	return out
 }
 
+func drainConsumer(logger *log.Logger, events <-chan *schema.Event, errs <-chan error) {
+	for events != nil || errs != nil {
+		select {
+		case evt, ok := <-events:
+			if !ok {
+				events = nil
+				continue
+			}
+			if evt != nil && logger != nil {
+				logger.Printf("drain consumer saw %s", evt.EventID)
+			}
+		case err, ok := <-errs:
+			if !ok {
+				errs = nil
+				continue
+			}
+			if err != nil && logger != nil {
+				logger.Printf("consumer: %v", err)
+			}
+		}
+	}
+}
+
 func canonicalToEventType(typ schema.CanonicalType) (schema.EventType, bool) {
 	switch typ {
 	case schema.CanonicalType("ORDERBOOK.SNAPSHOT"):
@@ -226,27 +271,6 @@ func routeFromConfig(name string, cfg config.RouteConfig) dispatcher.Route {
 		WSTopics: cfg.WSTopics,
 		RestFns:  restFns,
 		Filters:  filters,
-	}
-}
-
-func drainConsumer(logger *log.Logger, events <-chan *schema.Event, errs <-chan error) {
-	for events != nil || errs != nil {
-		select {
-		case evt, ok := <-events:
-			if !ok {
-				events = nil
-				continue
-			}
-			_ = evt
-		case err, ok := <-errs:
-			if !ok {
-				errs = nil
-				continue
-			}
-			if err != nil && logger != nil {
-				logger.Printf("consumer: %v", err)
-			}
-		}
 	}
 }
 

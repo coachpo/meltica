@@ -6,7 +6,10 @@ import (
 	"sync"
 	"sync/atomic"
 
+	concpool "github.com/sourcegraph/conc/pool"
+
 	"github.com/coachpo/meltica/errs"
+	"github.com/coachpo/meltica/internal/recycler"
 	"github.com/coachpo/meltica/internal/schema"
 )
 
@@ -16,11 +19,14 @@ type MemoryBus struct {
 
 	ctx    context.Context
 	cancel context.CancelFunc
+	rec    recycler.Interface
 
 	mu           sync.RWMutex
 	subscribers  map[schema.EventType]map[SubscriptionID]*subscriber
 	shutdownOnce sync.Once
 	nextID       uint64
+	duplicates   sync.Pool
+	workers      int
 }
 
 type subscriber struct {
@@ -38,7 +44,14 @@ func NewMemoryBus(cfg MemoryConfig) *MemoryBus {
 	bus.cfg = cfg
 	bus.ctx = ctx
 	bus.cancel = cancel
+	bus.rec = cfg.Recycler
 	bus.subscribers = make(map[schema.EventType]map[SubscriptionID]*subscriber)
+	bus.workers = cfg.FanoutWorkers
+	bus.duplicates = sync.Pool{
+		New: func() any {
+			return &schema.Event{} //nolint:exhaustruct
+		},
+	}
 	return bus
 }
 
@@ -66,15 +79,7 @@ func (b *MemoryBus) Publish(ctx context.Context, evt *schema.Event) error {
 		return nil
 	}
 
-	for _, sub := range subscribers {
-		if sub == nil {
-			continue
-		}
-		if err := b.deliver(ctx, sub, evt); err != nil {
-			return err
-		}
-	}
-	return nil
+	return b.dispatch(ctx, subscribers, evt)
 }
 
 // Subscribe registers for events of the given type and returns a subscription ID and channel.
@@ -163,18 +168,102 @@ func (b *MemoryBus) deliver(ctx context.Context, sub *subscriber, evt *schema.Ev
 	if err := sub.ctx.Err(); err != nil {
 		return fmt.Errorf("subscriber context: %w", err)
 	}
+	dup := b.cloneEvent(ctx, evt)
+	if dup == nil {
+		return errs.New("databus/publish", errs.CodeUnavailable, errs.WithMessage("duplicate acquisition failed"))
+	}
 	select {
 	case <-b.ctx.Done():
+		b.recycle(dup)
 		return errs.New("databus/publish", errs.CodeUnavailable, errs.WithMessage("bus closed"))
 	case <-ctx.Done():
+		b.recycle(dup)
 		return fmt.Errorf("deliver context: %w", ctx.Err())
 	case <-sub.ctx.Done():
+		b.recycle(dup)
 		return nil
-	case sub.ch <- schema.CloneEvent(evt):
+	case sub.ch <- dup:
 		return nil
 	default:
+		b.recycle(dup)
 		return errs.New("databus/publish", errs.CodeUnavailable, errs.WithMessage("subscriber buffer full"))
 	}
+}
+
+func (b *MemoryBus) dispatch(ctx context.Context, subs []*subscriber, evt *schema.Event) error {
+	if len(subs) == 0 {
+		return nil
+	}
+	workerLimit := b.workers
+	if workerLimit <= 0 {
+		workerLimit = 1
+	}
+	p := concpool.New().WithMaxGoroutines(workerLimit)
+	errCh := make(chan error, len(subs))
+	for _, sub := range subs {
+		if sub == nil {
+			continue
+		}
+		target := sub
+		p.Go(func() {
+			err := b.deliver(ctx, target, evt)
+			if err != nil {
+				errCh <- err
+			}
+		})
+	}
+	p.Wait()
+	close(errCh)
+	for err := range errCh {
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (b *MemoryBus) cloneEvent(ctx context.Context, src *schema.Event) *schema.Event {
+	if src == nil {
+		return nil
+	}
+	if b.rec != nil {
+		dup, err := b.rec.BorrowEvent(ctx)
+		if err == nil && dup != nil {
+			b.rec.CheckoutEvent(dup)
+			copyEvent(dup, src)
+			return dup
+		}
+	}
+	value := b.duplicates.Get()
+	dup, _ := value.(*schema.Event)
+	if dup == nil {
+		dup = &schema.Event{} //nolint:exhaustruct
+	}
+	copyEvent(dup, src)
+	return dup
+}
+
+func (b *MemoryBus) recycle(evt *schema.Event) {
+	if evt == nil {
+		return
+	}
+	if b.rec != nil {
+		b.rec.RecycleEvent(evt)
+		return
+	}
+	evt.Reset()
+	b.duplicates.Put(evt)
+}
+
+func copyEvent(dst, src *schema.Event) {
+	if dst == nil || src == nil {
+		return
+	}
+	clone := schema.CloneEvent(src)
+	if clone == nil {
+		return
+	}
+	*dst = *clone
 }
 
 func (s *subscriber) close() {
