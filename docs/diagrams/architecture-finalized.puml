@@ -1,23 +1,22 @@
 @startuml
 title Finalized Architecture (Providers -> Orchestrator -> Dispatcher -> Data Bus -> Consumers)
 
-actor "Consumer A (lambda)" as CON_A
-actor "Consumer B (lambda)" as CON_B
-actor "Consumer C (lambda)" as CON_C
+actor "Trade Lambda" as Trade
+actor "Ticker Lambda" as Ticker  
+actor "OrderBook Lambda" as OrderBook
 
 queue "Control Bus" as ControlBus
 queue "Data Bus (Meltica Events)" as DataBus
-queue "Telemetry (ops-only)" as Telemetry
 
 box "Provider (WS + REST + Adapter + Book Assembler)"
   participant "Binance" as PRV_O
 end box
 
 participant "Event Orchestrator\n(windowed merge: late=drop, partial=suppress)" as Orchestrator
-participant "Dispatcher\n(route + per-stream ordering + fair-share + coalesce)" as Dispatcher
+participant "Dispatcher\n(route + per-stream ordering + deduplication)" as Dispatcher
 
 ' Ingress
-PRV_O -> Orchestrator : canonical events (BookUpdate/Snapshot/ExecReport)
+PRV_O -> Orchestrator : canonical events (BookUpdate/Snapshot/Trade/Ticker/ExecReport)
 
 group Orchestrator emit
   Orchestrator -> Orchestrator : tag routing_version (current)
@@ -25,25 +24,23 @@ group Orchestrator emit
 end
 
 ' Dispatch
-Dispatcher -> Dispatcher : order (seq_provider -> ingest_ts)
-Dispatcher -> Dispatcher : coalesce latest-wins for Ticker/Book/KlineSummary
-Dispatcher --> DataBus : publish (fair-share fan-out)
+Dispatcher -> Dispatcher : order (seq_provider -> ingest_ts) + deduplicate
+Dispatcher --> DataBus : publish (fan-out)
 
 ' Delivery
-DataBus --> CON_A : deliver by routing table
-DataBus --> CON_B : deliver by routing table
-DataBus --> CON_C : deliver by routing table
+DataBus --> Trade : deliver Trade events only
+DataBus --> Ticker : deliver Ticker events only
+DataBus --> OrderBook : deliver BookSnapshot/BookUpdate events only
 
 ' Control plane
-CON_A -> ControlBus : control commands (Subscribe*, SubmitOrder, QueryOrder, ...)
-CON_B -> ControlBus : control commands
-CON_C -> ControlBus : control commands
+Trade -> ControlBus : control commands (Subscribe, SubmitOrder, QueryOrder, ...)
+Ticker -> ControlBus : control commands
+OrderBook -> ControlBus : control commands
 ControlBus -> Orchestrator : merge configs (keys, window, partial=suppress)
 ControlBus -> Dispatcher : routing updates (versioned)
-ControlBus -> Telemetry : audit acks/results (optional)
 
 note over Dispatcher,DataBus
 Always deliver critical kinds: ExecReport, ControlAck, ControlResult.
-Consumers may ignore market-data during flips based on routing_version.
+Consumers may ignore market-data based on routing_version for non-critical events.
 end note
 @enduml

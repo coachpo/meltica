@@ -1,5 +1,5 @@
 @startuml
-title Dispatcher Ordering + Fair-share + Coalesce Latest-wins
+title Dispatcher Ordering and Deduplication
 
 actor "Consumer A" as A
 actor "Consumer B" as B
@@ -7,8 +7,6 @@ participant "Dispatcher" as D
 queue "Data Bus" as Bus
 
 D -> D : receive events (O,BTC,Trade)\nreorder seq_provider -> ingest_ts
-D -> D : coalesce map for Ticker/Book/KlineSummary
-D -> D : fair-share schedule A,B (token buckets)
 D -> Bus : publish ev#101
 Bus -> A : deliver ev#101
 Bus -> B : deliver ev#101
@@ -17,7 +15,6 @@ Bus -> A : deliver ev#102
 Bus -> B : deliver ev#102
 
 note over D
-- Never coalesce ExecReport (lossless).
-- Coalesce only stateful latest-wins kinds.
-end note
+- Enforces per-stream ordering within 150ms tolerance
+- Deduplicates events to prevent duplicates
 @enduml

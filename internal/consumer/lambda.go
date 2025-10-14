@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/coachpo/meltica/internal/bus/databus"
@@ -15,10 +16,11 @@ import (
 // Lambda streams events from the data bus and applies a lambda handler before
 // recycling them.
 type Lambda struct {
-	id     string
-	bus    databus.Bus
-	rec    recycler.Interface
-	logger *log.Logger
+	id            string
+	bus           databus.Bus
+	rec           recycler.Interface
+	logger        *log.Logger
+	routingVersion atomic.Int64
 }
 
 // NewLambda constructs a lambda consumer that prints received events.
@@ -90,11 +92,55 @@ func (l *Lambda) handleEvent(ctx context.Context, typ schema.EventType, evt *sch
 	if evt == nil {
 		return
 	}
+	
+	// Check if we should ignore this event based on routing version
+	if l.shouldIgnoreEvent(typ, evt) {
+		if l.rec != nil {
+			l.rec.RecycleEvent(evt)
+		}
+		return
+	}
+	
 	l.printEvent(typ, evt)
 	if l.rec != nil {
 		l.rec.RecycleEvent(evt)
 	}
 	_ = ctx
+}
+
+// shouldIgnoreEvent determines if an event should be ignored based on routing version logic.
+// Critical event types (ExecReport, ControlAck, ControlResult) are never ignored.
+func (l *Lambda) shouldIgnoreEvent(typ schema.EventType, evt *schema.Event) bool {
+	if evt == nil {
+		return false
+	}
+
+	// Never ignore critical event types
+	switch typ {
+	case schema.EventTypeExecReport:
+		return false
+	// Note: ControlAck and ControlResult are not schema.EventTypes but could be handled
+	// through a different mechanism if needed
+	}
+
+	// Check routing version - if event has a routing version and it's older than
+	// our current routing version, ignore it
+	currentVersion := int(l.routingVersion.Load())
+	if evt.RoutingVersion > 0 && evt.RoutingVersion < currentVersion {
+		return true
+	}
+
+	return false
+}
+
+// SetRoutingVersion updates the current routing version for this consumer.
+func (l *Lambda) SetRoutingVersion(version int64) {
+	l.routingVersion.Store(version)
+}
+
+// GetRoutingVersion returns the current routing version for this consumer.
+func (l *Lambda) GetRoutingVersion() int64 {
+	return l.routingVersion.Load()
 }
 
 func (l *Lambda) printEvent(typ schema.EventType, evt *schema.Event) {

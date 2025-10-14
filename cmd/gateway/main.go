@@ -18,7 +18,6 @@ import (
 	"github.com/coachpo/meltica/internal/conductor"
 	"github.com/coachpo/meltica/internal/consumer"
 	"github.com/coachpo/meltica/internal/dispatcher"
-	"github.com/coachpo/meltica/internal/observability"
 	"github.com/coachpo/meltica/internal/pool"
 	"github.com/coachpo/meltica/internal/recycler"
 	"github.com/coachpo/meltica/internal/schema"
@@ -100,8 +99,10 @@ func main() {
 	}
 	restFetcher := binance.NewHTTPSnapshotFetcher(restBase, streamingCfg.Adapters.Binance.WS.HandshakeTimeout)
 
-	wsClient := binance.NewWSClient("binance", wsProvider, parser, time.Now, poolMgr)
 	restClient := binance.NewRESTClient(restFetcher, parser, time.Now)
+
+	// WSClient will be created in NewProvider with book assembler
+	wsClient := binance.NewWSClient("binance", wsProvider, parser, time.Now, poolMgr, nil) // BookAssembler added in provider
 
 	var providerOpts binance.ProviderOptions
 	provider := binance.NewProvider("binance", wsClient, restClient, providerOpts)
@@ -126,14 +127,9 @@ func main() {
 			FlushInterval:     50 * time.Millisecond,
 			MaxBufferSize:     1024,
 		},
-		Backpressure: config.BackpressureConfig{
-			TokenRatePerStream: 1000,
-			TokenBurst:         100,
-		},
-		CoalescableTypes: []string{"Ticker", "BookUpdate", "KlineSummary"},
 	}
 
-	dispatcherRuntime := dispatcher.NewRuntime(bus, poolMgr, rec, runtimeCfg, observability.NewRuntimeMetrics())
+	dispatcherRuntime := dispatcher.NewRuntime(bus, poolMgr, rec, runtimeCfg, nil)
 	dispatchErrs := dispatcherRuntime.Start(ctx, eventOrchestrator.Events())
 
 	go logErrors(logger, "orchestrator", eventOrchestrator.Errors())
@@ -147,15 +143,43 @@ func main() {
 		}
 	}
 
-	eventTypes := collectEventTypes(table.Routes())
-	printer := consumer.NewLambda("gateway", bus, rec, logger)
-	if lambdaErrs, err := printer.Start(ctx, eventTypes); err != nil {
-		logger.Printf("lambda consumer: %v", err)
+	// Create three specialized lambda consumers
+	tradeLambda := consumer.NewTradeLambda("trade-consumer", bus, rec, logger)
+	tickerLambda := consumer.NewTickerLambda("ticker-consumer", bus, rec, logger)
+	orderbookLambda := consumer.NewOrderBookLambda("orderbook-consumer", bus, rec, logger)
+
+	// Start all three lambdas
+	if tradeErrs, err := tradeLambda.Start(ctx); err != nil {
+		logger.Printf("trade lambda: %v", err)
 	} else {
 		go func() {
-			for err := range lambdaErrs {
+			for err := range tradeErrs {
 				if err != nil {
-					logger.Printf("lambda consumer: %v", err)
+					logger.Printf("trade lambda: %v", err)
+				}
+			}
+		}()
+	}
+
+	if tickerErrs, err := tickerLambda.Start(ctx); err != nil {
+		logger.Printf("ticker lambda: %v", err)
+	} else {
+		go func() {
+			for err := range tickerErrs {
+				if err != nil {
+					logger.Printf("ticker lambda: %v", err)
+				}
+			}
+		}()
+	}
+
+	if orderbookErrs, err := orderbookLambda.Start(ctx); err != nil {
+		logger.Printf("orderbook lambda: %v", err)
+	} else {
+		go func() {
+			for err := range orderbookErrs {
+				if err != nil {
+					logger.Printf("orderbook lambda: %v", err)
 				}
 			}
 		}()
@@ -201,19 +225,7 @@ func main() {
 	}
 }
 
-func collectEventTypes(routes map[schema.CanonicalType]dispatcher.Route) []schema.EventType {
-	set := make(map[schema.EventType]struct{})
-	for canonical := range routes {
-		if evtType, ok := canonicalToEventType(canonical); ok {
-			set[evtType] = struct{}{}
-		}
-	}
-	out := make([]schema.EventType, 0, len(set))
-	for evtType := range set {
-		out = append(out, evtType)
-	}
-	return out
-}
+
 
 func drainConsumer(logger *log.Logger, events <-chan *schema.Event, errs <-chan error) {
 	for events != nil || errs != nil {
@@ -238,6 +250,39 @@ func drainConsumer(logger *log.Logger, events <-chan *schema.Event, errs <-chan 
 	}
 }
 
+
+
+func routeFromConfig(name string, cfg config.RouteConfig) dispatcher.Route {
+	filters := make([]dispatcher.FilterRule, 0, len(cfg.Filters))
+	for _, f := range cfg.Filters {
+		filters = append(filters, dispatcher.FilterRule{Field: f.Field, Op: f.Op, Value: f.Value})
+	}
+	restFns := make([]dispatcher.RestFn, 0, len(cfg.RestFns))
+	for _, rf := range cfg.RestFns {
+		restFns = append(restFns, dispatcher.RestFn{Name: rf.Name, Endpoint: rf.Endpoint, Interval: rf.Interval, Parser: rf.Parser})
+	}
+	return dispatcher.Route{
+		Type:     schema.CanonicalType(name),
+		WSTopics: cfg.WSTopics,
+		RestFns:  restFns,
+		Filters:  filters,
+	}
+}
+
+func collectEventTypes(routes map[schema.CanonicalType]dispatcher.Route) []schema.EventType {
+	set := make(map[schema.EventType]struct{})
+	for canonical := range routes {
+		if evtType, ok := canonicalToEventType(canonical); ok {
+			set[evtType] = struct{}{}
+		}
+	}
+	out := make([]schema.EventType, 0, len(set))
+	for evtType := range set {
+		out = append(out, evtType)
+	}
+	return out
+}
+
 func canonicalToEventType(typ schema.CanonicalType) (schema.EventType, bool) {
 	switch typ {
 	case schema.CanonicalType("ORDERBOOK.SNAPSHOT"):
@@ -254,23 +299,6 @@ func canonicalToEventType(typ schema.CanonicalType) (schema.EventType, bool) {
 		return schema.EventTypeKlineSummary, true
 	default:
 		return "", false
-	}
-}
-
-func routeFromConfig(name string, cfg config.RouteConfig) dispatcher.Route {
-	filters := make([]dispatcher.FilterRule, 0, len(cfg.Filters))
-	for _, f := range cfg.Filters {
-		filters = append(filters, dispatcher.FilterRule{Field: f.Field, Op: f.Op, Value: f.Value})
-	}
-	restFns := make([]dispatcher.RestFn, 0, len(cfg.RestFns))
-	for _, rf := range cfg.RestFns {
-		restFns = append(restFns, dispatcher.RestFn{Name: rf.Name, Endpoint: rf.Endpoint, Interval: rf.Interval, Parser: rf.Parser})
-	}
-	return dispatcher.Route{
-		Type:     schema.CanonicalType(name),
-		WSTopics: cfg.WSTopics,
-		RestFns:  restFns,
-		Filters:  filters,
 	}
 }
 

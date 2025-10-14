@@ -12,7 +12,6 @@ import (
 
 	"github.com/coachpo/meltica/core/events"
 	"github.com/coachpo/meltica/core/recycler"
-	"github.com/coachpo/meltica/internal/observability"
 )
 
 // deliveryPool defines the subset of sync.Pool behaviour used for event duplication.

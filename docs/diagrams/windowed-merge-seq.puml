@@ -1,22 +1,20 @@
 @startuml
 title Orchestrator Windowed Merge (late=drop, partial=suppress)
 
-participant "Provider O" as O
-participant "Provider P" as P
+participant "Binance Provider" as PRV
 participant "Orchestrator" as Orc
 participant "Dispatcher" as Disp
-queue "Telemetry" as Tel
 
-O -> Orc : Canonical X{k=abc}
-P -> Orc : Canonical Y{k=abc}
-Orc -> Orc : open window for k=abc (t0)
+PRV -> Orc : Trade{symbol=BTC-USDT, k=BTC-USDT:Trade}
+Orc -> Orc : open window for k=BTC-USDT:Trade (t0)
 ... within window ...
-O -> Orc : Canonical Z{k=abc}
+PRV -> Orc : Trade{symbol=BTC-USDT, k=BTC-USDT:Trade}
+PRV -> Orc : Trade{symbol=BTC-USDT, k=BTC-USDT:Trade}
 Orc -> Orc : close by time<=10s OR count<=1000
-alt Complete (X,Y,Z present)
-  Orc -> Orc : tag routing_version
-  Orc -> Disp : Merged{X,Y,Z}
+alt Complete (all events present)
+  Orc -> Orc : tag routing_version=v+1
+  Orc -> Disp : Merged{Trade1,Trade2,Trade3}
 else Partial
-  Orc -> Tel : merge.suppressed_partial{key=abc, missing=[...]}
+  Orc -> Orc : drop window (suppress partial)
 end
 @enduml

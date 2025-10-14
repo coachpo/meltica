@@ -6,7 +6,6 @@ package "Monolith Process" {
   [Orchestrator] as Orc
   [Dispatcher] as Disp
   [Data Bus] as DBus
-  [Telemetry] as Tlm
   [Recycler] as Recycler
 
   package "Provider" {
@@ -14,27 +13,25 @@ package "Monolith Process" {
   }
 
   package "Consumers" {
-    component "Consumer A (lambda)" as CA
-    component "Consumer B (lambda)" as CB
-    component "Consumer C (lambda)" as CC
+    component "Trade\nLambda" as Trade
+    component "Ticker\nLambda" as Ticker
+    component "OrderBook\nLambda" as OrderBook
   }
 }
 
 PO --> Orc : Canonical Events
 Orc --> Disp : Merged/Canonical Events
 Disp --> DBus
-DBus --> CA
-DBus --> CB
-DBus --> CC
+DBus --> Trade
+DBus --> Ticker
+DBus --> OrderBook
 
-CA --> Ctrl : Control Commands
-CB --> Ctrl : Control Commands
-CC --> Ctrl : Control Commands
+Trade --> Ctrl : Control Commands
+Ticker --> Ctrl : Control Commands
+OrderBook --> Ctrl : Control Commands
 Ctrl --> Orc : Merge Configs
 Ctrl --> Disp : Routing Tables (versioned)
 
 Disp --> PO : Provider Orders (idempotent)
 
-Orc --> Tlm : merge.suppressed_partial / book.resync
-Disp --> Tlm : backpressure.drop / dup.drop / throttle
 @enduml

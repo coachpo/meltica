@@ -22,19 +22,20 @@ type WSParser interface {
 
 // WSClient consumes websocket frames and emits canonical events.
 type WSClient struct {
-	providerName string
-	provider     FrameProvider
-	parser       WSParser
-	clock        func() time.Time
-	pools        *pool.PoolManager
+	providerName  string
+	provider      FrameProvider
+	parser        WSParser
+	clock         func() time.Time
+	pools         *pool.PoolManager
+	bookAssembler *BookAssembler
 }
 
 // NewWSClient creates a websocket client with the supplied provider and parser.
-func NewWSClient(providerName string, provider FrameProvider, parser WSParser, clock func() time.Time, pools *pool.PoolManager) *WSClient {
+func NewWSClient(providerName string, provider FrameProvider, parser WSParser, clock func() time.Time, pools *pool.PoolManager, bookAssembler *BookAssembler) *WSClient {
 	if clock == nil {
 		clock = time.Now
 	}
-	return &WSClient{providerName: providerName, provider: provider, parser: parser, clock: clock, pools: pools}
+	return &WSClient{providerName: providerName, provider: provider, parser: parser, clock: clock, pools: pools, bookAssembler: bookAssembler}
 }
 
 // Stream subscribes to the given topics and returns canonical events and error notifications.
@@ -126,6 +127,31 @@ func (c *WSClient) handleFrame(ctx context.Context, events chan<- *schema.Event,
 		if evt == nil {
 			continue
 		}
+		
+		// Apply book updates to the assembler for checksum verification
+		if evt.Type == schema.EventTypeBookUpdate || evt.Type == schema.EventTypeBookSnapshot {
+			if c.bookAssembler != nil {
+				switch payload := evt.Payload.(type) {
+				case schema.BookUpdatePayload:
+					if err := c.bookAssembler.ApplyUpdate(evt.Symbol, &payload); err != nil {
+						select {
+						case errs <- fmt.Errorf("book update checksum verification failed: %w", err):
+						default:
+						}
+						continue
+					}
+				case schema.BookSnapshotPayload:
+					if err := c.bookAssembler.ApplySnapshot(evt.Symbol, &payload); err != nil {
+						select {
+						case errs <- fmt.Errorf("book snapshot checksum verification failed: %w", err):
+						default:
+						}
+						continue
+					}
+				}
+			}
+		}
+		
 		if evt.IngestTS.IsZero() {
 			evt.IngestTS = ingestTS
 		}

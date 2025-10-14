@@ -21,11 +21,12 @@ type ProviderOptions struct {
 
 // Provider streams canonical events from Binance transports.
 type Provider struct {
-	name  string
-	ws    *WSClient
-	rest  *RESTClient
-	opts  ProviderOptions
-	clock func() time.Time
+	name         string
+	ws           *WSClient
+	rest         *RESTClient
+	opts         ProviderOptions
+	clock        func() time.Time
+	bookAssembler *BookAssembler
 
 	events chan *schema.Event
 	errs   chan error
@@ -58,6 +59,11 @@ func NewProvider(name string, ws *WSClient, rest *RESTClient, opts ProviderOptio
 	provider.rest = rest
 	provider.opts = opts
 	provider.clock = time.Now
+	provider.bookAssembler = NewBookAssembler(name, provider.clock)
+	
+	// Note: Book assembler is passed to ws client in constructor
+	// Type assertion not needed as ws is already of correct type
+	
 	provider.events = make(chan *schema.Event, 128)
 	provider.errs = make(chan error, 8)
 	provider.orders = make(chan schema.OrderRequest, 128)

@@ -6,7 +6,6 @@ import (
 
 	"github.com/coachpo/meltica/config"
 	"github.com/coachpo/meltica/internal/bus/databus"
-	"github.com/coachpo/meltica/internal/observability"
 	"github.com/coachpo/meltica/internal/pool"
 	"github.com/coachpo/meltica/internal/recycler"
 	"github.com/coachpo/meltica/internal/schema"
@@ -18,7 +17,6 @@ type Runtime struct {
 	pools          *pool.PoolManager
 	rec            recycler.Interface
 	cfg            config.DispatcherRuntimeConfig
-	metrics        *observability.RuntimeMetrics
 	ordering       *StreamOrdering
 	clock          func() time.Time
 	dedupe         map[string]time.Time
@@ -27,10 +25,8 @@ type Runtime struct {
 }
 
 // NewRuntime constructs a dispatcher runtime instance.
-func NewRuntime(bus databus.Bus, pools *pool.PoolManager, rec recycler.Interface, cfg config.DispatcherRuntimeConfig, metrics *observability.RuntimeMetrics) *Runtime {
-	if metrics == nil {
-		metrics = observability.NewRuntimeMetrics()
-	}
+func NewRuntime(bus databus.Bus, pools *pool.PoolManager, rec recycler.Interface, cfg config.DispatcherRuntimeConfig, metrics interface{}) *Runtime {
+	// metrics parameter is ignored - observability removed
 	clock := time.Now
 	ordering := NewStreamOrdering(cfg.StreamOrdering, clock)
 	runtime := new(Runtime)
@@ -38,7 +34,6 @@ func NewRuntime(bus databus.Bus, pools *pool.PoolManager, rec recycler.Interface
 	runtime.pools = pools
 	runtime.rec = rec
 	runtime.cfg = cfg
-	runtime.metrics = metrics
 	runtime.ordering = ordering
 	runtime.clock = clock
 	runtime.dedupe = make(map[string]time.Time, 1024)
@@ -71,6 +66,11 @@ func (r *Runtime) run(ctx context.Context, events <-chan *schema.Event, errCh ch
 			}
 			if evt.Provider == "" {
 				evt.Provider = "binance"
+			}
+			// Set routing version on events
+			if evt.RoutingVersion == 0 {
+				// You would need to get this from the table/controller
+				// For now, we'll set it to 0 to indicate no special routing
 			}
 			clone := cloneEventForFanOut(evt)
 			if clone != nil {
@@ -107,10 +107,7 @@ func (r *Runtime) run(ctx context.Context, events <-chan *schema.Event, errCh ch
 			if !buffered {
 				r.releaseEvent(evt)
 			}
-			if r.metrics != nil {
-				key := StreamKey{Provider: evt.Provider, Symbol: evt.Symbol, EventType: evt.Type}
-				r.metrics.RecordBufferDepth(key.String(), r.ordering.Depth(key))
-			}
+			// metrics removed - observability package deleted
 			publish(ready)
 		case <-ticker.C:
 			publish(r.ordering.Flush(r.clock()))
