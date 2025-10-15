@@ -2,14 +2,14 @@
 title Consumer Runtime Wrapper (Lambda) - Activity
 
 start
-:Receive event ev from Data Bus;
-if (ev.Kind in {ExecReport, ControlAck, ControlResult}?) then (yes)
-  :Invoke lambda with ev;
+:Receive event evt from Data Bus;
+if (evt.Type in {ExecReport, ControlAck, ControlResult}?) then (yes)
+  :Invoke lambda with evt;
 else (no)
-  if (ev.RoutingVersion < MinAcceptVersion?) then (yes)
-    :Ignore ev (no lambda call);
+  if (evt.RoutingVersion < MinAcceptVersion?) then (yes)
+    :Ignore evt (no lambda call);
   else (no)
-    :Invoke lambda with ev;
+    :Invoke lambda with evt;
   endif
 endif
 :On return or panic -> recycle via Recycler;
