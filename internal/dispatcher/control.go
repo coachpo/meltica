@@ -128,13 +128,7 @@ func (c *Controller) handle(ctx context.Context, msg schema.ControlMessage) sche
 			return c.finalizeAck(ctx, msg.Type, ack)
 		}
 		return c.handleUnsubscribe(ctx, payload, ack)
-	case schema.ControlMessageMergedSubscribe:
-		var payload schema.MergedSubscribePayload
-		if err := msg.DecodePayload(&payload); err != nil {
-			ack.ErrorMessage = err.Error()
-			return c.finalizeAck(ctx, msg.Type, ack)
-		}
-		return c.handleMergedSubscribe(ctx, payload, ack)
+
 	case schema.ControlMessageSubmitOrder:
 		var payload schema.SubmitOrderPayload
 		if err := msg.DecodePayload(&payload); err != nil {
@@ -214,13 +208,6 @@ func (c *Controller) handleUnsubscribe(ctx context.Context, cmd schema.Unsubscri
 	ack.Success = true
 	ack.RoutingVersion = int(version)
 	return c.finalizeAck(ctx, schema.ControlMessageUnsubscribe, ack)
-}
-
-func (c *Controller) handleMergedSubscribe(ctx context.Context, payload schema.MergedSubscribePayload, ack schema.ControlAcknowledgement) schema.ControlAcknowledgement {
-	_ = ctx
-	_ = payload
-	ack.ErrorMessage = "merged subscriptions unsupported"
-	return c.finalizeAck(ctx, schema.ControlMessageMergedSubscribe, ack)
 }
 
 func (c *Controller) handleSubmitOrder(ctx context.Context, consumerID string, payload schema.SubmitOrderPayload, ack schema.ControlAcknowledgement) schema.ControlAcknowledgement {
@@ -395,20 +382,23 @@ func (c *Controller) publishEvent(ctx context.Context, evt *schema.Event) {
 		return
 	}
 	if c.eventBus != nil {
-		_ = c.eventBus.Publish(ctx, evt)
+		if err := c.eventBus.Publish(ctx, evt); err == nil {
+			return
+		}
 	}
 	c.recycleEvent(evt)
 }
 
 func (c *Controller) borrowEvent(ctx context.Context) *schema.Event {
-	if c.recycler != nil {
-		evt, err := c.recycler.BorrowEvent(ctx)
-		if err == nil && evt != nil {
-			c.recycler.CheckoutEvent(evt)
-			return evt
-		}
+	if c.recycler == nil {
+		return nil
 	}
-	return new(schema.Event)
+	evt, err := c.recycler.BorrowEvent(ctx)
+	if err != nil || evt == nil {
+		return nil
+	}
+	c.recycler.CheckoutEvent(evt)
+	return evt
 }
 
 func (c *Controller) recycleEvent(evt *schema.Event) {

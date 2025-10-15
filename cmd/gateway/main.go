@@ -8,11 +8,14 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"slices"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/coachpo/meltica/config"
-	"github.com/coachpo/meltica/internal/adapters/binance"
+	"github.com/coachpo/meltica/internal/adapters/fake"
+	"github.com/coachpo/meltica/internal/adapters/shared"
 	"github.com/coachpo/meltica/internal/bus/controlbus"
 	"github.com/coachpo/meltica/internal/bus/databus"
 	"github.com/coachpo/meltica/internal/consumer"
@@ -20,7 +23,6 @@ import (
 	"github.com/coachpo/meltica/internal/pool"
 	"github.com/coachpo/meltica/internal/recycler"
 	"github.com/coachpo/meltica/internal/schema"
-	"github.com/coachpo/meltica/lib/telemetry"
 )
 
 func main() {
@@ -38,19 +40,6 @@ func main() {
 	logger := log.New(os.Stdout, "gateway ", log.LstdFlags|log.Lmicroseconds)
 	logger.Printf("configuration loaded: routes=%d", len(streamingCfg.Dispatcher.Routes))
 
-	telemetryProviders, shutdownTelemetry, err := telemetry.Init(ctx, streamingCfg.Telemetry)
-	if err != nil {
-		log.Fatalf("init telemetry: %v", err)
-	}
-	defer func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := shutdownTelemetry(shutdownCtx); err != nil {
-			logger.Printf("telemetry shutdown: %v", err)
-		}
-	}()
-	_ = telemetryProviders
-
 	poolMgr := pool.NewPoolManager()
 	registerPool := func(name string, capacity int, factory func() interface{}) {
 		if err := poolMgr.RegisterPool(name, capacity, factory); err != nil {
@@ -59,7 +48,7 @@ func main() {
 	}
 	registerPool("WsFrame", 200, func() interface{} { return new(schema.WsFrame) })
 	registerPool("ProviderRaw", 200, func() interface{} { return new(schema.ProviderRaw) })
-	registerPool("CanonicalEvent", 300, func() interface{} { return new(schema.CanonicalEvent) })
+	registerPool("CanonicalEvent", 1000, func() interface{} { return new(schema.CanonicalEvent) })
 	registerPool("OrderRequest", 20, func() interface{} { return new(schema.OrderRequest) })
 	registerPool("ExecReport", 20, func() interface{} { return new(schema.ExecReport) })
 	defer func() {
@@ -89,27 +78,17 @@ func main() {
 		}
 	}
 
-	parser := binance.NewParserWithPool("binance", poolMgr)
-	wsProvider := binance.NewDefaultFrameProvider(streamingCfg.Adapters.Binance.WS.PublicURL, streamingCfg.Adapters.Binance.WS.HandshakeTimeout)
-	restBase := streamingCfg.Adapters.Binance.REST.BaseURL
-	if restBase == "" {
-		restBase = "https://api.binance.com"
+	provider := fake.NewProvider(fake.Options{
+		Name:               "fake",
+		Instruments:        collectInstruments(table.Routes()),
+		TickerInterval:     1000 * time.Microsecond,
+		TradeInterval:      1000 * time.Microsecond,
+		BookUpdateInterval: 1000 * time.Microsecond,
+		Recycler:           rec,
+	})
+	if err := provider.Start(ctx); err != nil {
+		logger.Fatalf("start provider: %v", err)
 	}
-	restFetcher := binance.NewHTTPSnapshotFetcher(restBase, streamingCfg.Adapters.Binance.WS.HandshakeTimeout)
-
-	restClient := binance.NewRESTClient(restFetcher, parser, time.Now)
-
-	// WSClient will be created in NewProvider with book assembler
-	wsClient := binance.NewWSClient("binance", wsProvider, parser, time.Now, poolMgr)
-
-	var providerOpts binance.ProviderOptions
-	provider := binance.NewProvider("binance", wsClient, restClient, providerOpts)
-
-	go func() {
-		if err := provider.Start(ctx); err != nil && err != context.Canceled {
-			logger.Printf("provider: %v", err)
-		}
-	}()
 
 	runtimeCfg := config.DispatcherRuntimeConfig{
 		StreamOrdering: config.StreamOrderingConfig{
@@ -125,7 +104,7 @@ func main() {
 	go logErrors(logger, "provider", provider.Errors())
 	go logErrors(logger, "dispatcher", dispatchErrs)
 
-	subscriptionManager := binance.NewSubscriptionManager(provider)
+	subscriptionManager := shared.NewSubscriptionManager(provider)
 	tradingState := dispatcher.NewTradingState()
 	for _, route := range table.Routes() {
 		if err := subscriptionManager.Activate(ctx, route); err != nil {
@@ -188,7 +167,7 @@ func main() {
 		}
 	}()
 
-	controlAddr := ":8080"
+	controlAddr := ":8880"
 	controlHandler := dispatcher.NewControlHTTPHandler(controlBus)
 	controlServer := new(http.Server)
 	controlServer.Addr = controlAddr
@@ -212,6 +191,44 @@ func main() {
 	}
 	if err := shutdownCtx.Err(); err != nil {
 		logger.Printf("shutdown deadline reached: %v", err)
+	}
+}
+
+func collectInstruments(routes map[schema.CanonicalType]dispatcher.Route) []string {
+	set := make(map[string]struct{})
+	for _, route := range routes {
+		for _, filter := range route.Filters {
+			if strings.EqualFold(filter.Field, "instrument") {
+				appendInstrument(filter.Value, set)
+			}
+		}
+	}
+	if len(set) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(set))
+	for inst := range set {
+		out = append(out, inst)
+	}
+	slices.Sort(out)
+	return out
+}
+
+func appendInstrument(value any, set map[string]struct{}) {
+	switch v := value.(type) {
+	case string:
+		instrument := strings.ToUpper(strings.TrimSpace(v))
+		if instrument != "" {
+			set[instrument] = struct{}{}
+		}
+	case []string:
+		for _, entry := range v {
+			appendInstrument(entry, set)
+		}
+	case []any:
+		for _, entry := range v {
+			appendInstrument(entry, set)
+		}
 	}
 }
 
@@ -252,39 +269,6 @@ func routeFromConfig(name string, cfg config.RouteConfig) dispatcher.Route {
 		WSTopics: cfg.WSTopics,
 		RestFns:  restFns,
 		Filters:  filters,
-	}
-}
-
-func collectEventTypes(routes map[schema.CanonicalType]dispatcher.Route) []schema.EventType {
-	set := make(map[schema.EventType]struct{})
-	for canonical := range routes {
-		if evtType, ok := canonicalToEventType(canonical); ok {
-			set[evtType] = struct{}{}
-		}
-	}
-	out := make([]schema.EventType, 0, len(set))
-	for evtType := range set {
-		out = append(out, evtType)
-	}
-	return out
-}
-
-func canonicalToEventType(typ schema.CanonicalType) (schema.EventType, bool) {
-	switch typ {
-	case schema.CanonicalType("ORDERBOOK.SNAPSHOT"):
-		return schema.EventTypeBookSnapshot, true
-	case schema.CanonicalType("ORDERBOOK.DELTA"), schema.CanonicalType("ORDERBOOK.UPDATE"):
-		return schema.EventTypeBookUpdate, true
-	case schema.CanonicalType("TRADE"):
-		return schema.EventTypeTrade, true
-	case schema.CanonicalType("TICKER"):
-		return schema.EventTypeTicker, true
-	case schema.CanonicalType("EXECUTION.REPORT"):
-		return schema.EventTypeExecReport, true
-	case schema.CanonicalType("KLINE.SUMMARY"):
-		return schema.EventTypeKlineSummary, true
-	default:
-		return "", false
 	}
 }
 

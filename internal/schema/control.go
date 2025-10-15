@@ -16,8 +16,6 @@ const (
 	ControlMessageSubscribe ControlMessageType = "Subscribe"
 	// ControlMessageUnsubscribe requests subscription removal.
 	ControlMessageUnsubscribe ControlMessageType = "Unsubscribe"
-	// ControlMessageMergedSubscribe requests merged subscription activation.
-	ControlMessageMergedSubscribe ControlMessageType = "MergedSubscribe"
 	// ControlMessageSubmitOrder requests order submission through a provider adapter.
 	ControlMessageSubmitOrder ControlMessageType = "SubmitOrder"
 	// ControlMessageSetTradingMode requests trading mode updates.
@@ -56,13 +54,7 @@ type SubscribePayload struct {
 	EventTypes []string `json:"event_types"`
 }
 
-// MergedSubscribePayload configures merged multi-provider subscriptions.
-type MergedSubscribePayload struct {
-	Symbol      string      `json:"symbol"`
-	Providers   []string    `json:"providers"`
-	EventTypes  []string    `json:"event_types"`
-	MergeConfig MergeConfig `json:"merge_config"`
-}
+
 
 // SubmitOrderPayload carries request data for outbound order submission.
 type SubmitOrderPayload struct {
@@ -83,12 +75,7 @@ type QueryOrderPayload struct {
 	Symbol        string `json:"symbol"`
 }
 
-// MergeConfig defines windowed merge behaviour for merged subscriptions.
-type MergeConfig struct {
-	WindowDuration time.Duration `json:"window_duration"`
-	MaxEvents      int           `json:"max_events"`
-	PartialPolicy  string        `json:"partial_policy"`
-}
+
 
 // TradingModePayload flips the trading switch for a consumer.
 type TradingModePayload struct {

@@ -23,7 +23,7 @@ var (
 //nolint:revive // PoolManager matches specification terminology.
 type PoolManager struct {
 	mu           sync.RWMutex
-	pools        map[string]*BoundedPool
+	pools        map[string]*objectPool
 	shutdownCh   chan struct{}
 	shutdownOnce sync.Once
 	inFlight     sync.WaitGroup
@@ -33,7 +33,7 @@ type PoolManager struct {
 // NewPoolManager constructs an initialized pool manager ready for pool registration.
 func NewPoolManager() *PoolManager {
 	pm := new(PoolManager)
-	pm.pools = make(map[string]*BoundedPool)
+	pm.pools = make(map[string]*objectPool)
 	pm.shutdownCh = make(chan struct{})
 	return pm
 }
@@ -53,7 +53,19 @@ func (pm *PoolManager) RegisterPool(name string, capacity int, newFunc func() in
 		return fmt.Errorf("pool manager: pool %s already registered", name)
 	}
 
-	pm.pools[name] = NewBoundedPool(name, capacity, newFunc)
+	factory := func() PooledObject {
+		obj := newFunc()
+		po, ok := obj.(PooledObject)
+		if !ok {
+			panic(fmt.Sprintf("pool manager: object does not implement PooledObject: %T", obj))
+		}
+		return po
+	}
+	pool, err := newObjectPool(name, capacity, factory)
+	if err != nil {
+		return err
+	}
+	pm.pools[name] = pool
 	return nil
 }
 
@@ -70,7 +82,7 @@ func (pm *PoolManager) Get(ctx context.Context, poolName string) (PooledObject, 
 		return nil, err
 	}
 
-	obj, err := pool.Get(ctx)
+	obj, err := pool.get(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("pool manager: get %s: %w", poolName, err)
 	}
@@ -94,7 +106,9 @@ func (pm *PoolManager) Put(poolName string, obj interface{}) {
 
 	defer pm.inFlight.Done()
 	defer pm.activeCount.Add(-1)
-	pool.Put(po)
+	if err := pool.put(po); err != nil {
+		panic(err)
+	}
 }
 
 // Shutdown waits for all in-flight pooled objects to be returned or cancels
@@ -114,6 +128,13 @@ func (pm *PoolManager) Shutdown(ctx context.Context) error {
 
 	pm.shutdownOnce.Do(func() {
 		close(pm.shutdownCh)
+		pm.mu.Lock()
+		for _, pool := range pm.pools {
+			if pool != nil {
+				pool.close()
+			}
+		}
+		pm.mu.Unlock()
 	})
 
 	done := make(chan struct{})
@@ -132,7 +153,7 @@ func (pm *PoolManager) Shutdown(ctx context.Context) error {
 	}
 }
 
-func (pm *PoolManager) lookup(name string) (*BoundedPool, error) {
+func (pm *PoolManager) lookup(name string) (*objectPool, error) {
 	pm.mu.RLock()
 	pool, ok := pm.pools[name]
 	pm.mu.RUnlock()
@@ -147,22 +168,5 @@ func (pm *PoolManager) logOutstanding(remaining int64) {
 		return
 	}
 	log.Printf("pool manager: shutdown timed out with %d objects in flight", remaining)
-	pm.mu.RLock()
-	deferred := make([]*BoundedPool, 0, len(pm.pools))
-	for _, p := range pm.pools {
-		deferred = append(deferred, p)
-	}
-	pm.mu.RUnlock()
-	for _, pool := range deferred {
-		if pool == nil {
-			continue
-		}
-		stacks := pool.activeStacks()
-		if len(stacks) == 0 {
-			continue
-		}
-		for _, stack := range stacks {
-			log.Printf("pool manager: leak candidate in pool %s\n%s", pool.name, stack)
-		}
-	}
+	log.Printf("pool manager: outstanding pools may still hold borrowed objects")
 }

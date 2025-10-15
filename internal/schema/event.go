@@ -127,7 +127,6 @@ func (r RawInstance) Clone() RawInstance {
 type Event struct {
 	returned       bool
 	EventID        string    `json:"event_id"`
-	MergeID        *string   `json:"merge_id,omitempty"`
 	RoutingVersion int       `json:"routing_version"`
 	Provider       string    `json:"provider"`
 	Symbol         string    `json:"symbol"`
@@ -145,7 +144,6 @@ func (e *Event) Reset() {
 		return
 	}
 	e.EventID = ""
-	e.MergeID = nil
 	e.RoutingVersion = 0
 	e.Provider = ""
 	e.Symbol = ""

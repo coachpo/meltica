@@ -166,20 +166,17 @@ func (r *Runtime) releaseEvent(evt *schema.Event) {
 }
 
 func (r *Runtime) cloneForPublish(ctx context.Context, evt *schema.Event) *schema.Event {
-	if evt == nil {
-		return nil
-	}
-	cloned := schema.CloneEvent(evt)
-	if cloned == nil {
-		return nil
-	}
-	if r.rec != nil {
-		pooled, err := r.rec.BorrowEvent(ctx)
-		if err == nil && pooled != nil {
-			r.rec.CheckoutEvent(pooled)
-			*pooled = *cloned
-			return pooled
-		}
-	}
-	return cloned
+    if evt == nil {
+        return nil
+    }
+    if r.rec == nil {
+        return nil
+    }
+    pooled, err := r.rec.BorrowEvent(ctx)
+    if err != nil || pooled == nil {
+        return nil
+    }
+    r.rec.CheckoutEvent(pooled)
+    schema.CopyEvent(pooled, evt)
+    return pooled
 }

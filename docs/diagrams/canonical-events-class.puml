@@ -20,15 +20,15 @@ class ItemRef {
 
 class OrderRequest {
   +client_order_id: String
+  +consumer_id: String
   +provider: String
-  +account: String
   +symbol: String
-  +side: String
-  +type: String
-  +qty: Decimal
-  +price: Decimal?
-  +tif: String?
-  +meta: Map<String,Any>
+  +side: TradeSide
+  +order_type: OrderType
+  +quantity: String
+  +price: String?
+  +tif: String
+  +timestamp: Instant
 }
 
 class ExecReport {
@@ -48,13 +48,11 @@ class ExecReport {
 }
 
 class ControlCommand {
-  +command_id: String
+  +message_id: String
+  +consumer_id: String
   +type: String
-  +reply_to: String
-  +consistency: String
-  +timeout_ms: Long?
   +payload: Any
-  +meta: Map<String,Any>
+  +timestamp: Instant
 }
 
 class CommandAck {
@@ -64,10 +62,13 @@ class CommandAck {
 }
 
 class CommandResult {
-  +command_id: String
-  +result: Any
+  +message_id: String
+  +consumer_id: String
+  +success: Boolean
   +routing_version: Long
-  +reply_to: String
+  +error_message: String?
+  +result: Any?
+  +timestamp: Instant
 }
 
 CanonicalEvent "1" o- "*" ItemRef : payload

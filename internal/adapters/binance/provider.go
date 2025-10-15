@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"sort"
 	"strings"
 	"sync"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/coachpo/meltica/internal/dispatcher"
+	"github.com/coachpo/meltica/internal/recycler"
 	"github.com/coachpo/meltica/internal/schema"
 )
 
@@ -18,6 +20,7 @@ import (
 type ProviderOptions struct {
 	Topics    []string
 	Snapshots []RESTPoller
+	Recycler  recycler.Interface
 }
 
 // Provider streams canonical events from Binance transports.
@@ -44,6 +47,7 @@ type Provider struct {
 	bookMu    sync.Mutex
 	books     map[string]*BookAssembler
 	pending   map[string][]*schema.Event
+	rec       recycler.Interface
 }
 
 type routeHandle struct {
@@ -74,6 +78,7 @@ func NewProvider(name string, ws *WSClient, rest *RESTClient, opts ProviderOptio
 	provider.reports = make(map[string]schema.ExecReport)
 	provider.books = make(map[string]*BookAssembler)
 	provider.pending = make(map[string][]*schema.Event)
+	provider.rec = opts.Recycler
 	return provider
 }
 
@@ -232,29 +237,58 @@ func (p *Provider) handleOrder(order schema.OrderRequest) {
 	p.reports[key] = report
 	p.orderMu.Unlock()
 
-	evt := &schema.Event{
-		EventID:     fmt.Sprintf("execreport:%s", order.ClientOrderID),
-		Provider:    order.Provider,
-		Symbol:      order.Symbol,
-		Type:        schema.EventTypeExecReport,
-		SeqProvider: uint64(time.Now().UTC().UnixNano()),
-		IngestTS:    p.clock().UTC(),
-		EmitTS:      p.clock().UTC(),
-		Payload: schema.ExecReportPayload{
-			ClientOrderID:   order.ClientOrderID,
-			ExchangeOrderID: order.ClientOrderID,
-			State:           schema.ExecReportStateACK,
-			Side:            order.Side,
-			OrderType:       order.OrderType,
-			Price:           valueOrDefault(order.Price),
-			Quantity:        order.Quantity,
-			FilledQuantity:  "0",
-			RemainingQty:    order.Quantity,
-			AvgFillPrice:    "0",
-			Timestamp:       time.Now().UTC(),
-		},
+	evt := p.borrowEvent(p.ctx)
+	if evt == nil {
+		return
+	}
+	now := p.clock().UTC()
+	evt.EventID = fmt.Sprintf("execreport:%s", order.ClientOrderID)
+	evt.Provider = order.Provider
+	evt.Symbol = order.Symbol
+	evt.Type = schema.EventTypeExecReport
+	evt.SeqProvider = uint64(now.UnixNano())
+	evt.IngestTS = now
+	evt.EmitTS = now
+	evt.Payload = schema.ExecReportPayload{
+		ClientOrderID:   order.ClientOrderID,
+		ExchangeOrderID: order.ClientOrderID,
+		State:           schema.ExecReportStateACK,
+		Side:            order.Side,
+		OrderType:       order.OrderType,
+		Price:           valueOrDefault(order.Price),
+		Quantity:        order.Quantity,
+		FilledQuantity:  "0",
+		RemainingQty:    order.Quantity,
+		AvgFillPrice:    "0",
+		Timestamp:       time.Now().UTC(),
 	}
 	p.emitEvent(evt)
+}
+
+func (p *Provider) borrowEvent(ctx context.Context) *schema.Event {
+	if p.rec == nil {
+		return nil
+	}
+	requestCtx := ctx
+	if requestCtx == nil {
+		requestCtx = p.ctx
+	}
+	if requestCtx == nil {
+		requestCtx = context.Background()
+	}
+	evt, err := p.rec.BorrowEvent(requestCtx)
+	if err != nil {
+		log.Printf("binance provider %s: borrow canonical event failed: %v", p.name, err)
+		p.emitError(fmt.Errorf("borrow canonical event: %w", err))
+		return nil
+	}
+	if evt == nil {
+		log.Printf("binance provider %s: borrow canonical event returned nil", p.name)
+		p.emitError(fmt.Errorf("borrow canonical event: nil result"))
+		return nil
+	}
+	p.rec.CheckoutEvent(evt)
+	return evt
 }
 
 // QueryOrder returns the latest execution report for the provided identifiers.

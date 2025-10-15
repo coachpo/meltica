@@ -1,4 +1,4 @@
-package binance
+package shared
 
 import (
 	"context"
@@ -9,27 +9,28 @@ import (
 	"github.com/coachpo/meltica/internal/schema"
 )
 
-type routeSubscriber interface {
+// RouteSubscriber defines the subset of provider capabilities required to manage subscriptions.
+type RouteSubscriber interface {
 	SubscribeRoute(route dispatcher.Route) error
 	UnsubscribeRoute(typ schema.CanonicalType) error
 }
 
-// SubscriptionManager coordinates Binance native subscription updates.
+// SubscriptionManager coordinates native adapter subscription updates.
 type SubscriptionManager struct {
 	mu         sync.Mutex
 	active     map[schema.CanonicalType]dispatcher.Route
-	subscriber routeSubscriber
+	subscriber RouteSubscriber
 }
 
 // NewSubscriptionManager creates a new manager instance.
-func NewSubscriptionManager(subscriber routeSubscriber) *SubscriptionManager {
+func NewSubscriptionManager(subscriber RouteSubscriber) *SubscriptionManager {
 	manager := new(SubscriptionManager)
 	manager.active = make(map[schema.CanonicalType]dispatcher.Route)
 	manager.subscriber = subscriber
 	return manager
 }
 
-// Activate registers the given route as active and notifies the provider.
+// Activate registers the given route and notifies the provider.
 func (m *SubscriptionManager) Activate(ctx context.Context, route dispatcher.Route) error {
 	_ = ctx
 	if m.subscriber != nil {
@@ -57,7 +58,7 @@ func (m *SubscriptionManager) Deactivate(ctx context.Context, typ schema.Canonic
 	return nil
 }
 
-// ActiveRoutes exposes the currently active dispatcher routes.
+// ActiveRoutes exposes currently active dispatcher routes.
 func (m *SubscriptionManager) ActiveRoutes() map[schema.CanonicalType]dispatcher.Route {
 	m.mu.Lock()
 	defer m.mu.Unlock()
