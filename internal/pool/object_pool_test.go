@@ -62,3 +62,38 @@ func TestPoolTryGetAndTryPut(t *testing.T) {
 
 	pm.Put("CanonicalEvent", objAgain)
 }
+
+func TestBorrowCanonicalEvents(t *testing.T) {
+	t.Parallel()
+
+	pm := NewPoolManager()
+	require.NoError(t, pm.RegisterPool("CanonicalEvent", 4, func() interface{} {
+		return new(schema.Event)
+	}))
+
+	events, err := pm.BorrowCanonicalEvents(context.Background(), 3)
+	require.NoError(t, err)
+	require.Len(t, events, 3)
+
+	pm.RecycleCanonicalEvents(events)
+}
+
+func TestTryBorrowCanonicalEvents(t *testing.T) {
+	t.Parallel()
+
+	pm := NewPoolManager()
+	require.NoError(t, pm.RegisterPool("CanonicalEvent", 2, func() interface{} {
+		return new(schema.Event)
+	}))
+
+	events, ok, err := pm.TryBorrowCanonicalEvents(2)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Len(t, events, 2)
+	pm.RecycleCanonicalEvents(events)
+
+	events, ok, err = pm.TryBorrowCanonicalEvents(3)
+	require.NoError(t, err)
+	require.False(t, ok)
+	require.Nil(t, events)
+}

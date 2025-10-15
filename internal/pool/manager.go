@@ -94,6 +94,24 @@ func (pm *PoolManager) Get(ctx context.Context, poolName string) (PooledObject, 
 	return obj, nil
 }
 
+// GetMany acquires multiple objects from the named pool.
+func (pm *PoolManager) GetMany(ctx context.Context, poolName string, count int) ([]PooledObject, error) {
+	if count <= 0 {
+		return nil, nil
+	}
+
+	objects := make([]PooledObject, 0, count)
+	for i := 0; i < count; i++ {
+		obj, err := pm.Get(ctx, poolName)
+		if err != nil {
+			pm.PutMany(poolName, objects)
+			return nil, err
+		}
+		objects = append(objects, obj)
+	}
+	return objects, nil
+}
+
 // TryGet attempts to acquire an object from the named pool without blocking.
 // It returns (nil, false, nil) when no objects are currently available.
 func (pm *PoolManager) TryGet(poolName string) (PooledObject, bool, error) {
@@ -118,6 +136,28 @@ func (pm *PoolManager) TryGet(poolName string) (PooledObject, bool, error) {
 	return obj, true, nil
 }
 
+// TryGetMany attempts to acquire multiple objects without blocking.
+func (pm *PoolManager) TryGetMany(poolName string, count int) ([]PooledObject, bool, error) {
+	if count <= 0 {
+		return nil, true, nil
+	}
+
+	objects := make([]PooledObject, 0, count)
+	for i := 0; i < count; i++ {
+		obj, ok, err := pm.TryGet(poolName)
+		if err != nil {
+			pm.PutMany(poolName, objects)
+			return nil, false, err
+		}
+		if !ok {
+			pm.PutMany(poolName, objects)
+			return nil, false, nil
+		}
+		objects = append(objects, obj)
+	}
+	return objects, true, nil
+}
+
 // Put returns an object to the named pool, panicking if the pool is unknown or the object type is invalid.
 func (pm *PoolManager) Put(poolName string, obj interface{}) {
 	po, ok := obj.(PooledObject)
@@ -134,6 +174,16 @@ func (pm *PoolManager) Put(poolName string, obj interface{}) {
 	defer pm.activeCount.Add(-1)
 	if err := pool.put(po); err != nil {
 		panic(err)
+	}
+}
+
+// PutMany returns multiple objects to the named pool.
+func (pm *PoolManager) PutMany(poolName string, objects []PooledObject) {
+	for _, obj := range objects {
+		if obj == nil {
+			continue
+		}
+		pm.Put(poolName, obj)
 	}
 }
 
@@ -154,8 +204,45 @@ func (pm *PoolManager) TryPut(poolName string, obj interface{}) (bool, error) {
 	if success {
 		pm.inFlight.Done()
 		pm.activeCount.Add(-1)
+	} else if putErr == nil {
+		log.Printf("pool manager: try put rejected for pool %s", poolName)
 	}
 	return success, putErr
+}
+
+// TryPutMany attempts to return multiple objects without blocking.
+func (pm *PoolManager) TryPutMany(poolName string, objects []PooledObject) (bool, error) {
+	if len(objects) == 0 {
+		return true, nil
+	}
+
+	pool, err := pm.lookup(poolName)
+	if err != nil {
+		return false, err
+	}
+
+	success := true
+	for _, obj := range objects {
+		if obj == nil {
+			continue
+		}
+		po, ok := obj.(PooledObject)
+		if !ok {
+			return false, fmt.Errorf("pool manager: object does not implement PooledObject: %T", obj)
+		}
+		putSuccess, putErr := pool.tryPut(po)
+		if putSuccess {
+			pm.inFlight.Done()
+			pm.activeCount.Add(-1)
+			continue
+		}
+		if putErr != nil {
+			return false, putErr
+		}
+		log.Printf("pool manager: try put many rejected for pool %s", poolName)
+		success = false
+	}
+	return success, nil
 }
 
 // Shutdown waits for all in-flight pooled objects to be returned or cancels
@@ -236,6 +323,33 @@ func (pm *PoolManager) BorrowCanonicalEvent(ctx context.Context) (*schema.Event,
 	return evt, nil
 }
 
+// BorrowCanonicalEvents acquires multiple CanonicalEvents from the pool.
+func (pm *PoolManager) BorrowCanonicalEvents(ctx context.Context, count int) ([]*schema.Event, error) {
+	if pm == nil {
+		return nil, fmt.Errorf("canonical event pool unavailable")
+	}
+	if count <= 0 {
+		return nil, nil
+	}
+
+	objects, err := pm.GetMany(ctx, "CanonicalEvent", count)
+	if err != nil {
+		return nil, err
+	}
+
+	events := make([]*schema.Event, len(objects))
+	for i, obj := range objects {
+		evt, ok := obj.(*schema.Event)
+		if !ok {
+			pm.PutMany("CanonicalEvent", objects)
+			return nil, fmt.Errorf("canonical event pool: unexpected type %T", obj)
+		}
+		evt.Reset()
+		events[i] = evt
+	}
+	return events, nil
+}
+
 // TryBorrowCanonicalEvent attempts to acquire a CanonicalEvent without blocking.
 func (pm *PoolManager) TryBorrowCanonicalEvent() (*schema.Event, bool, error) {
 	if pm == nil {
@@ -254,6 +368,33 @@ func (pm *PoolManager) TryBorrowCanonicalEvent() (*schema.Event, bool, error) {
 	return evt, true, nil
 }
 
+// TryBorrowCanonicalEvents attempts to acquire multiple CanonicalEvents without blocking.
+func (pm *PoolManager) TryBorrowCanonicalEvents(count int) ([]*schema.Event, bool, error) {
+	if pm == nil {
+		return nil, false, fmt.Errorf("canonical event pool unavailable")
+	}
+	if count <= 0 {
+		return nil, true, nil
+	}
+
+	objects, ok, err := pm.TryGetMany("CanonicalEvent", count)
+	if err != nil || !ok {
+		return nil, ok, err
+	}
+
+	events := make([]*schema.Event, len(objects))
+	for i, obj := range objects {
+		evt, typeOK := obj.(*schema.Event)
+		if !typeOK {
+			pm.PutMany("CanonicalEvent", objects)
+			return nil, false, fmt.Errorf("canonical event pool: unexpected type %T", obj)
+		}
+		evt.Reset()
+		events[i] = evt
+	}
+	return events, true, nil
+}
+
 // RecycleCanonicalEvent returns the event to the pool.
 func (pm *PoolManager) RecycleCanonicalEvent(evt *schema.Event) {
 	if pm == nil || evt == nil {
@@ -265,15 +406,56 @@ func (pm *PoolManager) RecycleCanonicalEvent(evt *schema.Event) {
 // TryRecycleCanonicalEvent attempts to recycle the event without blocking.
 func (pm *PoolManager) TryRecycleCanonicalEvent(evt *schema.Event) bool {
 	if pm == nil || evt == nil {
+		log.Printf("pool manager: try recycle canonical event skipped (manager=%v, event=nil? %t)", pm, evt == nil)
 		return false
 	}
 	ok, err := pm.TryPut("CanonicalEvent", evt)
+	if err != nil {
+		log.Printf("pool manager: try recycle canonical event error: %v", err)
+	}
 	return err == nil && ok
 }
 
 // RecycleCanonicalEvents recycles a slice of events to the pool.
 func (pm *PoolManager) RecycleCanonicalEvents(events []*schema.Event) {
-	for _, evt := range events {
-		pm.RecycleCanonicalEvent(evt)
+	if pm == nil || len(events) == 0 {
+		return
 	}
+	objects := make([]PooledObject, 0, len(events))
+	for _, evt := range events {
+		if evt == nil {
+			continue
+		}
+		objects = append(objects, evt)
+	}
+	pm.PutMany("CanonicalEvent", objects)
+}
+
+// TryRecycleCanonicalEvents attempts to recycle multiple events without blocking.
+func (pm *PoolManager) TryRecycleCanonicalEvents(events []*schema.Event) bool {
+	if pm == nil {
+		log.Printf("pool manager: try recycle canonical events skipped (manager nil)")
+		return false
+	}
+	if len(events) == 0 {
+		return true
+	}
+
+	objects := make([]PooledObject, 0, len(events))
+	for _, evt := range events {
+		if evt == nil {
+			log.Printf("pool manager: try recycle canonical events encountered nil event")
+			continue
+		}
+		objects = append(objects, evt)
+	}
+	ok, err := pm.TryPutMany("CanonicalEvent", objects)
+	if err != nil {
+		log.Printf("pool manager: try recycle canonical events error: %v", err)
+		return false
+	}
+	if !ok {
+		log.Printf("pool manager: try recycle canonical events rejected by pool")
+	}
+	return ok
 }
