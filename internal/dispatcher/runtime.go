@@ -7,7 +7,6 @@ import (
 	"github.com/coachpo/meltica/config"
 	"github.com/coachpo/meltica/internal/bus/databus"
 	"github.com/coachpo/meltica/internal/pool"
-	"github.com/coachpo/meltica/internal/recycler"
 	"github.com/coachpo/meltica/internal/schema"
 )
 
@@ -16,7 +15,6 @@ type Runtime struct {
 	bus            databus.Bus
 	table          *Table
 	pools          *pool.PoolManager
-	rec            recycler.Interface
 	cfg            config.DispatcherRuntimeConfig
 	ordering       *StreamOrdering
 	clock          func() time.Time
@@ -26,7 +24,7 @@ type Runtime struct {
 }
 
 // NewRuntime constructs a dispatcher runtime instance.
-func NewRuntime(bus databus.Bus, table *Table, pools *pool.PoolManager, rec recycler.Interface, cfg config.DispatcherRuntimeConfig, metrics interface{}) *Runtime {
+func NewRuntime(bus databus.Bus, table *Table, pools *pool.PoolManager, cfg config.DispatcherRuntimeConfig, metrics interface{}) *Runtime {
 	// metrics parameter is ignored - observability removed
 	clock := time.Now
 	ordering := NewStreamOrdering(cfg.StreamOrdering, clock)
@@ -34,7 +32,6 @@ func NewRuntime(bus databus.Bus, table *Table, pools *pool.PoolManager, rec recy
 	runtime.bus = bus
 	runtime.table = table
 	runtime.pools = pools
-	runtime.rec = rec
 	runtime.cfg = cfg
 	runtime.ordering = ordering
 	runtime.clock = clock
@@ -152,31 +149,17 @@ func (r *Runtime) currentRoutingVersion() int {
 }
 
 func (r *Runtime) releaseEvent(evt *schema.Event) {
-	if evt == nil || r.pools == nil {
-		if r.rec != nil {
-			r.rec.RecycleEvent(evt)
-		}
-		return
-	}
-	if r.rec != nil {
-		r.rec.RecycleEvent(evt)
-		return
-	}
-	r.pools.Put("CanonicalEvent", evt)
+	pool.RecycleCanonicalEvent(r.pools, evt)
 }
 
 func (r *Runtime) cloneForPublish(ctx context.Context, evt *schema.Event) *schema.Event {
-    if evt == nil {
-        return nil
-    }
-    if r.rec == nil {
-        return nil
-    }
-    pooled, err := r.rec.BorrowEvent(ctx)
-    if err != nil || pooled == nil {
-        return nil
-    }
-    r.rec.CheckoutEvent(pooled)
-    schema.CopyEvent(pooled, evt)
-    return pooled
+	if evt == nil {
+		return nil
+	}
+	pooled, err := pool.BorrowCanonicalEvent(ctx, r.pools)
+	if err != nil || pooled == nil {
+		return nil
+	}
+	schema.CopyEvent(pooled, evt)
+	return pooled
 }

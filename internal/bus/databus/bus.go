@@ -4,7 +4,7 @@ package databus
 import (
 	"context"
 
-	"github.com/coachpo/meltica/internal/recycler"
+	"github.com/coachpo/meltica/internal/pool"
 	"github.com/coachpo/meltica/internal/schema"
 )
 
@@ -23,7 +23,7 @@ type Bus interface {
 type MemoryConfig struct {
 	BufferSize    int
 	FanoutWorkers int
-	Recycler      recycler.Interface
+	Pools         *pool.PoolManager
 }
 
 func (c MemoryConfig) normalize() MemoryConfig {

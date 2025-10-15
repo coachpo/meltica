@@ -12,7 +12,7 @@ import (
 
 	"github.com/coachpo/meltica/internal/bus/controlbus"
 	"github.com/coachpo/meltica/internal/bus/databus"
-	"github.com/coachpo/meltica/internal/recycler"
+	"github.com/coachpo/meltica/internal/pool"
 	"github.com/coachpo/meltica/internal/schema"
 )
 
@@ -22,7 +22,7 @@ type Lambda struct {
 	id             string
 	bus            databus.Bus
 	control        controlbus.Bus
-	rec            recycler.Interface
+	pools          *pool.PoolManager
 	logger         *log.Logger
 	routingVersion atomic.Int64
 	tradingEnabled atomic.Bool
@@ -30,14 +30,14 @@ type Lambda struct {
 }
 
 // NewLambda constructs a lambda consumer that prints received events.
-func NewLambda(id string, bus databus.Bus, rec recycler.Interface, logger *log.Logger) *Lambda {
+func NewLambda(id string, bus databus.Bus, pools *pool.PoolManager, logger *log.Logger) *Lambda {
 	if id == "" {
 		id = "lambda-consumer"
 	}
 	return &Lambda{
 		id:         id,
 		bus:        bus,
-		rec:        rec,
+		pools:      pools,
 		logger:     logger,
 		consumerID: id,
 	}
@@ -263,10 +263,10 @@ func (l *Lambda) processControlResult(evt *schema.Event) {
 }
 
 func (l *Lambda) recycleIfNeeded(evt *schema.Event) {
-	if l.rec == nil || evt == nil {
+	if evt == nil {
 		return
 	}
-	l.rec.RecycleEvent(evt)
+	pool.RecycleCanonicalEvent(l.pools, evt)
 }
 
 func (l *Lambda) logControlAck(payload schema.ControlAckPayload) {

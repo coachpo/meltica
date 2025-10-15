@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/coachpo/meltica/internal/bus/databus"
-	"github.com/coachpo/meltica/internal/recycler"
+	"github.com/coachpo/meltica/internal/pool"
 	"github.com/coachpo/meltica/internal/schema"
 )
 
@@ -16,19 +16,19 @@ import (
 type OrderBookLambda struct {
 	id     string
 	bus    databus.Bus
-	rec    recycler.Interface
+	pools  *pool.PoolManager
 	logger *log.Logger
 }
 
 // NewOrderBookLambda creates a lambda that processes only order book events.
-func NewOrderBookLambda(id string, bus databus.Bus, rec recycler.Interface, logger *log.Logger) *OrderBookLambda {
+func NewOrderBookLambda(id string, bus databus.Bus, pools *pool.PoolManager, logger *log.Logger) *OrderBookLambda {
 	if id == "" {
 		id = "orderbook-lambda"
 	}
 	return &OrderBookLambda{
 		id:     id,
 		bus:    bus,
-		rec:    rec,
+		pools:  pools,
 		logger: logger,
 	}
 }
@@ -102,48 +102,36 @@ func (l *OrderBookLambda) consumeUpdates(ctx context.Context, subscriptionID dat
 
 func (l *OrderBookLambda) handleBookSnapshot(evt *schema.Event) {
 	if evt == nil || evt.Type != schema.EventTypeBookSnapshot {
-		if l.rec != nil && evt != nil {
-			l.rec.RecycleEvent(evt)
-		}
+		pool.RecycleCanonicalEvent(l.pools, evt)
 		return
 	}
 
 	payload, ok := evt.Payload.(schema.BookSnapshotPayload)
 	if !ok {
-		if l.rec != nil {
-			l.rec.RecycleEvent(evt)
-		}
+		pool.RecycleCanonicalEvent(l.pools, evt)
 		return
 	}
 
 	l.printBookSnapshot(evt, payload)
 
-	if l.rec != nil {
-		l.rec.RecycleEvent(evt)
-	}
+	pool.RecycleCanonicalEvent(l.pools, evt)
 }
 
 func (l *OrderBookLambda) handleBookUpdate(evt *schema.Event) {
 	if evt == nil || evt.Type != schema.EventTypeBookUpdate {
-		if l.rec != nil && evt != nil {
-			l.rec.RecycleEvent(evt)
-		}
+		pool.RecycleCanonicalEvent(l.pools, evt)
 		return
 	}
 
 	payload, ok := evt.Payload.(schema.BookUpdatePayload)
 	if !ok {
-		if l.rec != nil {
-			l.rec.RecycleEvent(evt)
-		}
+		pool.RecycleCanonicalEvent(l.pools, evt)
 		return
 	}
 
 	l.printBookUpdate(evt, payload)
 
-	if l.rec != nil {
-		l.rec.RecycleEvent(evt)
-	}
+	pool.RecycleCanonicalEvent(l.pools, evt)
 }
 
 func (l *OrderBookLambda) printBookSnapshot(evt *schema.Event, payload schema.BookSnapshotPayload) {
@@ -213,7 +201,7 @@ func (l *OrderBookLambda) formatTopLevels(bids, asks []schema.PriceLevel, levels
 	}
 
 	var parts []string
-	
+
 	// Add top bids
 	maxBids := levels
 	if maxBids > len(bids) {

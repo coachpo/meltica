@@ -9,7 +9,7 @@ import (
 	concpool "github.com/sourcegraph/conc/pool"
 
 	"github.com/coachpo/meltica/errs"
-	"github.com/coachpo/meltica/internal/recycler"
+	"github.com/coachpo/meltica/internal/pool"
 	"github.com/coachpo/meltica/internal/schema"
 )
 
@@ -19,7 +19,7 @@ type MemoryBus struct {
 
 	ctx    context.Context
 	cancel context.CancelFunc
-	rec    recycler.Interface
+	pools  *pool.PoolManager
 
 	mu           sync.RWMutex
 	subscribers  map[schema.EventType]map[SubscriptionID]*subscriber
@@ -43,7 +43,7 @@ func NewMemoryBus(cfg MemoryConfig) *MemoryBus {
 	bus.cfg = cfg
 	bus.ctx = ctx
 	bus.cancel = cancel
-	bus.rec = cfg.Recycler
+	bus.pools = cfg.Pools
 	bus.subscribers = make(map[schema.EventType]map[SubscriptionID]*subscriber)
 	bus.workers = cfg.FanoutWorkers
 	return bus
@@ -234,20 +234,17 @@ func (b *MemoryBus) recycle(evt *schema.Event) {
 	if evt == nil {
 		return
 	}
-	if b.rec != nil {
-		b.rec.RecycleEvent(evt)
-	}
+	pool.RecycleCanonicalEvent(b.pools, evt)
 }
 
 func (b *MemoryBus) borrowFanoutEvent(ctx context.Context, src *schema.Event) (*schema.Event, error) {
-	if b.rec == nil || src == nil {
-		return nil, fmt.Errorf("databus/publish: recycler unavailable for fan-out duplication")
+	if b.pools == nil || src == nil {
+		return nil, fmt.Errorf("databus/publish: canonical event pool unavailable")
 	}
-	dup, err := b.rec.BorrowEvent(ctx)
+	dup, err := pool.BorrowCanonicalEvent(ctx, b.pools)
 	if err != nil || dup == nil {
 		return nil, fmt.Errorf("databus/publish: borrow duplicate: %w", err)
 	}
-	b.rec.CheckoutEvent(dup)
 	schema.CopyEvent(dup, src)
 	return dup, nil
 }

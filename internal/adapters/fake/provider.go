@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/coachpo/meltica/internal/dispatcher"
-	"github.com/coachpo/meltica/internal/recycler"
+	"github.com/coachpo/meltica/internal/pool"
 	"github.com/coachpo/meltica/internal/schema"
 )
 
@@ -28,7 +28,7 @@ type Options struct {
 	TradeInterval        time.Duration
 	BookSnapshotInterval time.Duration
 	BookUpdateInterval   time.Duration
-	Recycler             recycler.Interface
+	Pools                *pool.PoolManager
 }
 
 // Provider emits synthetic market data covering tickers, trades, and order book events.
@@ -52,7 +52,7 @@ type Provider struct {
 	mu     sync.Mutex
 	routes map[schema.CanonicalType]*routeHandle
 
-	rec recycler.Interface
+	pools *pool.PoolManager
 
 	seqMu sync.Mutex
 	seq   map[string]uint64
@@ -129,7 +129,7 @@ func NewProvider(opts Options) *Provider {
 		state:                make(map[string]*instrumentState),
 		reports:              make(map[string]schema.ExecReport),
 		clock:                time.Now,
-		rec:                  opts.Recycler,
+		pools:                opts.Pools,
 	}
 	return p
 }
@@ -476,9 +476,6 @@ func (p *Provider) newEvent(evtType schema.EventType, instrument string, seq uin
 }
 
 func (p *Provider) borrowEvent(ctx context.Context) *schema.Event {
-	if p.rec == nil {
-		return nil
-	}
 	requestCtx := ctx
 	if requestCtx == nil {
 		requestCtx = p.ctx
@@ -486,18 +483,12 @@ func (p *Provider) borrowEvent(ctx context.Context) *schema.Event {
 	if requestCtx == nil {
 		requestCtx = context.Background()
 	}
-	evt, err := p.rec.BorrowEvent(requestCtx)
+	evt, err := pool.BorrowCanonicalEvent(requestCtx, p.pools)
 	if err != nil {
 		log.Printf("fake provider %s: borrow canonical event failed: %v", p.name, err)
 		p.emitError(fmt.Errorf("borrow canonical event: %w", err))
 		return nil
 	}
-	if evt == nil {
-		log.Printf("fake provider %s: borrow canonical event returned nil", p.name)
-		p.emitError(fmt.Errorf("borrow canonical event: nil result"))
-		return nil
-	}
-	p.rec.CheckoutEvent(evt)
 	return evt
 }
 

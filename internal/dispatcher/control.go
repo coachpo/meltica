@@ -10,7 +10,7 @@ import (
 
 	"github.com/coachpo/meltica/internal/bus/controlbus"
 	"github.com/coachpo/meltica/internal/bus/databus"
-	"github.com/coachpo/meltica/internal/recycler"
+	"github.com/coachpo/meltica/internal/pool"
 	"github.com/coachpo/meltica/internal/schema"
 )
 
@@ -50,10 +50,10 @@ func WithTradingState(store TradingStateStore) ControllerOption {
 }
 
 // WithControlPublisher configures the dispatcher to emit control acknowledgements on the data bus.
-func WithControlPublisher(bus databus.Bus, rec recycler.Interface) ControllerOption {
+func WithControlPublisher(bus databus.Bus, pools *pool.PoolManager) ControllerOption {
 	return func(c *Controller) {
 		c.eventBus = bus
-		c.recycler = rec
+		c.pools = pools
 	}
 }
 
@@ -69,7 +69,7 @@ type Controller struct {
 	version atomic.Int64
 
 	eventBus databus.Bus
-	recycler recycler.Interface
+	pools    *pool.PoolManager
 }
 
 // NewController creates a dispatcher control controller.
@@ -390,14 +390,10 @@ func (c *Controller) publishEvent(ctx context.Context, evt *schema.Event) {
 }
 
 func (c *Controller) borrowEvent(ctx context.Context) *schema.Event {
-	if c.recycler == nil {
+	evt, err := pool.BorrowCanonicalEvent(ctx, c.pools)
+	if err != nil {
 		return nil
 	}
-	evt, err := c.recycler.BorrowEvent(ctx)
-	if err != nil || evt == nil {
-		return nil
-	}
-	c.recycler.CheckoutEvent(evt)
 	return evt
 }
 
@@ -405,9 +401,7 @@ func (c *Controller) recycleEvent(evt *schema.Event) {
 	if evt == nil {
 		return
 	}
-	if c.recycler != nil {
-		c.recycler.RecycleEvent(evt)
-	}
+	pool.RecycleCanonicalEvent(c.pools, evt)
 }
 
 func (c *Controller) bumpVersion() int64 {

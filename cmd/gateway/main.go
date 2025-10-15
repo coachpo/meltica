@@ -21,7 +21,6 @@ import (
 	"github.com/coachpo/meltica/internal/consumer"
 	"github.com/coachpo/meltica/internal/dispatcher"
 	"github.com/coachpo/meltica/internal/pool"
-	"github.com/coachpo/meltica/internal/recycler"
 	"github.com/coachpo/meltica/internal/schema"
 )
 
@@ -59,12 +58,10 @@ func main() {
 		}
 	}()
 
-	rec := recycler.NewManager(poolMgr)
-
 	bus := databus.NewMemoryBus(databus.MemoryConfig{
 		BufferSize:    streamingCfg.Databus.BufferSize,
 		FanoutWorkers: 8,
-		Recycler:      rec,
+		Pools:         poolMgr,
 	})
 	defer bus.Close()
 
@@ -84,7 +81,7 @@ func main() {
 		TickerInterval:     1000 * time.Microsecond,
 		TradeInterval:      1000 * time.Microsecond,
 		BookUpdateInterval: 1000 * time.Microsecond,
-		Recycler:           rec,
+		Pools:              poolMgr,
 	})
 	if err := provider.Start(ctx); err != nil {
 		logger.Fatalf("start provider: %v", err)
@@ -98,7 +95,7 @@ func main() {
 		},
 	}
 
-	dispatcherRuntime := dispatcher.NewRuntime(bus, table, poolMgr, rec, runtimeCfg, nil)
+	dispatcherRuntime := dispatcher.NewRuntime(bus, table, poolMgr, runtimeCfg, nil)
 	dispatchErrs := dispatcherRuntime.Start(ctx, provider.Events())
 
 	go logErrors(logger, "provider", provider.Errors())
@@ -113,9 +110,9 @@ func main() {
 	}
 
 	// Create three specialized lambda consumers
-	tradeLambda := consumer.NewTradeLambda("trade-consumer", bus, rec, logger)
-	tickerLambda := consumer.NewTickerLambda("ticker-consumer", bus, rec, logger)
-	orderbookLambda := consumer.NewOrderBookLambda("orderbook-consumer", bus, rec, logger)
+	tradeLambda := consumer.NewTradeLambda("trade-consumer", bus, poolMgr, logger)
+	tickerLambda := consumer.NewTickerLambda("ticker-consumer", bus, poolMgr, logger)
+	orderbookLambda := consumer.NewOrderBookLambda("orderbook-consumer", bus, poolMgr, logger)
 
 	// Start all three lambdas
 	if tradeErrs, err := tradeLambda.Start(ctx); err != nil {
@@ -159,7 +156,7 @@ func main() {
 		subscriptionManager,
 		dispatcher.WithOrderSubmitter(provider),
 		dispatcher.WithTradingState(tradingState),
-		dispatcher.WithControlPublisher(bus, rec),
+		dispatcher.WithControlPublisher(bus, poolMgr),
 	)
 	go func() {
 		if err := controller.Start(ctx); err != nil && err != context.Canceled {

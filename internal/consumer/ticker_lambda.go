@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/coachpo/meltica/internal/bus/databus"
-	"github.com/coachpo/meltica/internal/recycler"
+	"github.com/coachpo/meltica/internal/pool"
 	"github.com/coachpo/meltica/internal/schema"
 )
 
@@ -15,19 +15,19 @@ import (
 type TickerLambda struct {
 	id     string
 	bus    databus.Bus
-	rec    recycler.Interface
+	pools  *pool.PoolManager
 	logger *log.Logger
 }
 
 // NewTickerLambda creates a lambda that processes only ticker events.
-func NewTickerLambda(id string, bus databus.Bus, rec recycler.Interface, logger *log.Logger) *TickerLambda {
+func NewTickerLambda(id string, bus databus.Bus, pools *pool.PoolManager, logger *log.Logger) *TickerLambda {
 	if id == "" {
 		id = "ticker-lambda"
 	}
 	return &TickerLambda{
 		id:     id,
 		bus:    bus,
-		rec:    rec,
+		pools:  pools,
 		logger: logger,
 	}
 }
@@ -71,25 +71,19 @@ func (l *TickerLambda) consume(ctx context.Context, subscriptionID databus.Subsc
 
 func (l *TickerLambda) handleTickerEvent(evt *schema.Event) {
 	if evt == nil || evt.Type != schema.EventTypeTicker {
-		if l.rec != nil && evt != nil {
-			l.rec.RecycleEvent(evt)
-		}
+		pool.RecycleCanonicalEvent(l.pools, evt)
 		return
 	}
 
 	payload, ok := evt.Payload.(schema.TickerPayload)
 	if !ok {
-		if l.rec != nil {
-			l.rec.RecycleEvent(evt)
-		}
+		pool.RecycleCanonicalEvent(l.pools, evt)
 		return
 	}
 
 	l.printTicker(evt, payload)
 
-	if l.rec != nil {
-		l.rec.RecycleEvent(evt)
-	}
+	pool.RecycleCanonicalEvent(l.pools, evt)
 }
 
 func (l *TickerLambda) printTicker(evt *schema.Event, payload schema.TickerPayload) {

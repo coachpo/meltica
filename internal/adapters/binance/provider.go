@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/coachpo/meltica/internal/dispatcher"
-	"github.com/coachpo/meltica/internal/recycler"
+	"github.com/coachpo/meltica/internal/pool"
 	"github.com/coachpo/meltica/internal/schema"
 )
 
@@ -20,7 +20,7 @@ import (
 type ProviderOptions struct {
 	Topics    []string
 	Snapshots []RESTPoller
-	Recycler  recycler.Interface
+	Pools     *pool.PoolManager
 }
 
 // Provider streams canonical events from Binance transports.
@@ -47,7 +47,7 @@ type Provider struct {
 	bookMu    sync.Mutex
 	books     map[string]*BookAssembler
 	pending   map[string][]*schema.Event
-	rec       recycler.Interface
+	pools     *pool.PoolManager
 }
 
 type routeHandle struct {
@@ -78,7 +78,7 @@ func NewProvider(name string, ws *WSClient, rest *RESTClient, opts ProviderOptio
 	provider.reports = make(map[string]schema.ExecReport)
 	provider.books = make(map[string]*BookAssembler)
 	provider.pending = make(map[string][]*schema.Event)
-	provider.rec = opts.Recycler
+	provider.pools = opts.Pools
 	return provider
 }
 
@@ -266,9 +266,6 @@ func (p *Provider) handleOrder(order schema.OrderRequest) {
 }
 
 func (p *Provider) borrowEvent(ctx context.Context) *schema.Event {
-	if p.rec == nil {
-		return nil
-	}
 	requestCtx := ctx
 	if requestCtx == nil {
 		requestCtx = p.ctx
@@ -276,18 +273,12 @@ func (p *Provider) borrowEvent(ctx context.Context) *schema.Event {
 	if requestCtx == nil {
 		requestCtx = context.Background()
 	}
-	evt, err := p.rec.BorrowEvent(requestCtx)
+	evt, err := pool.BorrowCanonicalEvent(requestCtx, p.pools)
 	if err != nil {
 		log.Printf("binance provider %s: borrow canonical event failed: %v", p.name, err)
 		p.emitError(fmt.Errorf("borrow canonical event: %w", err))
 		return nil
 	}
-	if evt == nil {
-		log.Printf("binance provider %s: borrow canonical event returned nil", p.name)
-		p.emitError(fmt.Errorf("borrow canonical event: nil result"))
-		return nil
-	}
-	p.rec.CheckoutEvent(evt)
 	return evt
 }
 
