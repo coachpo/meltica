@@ -14,7 +14,6 @@ import (
 	"github.com/coachpo/meltica/internal/adapters/binance"
 	"github.com/coachpo/meltica/internal/bus/databus"
 	"github.com/coachpo/meltica/internal/dispatcher"
-	"github.com/coachpo/meltica/internal/observability"
 	"github.com/coachpo/meltica/internal/pool"
 	"github.com/coachpo/meltica/internal/schema"
 )
@@ -52,7 +51,7 @@ func BenchmarkEndToEndLatency(b *testing.B) {
 			MaxBufferSize:     2048,
 		},
 	}
-	dispatch := dispatcher.NewRuntime(bus, table, pools, nil, dispatchCfg, observability.NewRuntimeMetrics())
+	dispatch := dispatcher.NewRuntime(bus, table, pools, nil, dispatchCfg, nil)
 	dispatchErrs := dispatch.Start(ctx, provider.Events())
 	providerErrs := provider.Errors()
 

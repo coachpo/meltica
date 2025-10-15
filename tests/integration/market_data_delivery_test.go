@@ -12,7 +12,6 @@ import (
 	"github.com/coachpo/meltica/internal/adapters/binance"
 	"github.com/coachpo/meltica/internal/bus/databus"
 	"github.com/coachpo/meltica/internal/dispatcher"
-	"github.com/coachpo/meltica/internal/observability"
 	"github.com/coachpo/meltica/internal/schema"
 )
 
@@ -50,7 +49,6 @@ func TestMarketDataEndToEndDelivery(t *testing.T) {
 	}()
 
 	bus := databus.NewMemoryBus(databus.MemoryConfig{BufferSize: 16})
-	metrics := observability.NewRuntimeMetrics()
 	table := dispatcher.NewTable()
 	dispatcherCfg := config.DispatcherRuntimeConfig{
 		StreamOrdering: config.StreamOrderingConfig{
@@ -59,7 +57,7 @@ func TestMarketDataEndToEndDelivery(t *testing.T) {
 			MaxBufferSize:     16,
 		},
 	}
-	dispatch := dispatcher.NewRuntime(bus, table, nil, nil, dispatcherCfg, metrics)
+	dispatch := dispatcher.NewRuntime(bus, table, nil, nil, dispatcherCfg, nil)
 	dispatchErrs := dispatch.Start(ctx, provider.Events())
 	go func() {
 		for err := range provider.Errors() {

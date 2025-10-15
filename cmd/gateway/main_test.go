@@ -57,12 +57,11 @@ func TestCollectEventTypesDeduplicates(t *testing.T) {
 		schema.CanonicalType("ORDERBOOK.DELTA"):  {Type: schema.CanonicalType("ORDERBOOK.DELTA")},
 		schema.CanonicalType("UNKNOWN"):          {Type: schema.CanonicalType("UNKNOWN")},
 	}
-	events := collectEventTypes(routes)
-	expected := map[schema.EventType]struct{}{
-		schema.EventTypeTrade:      {},
-		schema.EventTypeBookUpdate: {},
-	}
-	require.Equal(t, expected, events)
+	actual := collectEventTypes(routes)
+	require.ElementsMatch(t, []schema.EventType{
+		schema.EventTypeTrade,
+		schema.EventTypeBookUpdate,
+	}, actual)
 }
 
 func TestResolveConfigPathDefaults(t *testing.T) {

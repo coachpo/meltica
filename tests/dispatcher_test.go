@@ -15,7 +15,6 @@ import (
 
 	"github.com/coachpo/meltica/core/dispatcher"
 	"github.com/coachpo/meltica/core/events"
-	"github.com/coachpo/meltica/internal/observability"
 )
 
 func TestFanoutDeliversWithinLatency(t *testing.T) {
@@ -192,9 +191,6 @@ func TestFanoutSingleSubscriberAvoidsDuplicate(t *testing.T) {
 func TestFanoutAggregatesSubscriberErrors(t *testing.T) {
 	recycler, pool := newTrackingRecycler(t)
 	fanout := dispatcher.NewFanout(recycler, pool, nil, 8)
-	logger := newCaptureLogger()
-	observability.SetLogger(logger)
-	defer observability.SetLogger(nil)
 
 	errBoom := errors.New("subscriber failure")
 	subscribers := []dispatcher.Subscriber{
@@ -213,29 +209,34 @@ func TestFanoutAggregatesSubscriberErrors(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected aggregated error")
 	}
-	if !strings.Contains(err.Error(), errBoom.Error()) {
+	if !errors.Is(err, errBoom) {
 		t.Fatalf("aggregated error missing subscriber failure: %v", err)
 	}
 	if !recycler.WasRecycled(original) {
 		t.Fatalf("expected original event to be recycled")
 	}
-	msg, fields := logger.Snapshot()
-	if msg != "operation errors" {
-		t.Fatalf("unexpected log message: %q", msg)
+	var aggErr *dispatcher.FanoutError
+	if !errors.As(err, &aggErr) {
+		t.Fatalf("expected dispatcher fanout error, got %T", err)
 	}
-	fieldMap := make(map[string]any, len(fields))
-	for _, f := range fields {
-		fieldMap[f.Key] = f.Value
+	if aggErr.TraceID != original.TraceID {
+		t.Fatalf("expected trace id %q, got %q", original.TraceID, aggErr.TraceID)
 	}
-	if got := fieldMap["trace_id"]; got != original.TraceID {
-		t.Fatalf("expected trace_id %q, got %v", original.TraceID, got)
+	if aggErr.EventKind != original.Kind {
+		t.Fatalf("expected event kind %v, got %v", original.Kind, aggErr.EventKind)
 	}
-	failed, ok := fieldMap["failed_subscribers"].([]string)
-	if !ok {
-		t.Fatalf("expected failed_subscribers field to be []string, got %T", fieldMap["failed_subscribers"])
+	if aggErr.RoutingVersion != original.RoutingVersion {
+		t.Fatalf("expected routing version %d, got %d", original.RoutingVersion, aggErr.RoutingVersion)
 	}
-	if len(failed) == 0 || failed[0] != "fail" {
-		t.Fatalf("expected failed_subscribers to include 'fail', got %v", failed)
+	foundFailed := false
+	for _, id := range aggErr.FailedSubscribers {
+		if id == "fail" {
+			foundFailed = true
+			break
+		}
+	}
+	if !foundFailed {
+		t.Fatalf("expected failed subscriber list to include 'fail', got %v", aggErr.FailedSubscribers)
 	}
 }
 
@@ -256,11 +257,11 @@ func TestFanoutRecoversSubscriberPanic(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected panic to be recovered as error")
 	}
-	if !strings.Contains(err.Error(), "panic") {
-		t.Fatalf("expected aggregated error to mention panic, got %v", err)
-	}
 	if !recycler.WasRecycled(original) {
 		t.Fatalf("expected original event to be recycled after panic")
+	}
+	if !strings.Contains(err.Error(), "panic") {
+		t.Fatalf("expected aggregated error to mention panic, got %v", err)
 	}
 }
 

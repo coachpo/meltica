@@ -58,28 +58,6 @@ func (c *countingPool) Get() any {
 
 func (c *countingPool) Put(any) {}
 
-type captureLogger struct {
-	mu     sync.Mutex
-	msg    string
-	fields []observability.Field
-}
-
-func (c *captureLogger) Debug(string, ...observability.Field) {}
-func (c *captureLogger) Info(string, ...observability.Field)  {}
-
-func (c *captureLogger) Error(msg string, fields ...observability.Field) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.msg = msg
-	c.fields = append([]observability.Field(nil), fields...)
-}
-
-func (c *captureLogger) snapshot() (string, []observability.Field) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.msg, append([]observability.Field(nil), c.fields...)
-}
-
 func TestDispatchNoSubscribersRecyclesOriginal(t *testing.T) {
 	recycler := &stubRecycler{}
 	fanout := NewFanout(recycler, nil, nil, 4)
@@ -161,12 +139,9 @@ func TestDispatchParallelSuccess(t *testing.T) {
 	}
 }
 
-func TestDispatchAggregatesErrorsAndLogs(t *testing.T) {
+func TestDispatchAggregatesErrors(t *testing.T) {
 	recycler := &stubRecycler{}
 	fanout := NewFanout(recycler, &countingPool{}, nil, 4)
-	logger := &captureLogger{}
-	observability.SetLogger(logger)
-	defer observability.SetLogger(nil)
 
 	errBoom := errors.New("boom")
 	subscribers := []Subscriber{
@@ -187,27 +162,35 @@ func TestDispatchAggregatesErrorsAndLogs(t *testing.T) {
 	}
 
 	original := &events.Event{TraceID: "trace", Kind: events.KindMarketData}
-	if err := fanout.Dispatch(context.Background(), original, subscribers); err == nil || !errors.Is(err, errBoom) {
+	err := fanout.Dispatch(context.Background(), original, subscribers)
+	if err == nil || !errors.Is(err, errBoom) {
 		t.Fatalf("expected aggregated error containing original failure, got %v", err)
 	}
-	msg, fields := logger.snapshot()
-	if msg != "operation errors" {
-		t.Fatalf("unexpected log message %q", msg)
+	var aggErr *FanoutError
+	if !errors.As(err, &aggErr) {
+		t.Fatalf("expected fanout error, got %T", err)
+	}
+	if aggErr.TraceID != original.TraceID {
+		t.Fatalf("expected trace id %q, got %q", original.TraceID, aggErr.TraceID)
+	}
+	if aggErr.EventKind != original.Kind {
+		t.Fatalf("expected event kind %v, got %v", original.Kind, aggErr.EventKind)
+	}
+	if aggErr.RoutingVersion != original.RoutingVersion {
+		t.Fatalf("expected routing version %d, got %d", original.RoutingVersion, aggErr.RoutingVersion)
+	}
+	if aggErr.SubscriberCount != len(subscribers) {
+		t.Fatalf("expected subscriber count %d, got %d", len(subscribers), aggErr.SubscriberCount)
 	}
 	foundFailed := false
-	for _, f := range fields {
-		if f.Key == "failed_subscribers" {
-			if ids, ok := f.Value.([]string); ok {
-				for _, id := range ids {
-					if id == "fail" {
-						foundFailed = true
-					}
-				}
-			}
+	for _, id := range aggErr.FailedSubscribers {
+		if id == "fail" {
+			foundFailed = true
+			break
 		}
 	}
 	if !foundFailed {
-		t.Fatalf("expected failed subscriber id in log fields")
+		t.Fatalf("expected failed subscriber list to include fail, got %v", aggErr.FailedSubscribers)
 	}
 }
 

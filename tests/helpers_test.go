@@ -10,7 +10,6 @@ import (
 
 	"github.com/coachpo/meltica/core/events"
 	"github.com/coachpo/meltica/core/recycler"
-	"github.com/coachpo/meltica/internal/observability"
 )
 
 type trackingRecycler struct {
@@ -81,31 +80,4 @@ func (t *trackingRecycler) CheckoutEvent(ev *events.Event) {
 
 func (t *trackingRecycler) CheckoutExecReport(er *events.ExecReport) {
 	t.impl.CheckoutExecReport(er)
-}
-
-type captureLogger struct {
-	mu      sync.Mutex
-	message string
-	fields  []observability.Field
-}
-
-func newCaptureLogger() *captureLogger {
-	return &captureLogger{}
-}
-
-func (c *captureLogger) Debug(string, ...observability.Field) {}
-
-func (c *captureLogger) Info(string, ...observability.Field) {}
-
-func (c *captureLogger) Error(msg string, fields ...observability.Field) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.message = msg
-	c.fields = append([]observability.Field(nil), fields...)
-}
-
-func (c *captureLogger) Snapshot() (string, []observability.Field) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.message, append([]observability.Field(nil), c.fields...)
 }

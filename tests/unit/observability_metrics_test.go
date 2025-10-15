@@ -1,49 +1,40 @@
 package unit
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/coachpo/meltica/internal/observability"
+	"github.com/coachpo/meltica/core/dispatcher"
+	"github.com/coachpo/meltica/core/events"
 )
 
-type recordingMetrics struct {
-	counters   int
-	histograms int
-	gauges     int
+func TestFanoutErrorMessageIncludesMetadata(t *testing.T) {
+	err := &dispatcher.FanoutError{
+		Operation:         "dispatcher fan-out",
+		TraceID:           "trace-2",
+		EventKind:         events.KindExecReport,
+		RoutingVersion:    11,
+		SubscriberCount:   5,
+		FailedSubscribers: []string{"a", "b"},
+		Errors:            []error{errors.New("first"), errors.New("second")},
+	}
+	msg := err.Error()
+	require.Contains(t, msg, "dispatcher fan-out")
+	require.Contains(t, msg, "trace_id=trace-2")
+	require.Contains(t, msg, "event_kind=")
+	require.Contains(t, msg, "routing_version=11")
+	require.Contains(t, msg, "subscriber_count=5")
+	require.Contains(t, msg, "failed_subscribers=[a b]")
 }
 
-func (m *recordingMetrics) IncCounter(string, float64, map[string]string)       { m.counters++ }
-func (m *recordingMetrics) ObserveHistogram(string, float64, map[string]string) { m.histograms++ }
-func (m *recordingMetrics) SetGauge(string, float64, map[string]string)         { m.gauges++ }
-
-func TestMetricsOverrides(t *testing.T) {
-	recorder := new(recordingMetrics)
-	observability.SetMetrics(recorder)
-
-	metrics := observability.Telemetry()
-	metrics.IncCounter("events", 1, nil)
-	metrics.ObserveHistogram("latency", 2, nil)
-	metrics.SetGauge("depth", 3, nil)
-
-	require.Equal(t, 1, recorder.counters)
-	require.Equal(t, 1, recorder.histograms)
-	require.Equal(t, 1, recorder.gauges)
-
-	observability.SetMetrics(nil)
-	observability.Telemetry().IncCounter("noop", 1, nil)
-	require.Equal(t, 1, recorder.counters)
-}
-
-func TestRuntimeMetricsSnapshot(t *testing.T) {
-	metrics := observability.NewRuntimeMetrics()
-	metrics.RecordBufferDepth("stream", 3)
-	metrics.IncrementCoalescedDrops("stream")
-	metrics.AddThrottledMilliseconds("stream", 5)
-
-	snapshot := metrics.Snapshot()
-	require.Equal(t, 3, snapshot.BufferDepth["stream"])
-	require.Equal(t, 1, snapshot.CoalescedDrops["stream"])
-	require.EqualValues(t, 5, snapshot.ThrottledMilliseconds["stream"])
+func TestFanoutErrorUnwrapReturnsCopy(t *testing.T) {
+	inner := errors.New("boom")
+	err := &dispatcher.FanoutError{Errors: []error{inner}}
+	unwrapped := err.Unwrap()
+	require.Len(t, unwrapped, 1)
+	require.True(t, errors.Is(err, inner))
+	unwrapped[0] = nil
+	require.NotNil(t, err.Errors[0])
 }

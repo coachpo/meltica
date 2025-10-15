@@ -13,7 +13,6 @@ import (
 	"github.com/coachpo/meltica/internal/bus/controlbus"
 	"github.com/coachpo/meltica/internal/bus/databus"
 	"github.com/coachpo/meltica/internal/dispatcher"
-	"github.com/coachpo/meltica/internal/observability"
 	"github.com/coachpo/meltica/internal/schema"
 )
 
@@ -51,7 +50,7 @@ func TestSubscriptionManagementLifecycle(t *testing.T) {
 			TokenBurst:         100,
 		},
 	}
-	dispatch := dispatcher.NewRuntime(bus, table, nil, nil, runtimeCfg, observability.NewRuntimeMetrics())
+	dispatch := dispatcher.NewRuntime(bus, table, nil, nil, runtimeCfg, nil)
 	dispatchErrs := dispatch.Start(ctx, provider.Events())
 	go drainErrors(t, dispatchErrs)
 	go drainErrors(t, provider.Errors())
