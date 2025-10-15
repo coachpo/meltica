@@ -8,7 +8,7 @@ import (
 
 	concpool "github.com/sourcegraph/conc/pool"
 
-	"github.com/coachpo/meltica/errs"
+	"github.com/coachpo/meltica/internal/errs"
 	"github.com/coachpo/meltica/internal/pool"
 	"github.com/coachpo/meltica/internal/schema"
 )

@@ -1,6 +1,6 @@
 package recycler
 
-import "github.com/coachpo/meltica/core/events"
+import "github.com/coachpo/meltica/pkg/events"
 
 // Recycler defines the centralized gateway for returning pooled resources.
 type Recycler interface {

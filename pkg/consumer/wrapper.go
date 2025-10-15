@@ -7,8 +7,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/coachpo/meltica/core/events"
-	"github.com/coachpo/meltica/core/recycler"
+	"github.com/coachpo/meltica/pkg/events"
+	"github.com/coachpo/meltica/pkg/recycler"
 )
 
 // ConsumerFunc represents the lambda executed for each delivered event.

@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/coachpo/meltica/config"
 	"github.com/coachpo/meltica/internal/bus/databus"
+	"github.com/coachpo/meltica/internal/config"
 	"github.com/coachpo/meltica/internal/pool"
 	"github.com/coachpo/meltica/internal/schema"
 )

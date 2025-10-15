@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/coachpo/meltica/errs"
+	"github.com/coachpo/meltica/internal/errs"
 )
 
 // CanonicalType identifies canonical Meltica event categories (e.g. TICKER, ORDERBOOK.SNAPSHOT).

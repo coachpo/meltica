@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/coachpo/meltica/core/events"
+	"github.com/coachpo/meltica/pkg/events"
 )
 
 // Registry tracks consumer wrappers and provides safe invocation helpers.

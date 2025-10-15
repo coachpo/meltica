@@ -13,8 +13,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/coachpo/meltica/config"
 	"github.com/coachpo/meltica/internal/adapters/fake"
+	"github.com/coachpo/meltica/internal/config"
 	"github.com/coachpo/meltica/internal/adapters/shared"
 	"github.com/coachpo/meltica/internal/bus/controlbus"
 	"github.com/coachpo/meltica/internal/bus/databus"

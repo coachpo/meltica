@@ -11,8 +11,8 @@ import (
 
 	"github.com/sourcegraph/conc/pool"
 
-	"github.com/coachpo/meltica/core/events"
-	"github.com/coachpo/meltica/core/recycler"
+	"github.com/coachpo/meltica/pkg/events"
+	"github.com/coachpo/meltica/pkg/recycler"
 )
 
 // deliveryPool defines the subset of sync.Pool behaviour used for event duplication.

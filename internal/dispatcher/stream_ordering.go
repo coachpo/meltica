@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/coachpo/meltica/config"
+	"github.com/coachpo/meltica/internal/config"
 	"github.com/coachpo/meltica/internal/schema"
 )
 

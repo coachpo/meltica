@@ -3,7 +3,7 @@ package recycler
 import (
 	"time"
 
-	"github.com/coachpo/meltica/core/events"
+	"github.com/coachpo/meltica/pkg/events"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
