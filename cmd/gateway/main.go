@@ -14,14 +14,16 @@ import (
 	"time"
 
 	"github.com/coachpo/meltica/internal/adapters/fake"
-	"github.com/coachpo/meltica/internal/config"
 	"github.com/coachpo/meltica/internal/adapters/shared"
 	"github.com/coachpo/meltica/internal/bus/controlbus"
 	"github.com/coachpo/meltica/internal/bus/databus"
+	"github.com/coachpo/meltica/internal/config"
 	"github.com/coachpo/meltica/internal/consumer"
 	"github.com/coachpo/meltica/internal/dispatcher"
 	"github.com/coachpo/meltica/internal/pool"
 	"github.com/coachpo/meltica/internal/schema"
+	"github.com/sourcegraph/conc"
+	"github.com/sourcegraph/conc/iter"
 )
 
 func main() {
@@ -57,6 +59,9 @@ func main() {
 			logger.Printf("pool shutdown: %v", err)
 		}
 	}()
+
+	var lifecycle conc.WaitGroup
+	defer lifecycle.Wait()
 
 	bus := databus.NewMemoryBus(databus.MemoryConfig{
 		BufferSize:    streamingCfg.Databus.BufferSize,
@@ -98,8 +103,12 @@ func main() {
 	dispatcherRuntime := dispatcher.NewRuntime(bus, table, poolMgr, runtimeCfg, nil)
 	dispatchErrs := dispatcherRuntime.Start(ctx, provider.Events())
 
-	go logErrors(logger, "provider", provider.Errors())
-	go logErrors(logger, "dispatcher", dispatchErrs)
+	lifecycle.Go(func() {
+		logErrors(logger, "provider", provider.Errors())
+	})
+	lifecycle.Go(func() {
+		logErrors(logger, "dispatcher", dispatchErrs)
+	})
 
 	subscriptionManager := shared.NewSubscriptionManager(provider)
 	tradingState := dispatcher.NewTradingState()
@@ -118,37 +127,37 @@ func main() {
 	if tradeErrs, err := tradeLambda.Start(ctx); err != nil {
 		logger.Printf("trade lambda: %v", err)
 	} else {
-		go func() {
+		lifecycle.Go(func() {
 			for err := range tradeErrs {
 				if err != nil {
 					logger.Printf("trade lambda: %v", err)
 				}
 			}
-		}()
+		})
 	}
 
 	if tickerErrs, err := tickerLambda.Start(ctx); err != nil {
 		logger.Printf("ticker lambda: %v", err)
 	} else {
-		go func() {
+		lifecycle.Go(func() {
 			for err := range tickerErrs {
 				if err != nil {
 					logger.Printf("ticker lambda: %v", err)
 				}
 			}
-		}()
+		})
 	}
 
 	if orderbookErrs, err := orderbookLambda.Start(ctx); err != nil {
 		logger.Printf("orderbook lambda: %v", err)
 	} else {
-		go func() {
+		lifecycle.Go(func() {
 			for err := range orderbookErrs {
 				if err != nil {
 					logger.Printf("orderbook lambda: %v", err)
 				}
 			}
-		}()
+		})
 	}
 	controller := dispatcher.NewController(
 		table,
@@ -158,11 +167,11 @@ func main() {
 		dispatcher.WithTradingState(tradingState),
 		dispatcher.WithControlPublisher(bus, poolMgr),
 	)
-	go func() {
+	lifecycle.Go(func() {
 		if err := controller.Start(ctx); err != nil && err != context.Canceled {
 			logger.Printf("controller: %v", err)
 		}
-	}()
+	})
 
 	controlAddr := ":8880"
 	controlHandler := dispatcher.NewControlHTTPHandler(controlBus)
@@ -170,16 +179,17 @@ func main() {
 	controlServer.Addr = controlAddr
 	controlServer.Handler = controlHandler
 	controlServer.ReadHeaderTimeout = 5 * time.Second
-	go func() {
+	lifecycle.Go(func() {
 		if err := controlServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.Printf("control server: %v", err)
 		}
-	}()
+	})
 	logger.Printf("control API listening on %s", controlAddr)
 
 	logger.Print("gateway started; awaiting shutdown signal")
 	<-ctx.Done()
 	logger.Print("shutdown requested")
+	cancel()
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()
@@ -229,38 +239,14 @@ func appendInstrument(value any, set map[string]struct{}) {
 	}
 }
 
-func drainConsumer(logger *log.Logger, events <-chan *schema.Event, errs <-chan error) {
-	for events != nil || errs != nil {
-		select {
-		case evt, ok := <-events:
-			if !ok {
-				events = nil
-				continue
-			}
-			if evt != nil && logger != nil {
-				logger.Printf("drain consumer saw %s", evt.EventID)
-			}
-		case err, ok := <-errs:
-			if !ok {
-				errs = nil
-				continue
-			}
-			if err != nil && logger != nil {
-				logger.Printf("consumer: %v", err)
-			}
-		}
-	}
-}
 
 func routeFromConfig(name string, cfg config.RouteConfig) dispatcher.Route {
-	filters := make([]dispatcher.FilterRule, 0, len(cfg.Filters))
-	for _, f := range cfg.Filters {
-		filters = append(filters, dispatcher.FilterRule{Field: f.Field, Op: f.Op, Value: f.Value})
-	}
-	restFns := make([]dispatcher.RestFn, 0, len(cfg.RestFns))
-	for _, rf := range cfg.RestFns {
-		restFns = append(restFns, dispatcher.RestFn{Name: rf.Name, Endpoint: rf.Endpoint, Interval: rf.Interval, Parser: rf.Parser})
-	}
+	filters := iter.Map(cfg.Filters, func(f *config.FilterRuleConfig) dispatcher.FilterRule {
+		return dispatcher.FilterRule{Field: f.Field, Op: f.Op, Value: f.Value}
+	})
+	restFns := iter.Map(cfg.RestFns, func(rf *config.RestFnConfig) dispatcher.RestFn {
+		return dispatcher.RestFn{Name: rf.Name, Endpoint: rf.Endpoint, Interval: rf.Interval, Parser: rf.Parser}
+	})
 	return dispatcher.Route{
 		Type:     schema.CanonicalType(name),
 		WSTopics: cfg.WSTopics,
@@ -279,10 +265,18 @@ func logErrors(logger *log.Logger, stage string, errs <-chan error) {
 
 func resolveConfigPath(flagValue string) string {
 	if flagValue == "" {
-		if _, err := os.Stat("config/streaming.yaml"); err == nil {
-			return "config/streaming.yaml"
+		candidates := []string{
+			"config/streaming.yaml",
+			"internal/config/streaming.yaml",
+			"config/streaming.example.yaml",
+			"internal/config/streaming.example.yaml",
 		}
-		return "config/streaming.example.yaml"
+		for _, candidate := range candidates {
+			if _, err := os.Stat(candidate); err == nil {
+				return candidate
+			}
+		}
+		return candidates[0]
 	}
 	return flagValue
 }

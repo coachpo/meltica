@@ -14,6 +14,7 @@ import (
 	"github.com/coachpo/meltica/internal/dispatcher"
 	"github.com/coachpo/meltica/internal/pool"
 	"github.com/coachpo/meltica/internal/schema"
+	"github.com/sourcegraph/conc"
 )
 
 // ProviderOptions configure the Binance provider runtime.
@@ -52,7 +53,7 @@ type Provider struct {
 
 type routeHandle struct {
 	cancel context.CancelFunc
-	wg     sync.WaitGroup
+	wg     conc.WaitGroup
 }
 
 // NewProvider constructs a Binance market data provider.
@@ -312,33 +313,25 @@ func (p *Provider) startRouteLocked(_ string, topics []string, pollers []RESTPol
 
 	if len(topics) > 0 && p.ws != nil {
 		events, errs := p.ws.Stream(routeCtx, topics)
-		handle.wg.Add(1)
-		go func() {
-			defer handle.wg.Done()
+		handle.wg.Go(func() {
 			p.pipeEvents(routeCtx, events)
-		}()
+		})
 		if errs != nil {
-			handle.wg.Add(1)
-			go func() {
-				defer handle.wg.Done()
+			handle.wg.Go(func() {
 				p.pipeErrors(routeCtx, errs)
-			}()
+			})
 		}
 	}
 
 	if len(pollers) > 0 && p.rest != nil {
 		events, errs := p.rest.Poll(routeCtx, pollers)
-		handle.wg.Add(1)
-		go func() {
-			defer handle.wg.Done()
+		handle.wg.Go(func() {
 			p.pipeEvents(routeCtx, events)
-		}()
+		})
 		if errs != nil {
-			handle.wg.Add(1)
-			go func() {
-				defer handle.wg.Done()
+			handle.wg.Go(func() {
 				p.pipeErrors(routeCtx, errs)
-			}()
+			})
 		}
 	}
 

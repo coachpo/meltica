@@ -329,21 +329,47 @@ func LoadStreamingConfigV2(ctx context.Context, path string) (StreamingConfigV2,
 }
 
 func openStreamingFile(path string) (io.Reader, func(), error) {
-	safePath := filepath.Clean(path)
-	var closeFn func()
-	file, err := os.Open(safePath) // #nosec G304 -- configuration paths are controlled by operators.
-	if err == nil {
-		closeFn = func() { _ = file.Close() }
-		return file, closeFn, nil
+	var (
+		closeFn    func()
+		candidates []string
+		seen       = make(map[string]struct{})
+	)
+	addCandidate := func(candidate string) {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" {
+			return
+		}
+		candidate = filepath.Clean(candidate)
+		if _, ok := seen[candidate]; ok {
+			return
+		}
+		seen[candidate] = struct{}{}
+		candidates = append(candidates, candidate)
 	}
-	if !os.IsNotExist(err) {
-		return nil, nil, fmt.Errorf("open streaming config: %w", err)
+	addCandidate(path)
+	for _, fallback := range []string{
+		"config/streaming.yaml",
+		"internal/config/streaming.yaml",
+		"config/streaming.example.yaml",
+		"internal/config/streaming.example.yaml",
+	} {
+		addCandidate(fallback)
 	}
-	fallback := "config/streaming.example.yaml"
-	file, err = os.Open(fallback)
-	if err != nil {
-		return nil, nil, fmt.Errorf("open streaming config: %w", err)
+
+	var lastErr error
+	for _, candidate := range candidates {
+		file, err := os.Open(candidate) // #nosec G304 -- configuration paths are controlled by operators.
+		if err == nil {
+			closeFn = func() { _ = file.Close() }
+			return file, closeFn, nil
+		}
+		if !os.IsNotExist(err) {
+			return nil, nil, fmt.Errorf("open streaming config: %w", err)
+		}
+		lastErr = err
 	}
-	closeFn = func() { _ = file.Close() }
-	return file, closeFn, nil
+	if lastErr == nil {
+		lastErr = os.ErrNotExist
+	}
+	return nil, nil, fmt.Errorf("open streaming config: %w", lastErr)
 }

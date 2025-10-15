@@ -73,8 +73,6 @@ func (r *Runtime) run(ctx context.Context, events <-chan *schema.Event, errCh ch
 				default:
 				}
 			}
-			// Recycle source event after Publish returns
-			r.releaseEvent(evt)
 			batch[i] = nil
 		}
 	}

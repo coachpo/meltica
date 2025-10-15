@@ -15,6 +15,8 @@ import (
 	"github.com/coachpo/meltica/internal/dispatcher"
 	"github.com/coachpo/meltica/internal/pool"
 	"github.com/coachpo/meltica/internal/schema"
+	"github.com/sourcegraph/conc"
+	"github.com/sourcegraph/conc/iter"
 )
 
 // DefaultInstruments lists canonical instruments used when no explicit filters are provided.
@@ -68,7 +70,7 @@ type Provider struct {
 
 type routeHandle struct {
 	cancel context.CancelFunc
-	wg     sync.WaitGroup
+	wg     conc.WaitGroup
 }
 
 type instrumentState struct {
@@ -254,11 +256,9 @@ func (p *Provider) startRouteLocked(route dispatcher.Route, evtType schema.Event
 	if len(instruments) == 0 {
 		instruments = normaliseInstruments(DefaultInstruments)
 	}
-	handle.wg.Add(1)
-	go func() {
-		defer handle.wg.Done()
+	handle.wg.Go(func() {
 		p.runGenerator(routeCtx, evtType, instruments)
-	}()
+	})
 	return handle
 }
 
@@ -709,11 +709,9 @@ func (p *Provider) nextPrice(state *instrumentState, seq uint64) float64 {
 }
 
 func toPriceLevels(levels []bookLevel) []schema.PriceLevel {
-	out := make([]schema.PriceLevel, len(levels))
-	for i, level := range levels {
-		out[i] = schema.PriceLevel{Price: formatPrice(level.price), Quantity: formatQuantity(level.quantity)}
-	}
-	return out
+	return iter.Map(levels, func(level *bookLevel) schema.PriceLevel {
+		return schema.PriceLevel{Price: formatPrice(level.price), Quantity: formatQuantity(level.quantity)}
+	})
 }
 
 func instrumentsFromRoute(route dispatcher.Route) []string {

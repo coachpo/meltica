@@ -57,6 +57,9 @@ func (r Record) Clone() Record {
 		for k, v := range r.Data {
 			clone.Data[k] = v
 		}
+	} else {
+		// Initialize empty map instead of leaving nil
+		clone.Data = make(map[string]any)
 	}
 	return clone
 }

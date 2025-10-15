@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -14,6 +13,7 @@ import (
 	"github.com/coachpo/meltica/internal/bus/databus"
 	"github.com/coachpo/meltica/internal/pool"
 	"github.com/coachpo/meltica/internal/schema"
+	"github.com/sourcegraph/conc"
 )
 
 // Lambda streams events from the data bus and applies a lambda handler before
@@ -141,12 +141,9 @@ func (l *Lambda) QueryOrder(ctx context.Context, payload schema.QueryOrderPayloa
 
 func (l *Lambda) consume(ctx context.Context, subs []subscription, errs chan<- error) {
 	defer close(errs)
-	var wg sync.WaitGroup
-	wg.Add(len(subs))
+	var wg conc.WaitGroup
 	for _, sub := range subs {
-		sub := sub
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for {
 				select {
 				case <-ctx.Done():
@@ -158,7 +155,7 @@ func (l *Lambda) consume(ctx context.Context, subs []subscription, errs chan<- e
 					l.handleEvent(ctx, sub.typ, evt)
 				}
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	for _, sub := range subs {
