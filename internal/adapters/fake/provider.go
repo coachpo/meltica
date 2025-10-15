@@ -483,7 +483,7 @@ func (p *Provider) borrowEvent(ctx context.Context) *schema.Event {
 	if requestCtx == nil {
 		requestCtx = context.Background()
 	}
-	evt, err := pool.BorrowCanonicalEvent(requestCtx, p.pools)
+	evt, err := p.pools.BorrowCanonicalEvent(requestCtx)
 	if err != nil {
 		log.Printf("fake provider %s: borrow canonical event failed: %v", p.name, err)
 		p.emitError(fmt.Errorf("borrow canonical event: %w", err))

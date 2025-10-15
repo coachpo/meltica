@@ -102,36 +102,48 @@ func (l *OrderBookLambda) consumeUpdates(ctx context.Context, subscriptionID dat
 
 func (l *OrderBookLambda) handleBookSnapshot(evt *schema.Event) {
 	if evt == nil || evt.Type != schema.EventTypeBookSnapshot {
-		pool.RecycleCanonicalEvent(l.pools, evt)
+		if l.pools != nil {
+			l.pools.RecycleCanonicalEvent(evt)
+		}
 		return
 	}
 
 	payload, ok := evt.Payload.(schema.BookSnapshotPayload)
 	if !ok {
-		pool.RecycleCanonicalEvent(l.pools, evt)
+		if l.pools != nil {
+			l.pools.RecycleCanonicalEvent(evt)
+		}
 		return
 	}
 
 	l.printBookSnapshot(evt, payload)
 
-	pool.RecycleCanonicalEvent(l.pools, evt)
+	if l.pools != nil {
+		l.pools.RecycleCanonicalEvent(evt)
+	}
 }
 
 func (l *OrderBookLambda) handleBookUpdate(evt *schema.Event) {
 	if evt == nil || evt.Type != schema.EventTypeBookUpdate {
-		pool.RecycleCanonicalEvent(l.pools, evt)
+		if l.pools != nil {
+			l.pools.RecycleCanonicalEvent(evt)
+		}
 		return
 	}
 
 	payload, ok := evt.Payload.(schema.BookUpdatePayload)
 	if !ok {
-		pool.RecycleCanonicalEvent(l.pools, evt)
+		if l.pools != nil {
+			l.pools.RecycleCanonicalEvent(evt)
+		}
 		return
 	}
 
 	l.printBookUpdate(evt, payload)
 
-	pool.RecycleCanonicalEvent(l.pools, evt)
+	if l.pools != nil {
+		l.pools.RecycleCanonicalEvent(evt)
+	}
 }
 
 func (l *OrderBookLambda) printBookSnapshot(evt *schema.Event, payload schema.BookSnapshotPayload) {

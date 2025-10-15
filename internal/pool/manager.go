@@ -8,6 +8,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/coachpo/meltica/internal/schema"
 )
 
 var (
@@ -92,6 +94,30 @@ func (pm *PoolManager) Get(ctx context.Context, poolName string) (PooledObject, 
 	return obj, nil
 }
 
+// TryGet attempts to acquire an object from the named pool without blocking.
+// It returns (nil, false, nil) when no objects are currently available.
+func (pm *PoolManager) TryGet(poolName string) (PooledObject, bool, error) {
+	select {
+	case <-pm.shutdownCh:
+		return nil, false, ErrPoolManagerClosed
+	default:
+	}
+
+	pool, err := pm.lookup(poolName)
+	if err != nil {
+		return nil, false, err
+	}
+
+	obj, ok, err := pool.tryGet()
+	if err != nil || !ok {
+		return nil, ok, err
+	}
+
+	pm.inFlight.Add(1)
+	pm.activeCount.Add(1)
+	return obj, true, nil
+}
+
 // Put returns an object to the named pool, panicking if the pool is unknown or the object type is invalid.
 func (pm *PoolManager) Put(poolName string, obj interface{}) {
 	po, ok := obj.(PooledObject)
@@ -109,6 +135,27 @@ func (pm *PoolManager) Put(poolName string, obj interface{}) {
 	if err := pool.put(po); err != nil {
 		panic(err)
 	}
+}
+
+// TryPut attempts to return an object to the pool without blocking.
+// It returns false when the pool rejected the object (for example due to a double put).
+func (pm *PoolManager) TryPut(poolName string, obj interface{}) (bool, error) {
+	po, ok := obj.(PooledObject)
+	if !ok {
+		return false, fmt.Errorf("pool manager: object does not implement PooledObject: %T", obj)
+	}
+
+	pool, err := pm.lookup(poolName)
+	if err != nil {
+		return false, err
+	}
+
+	success, putErr := pool.tryPut(po)
+	if success {
+		pm.inFlight.Done()
+		pm.activeCount.Add(-1)
+	}
+	return success, putErr
 }
 
 // Shutdown waits for all in-flight pooled objects to be returned or cancels
@@ -169,4 +216,64 @@ func (pm *PoolManager) logOutstanding(remaining int64) {
 	}
 	log.Printf("pool manager: shutdown timed out with %d objects in flight", remaining)
 	log.Printf("pool manager: outstanding pools may still hold borrowed objects")
+}
+
+// BorrowCanonicalEvent acquires a CanonicalEvent from the pool.
+func (pm *PoolManager) BorrowCanonicalEvent(ctx context.Context) (*schema.Event, error) {
+	if pm == nil {
+		return nil, fmt.Errorf("canonical event pool unavailable")
+	}
+	obj, err := pm.Get(ctx, "CanonicalEvent")
+	if err != nil {
+		return nil, err
+	}
+	evt, ok := obj.(*schema.Event)
+	if !ok {
+		pm.Put("CanonicalEvent", obj)
+		return nil, fmt.Errorf("canonical event pool: unexpected type %T", obj)
+	}
+	evt.Reset()
+	return evt, nil
+}
+
+// TryBorrowCanonicalEvent attempts to acquire a CanonicalEvent without blocking.
+func (pm *PoolManager) TryBorrowCanonicalEvent() (*schema.Event, bool, error) {
+	if pm == nil {
+		return nil, false, fmt.Errorf("canonical event pool unavailable")
+	}
+	obj, ok, err := pm.TryGet("CanonicalEvent")
+	if err != nil || !ok {
+		return nil, ok, err
+	}
+	evt, typeOK := obj.(*schema.Event)
+	if !typeOK {
+		pm.Put("CanonicalEvent", obj)
+		return nil, false, fmt.Errorf("canonical event pool: unexpected type %T", obj)
+	}
+	evt.Reset()
+	return evt, true, nil
+}
+
+// RecycleCanonicalEvent returns the event to the pool.
+func (pm *PoolManager) RecycleCanonicalEvent(evt *schema.Event) {
+	if pm == nil || evt == nil {
+		return
+	}
+	pm.Put("CanonicalEvent", evt)
+}
+
+// TryRecycleCanonicalEvent attempts to recycle the event without blocking.
+func (pm *PoolManager) TryRecycleCanonicalEvent(evt *schema.Event) bool {
+	if pm == nil || evt == nil {
+		return false
+	}
+	ok, err := pm.TryPut("CanonicalEvent", evt)
+	return err == nil && ok
+}
+
+// RecycleCanonicalEvents recycles a slice of events to the pool.
+func (pm *PoolManager) RecycleCanonicalEvents(events []*schema.Event) {
+	for _, evt := range events {
+		pm.RecycleCanonicalEvent(evt)
+	}
 }

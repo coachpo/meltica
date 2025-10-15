@@ -390,7 +390,7 @@ func (c *Controller) publishEvent(ctx context.Context, evt *schema.Event) {
 }
 
 func (c *Controller) borrowEvent(ctx context.Context) *schema.Event {
-	evt, err := pool.BorrowCanonicalEvent(ctx, c.pools)
+	evt, err := c.pools.BorrowCanonicalEvent(ctx)
 	if err != nil {
 		return nil
 	}
@@ -401,7 +401,9 @@ func (c *Controller) recycleEvent(evt *schema.Event) {
 	if evt == nil {
 		return
 	}
-	pool.RecycleCanonicalEvent(c.pools, evt)
+	if c.pools != nil {
+		c.pools.RecycleCanonicalEvent(evt)
+	}
 }
 
 func (c *Controller) bumpVersion() int64 {

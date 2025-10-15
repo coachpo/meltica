@@ -266,7 +266,9 @@ func (l *Lambda) recycleIfNeeded(evt *schema.Event) {
 	if evt == nil {
 		return
 	}
-	pool.RecycleCanonicalEvent(l.pools, evt)
+	if l.pools != nil {
+		l.pools.RecycleCanonicalEvent(evt)
+	}
 }
 
 func (l *Lambda) logControlAck(payload schema.ControlAckPayload) {

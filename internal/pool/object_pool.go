@@ -192,6 +192,29 @@ func (op *objectPool) get(ctx context.Context) (PooledObject, error) {
 	}
 }
 
+func (op *objectPool) tryGet() (PooledObject, bool, error) {
+	if op.closed.Load() {
+		return nil, false, errPoolClosed
+	}
+
+	req := newPoolRequest(context.Background())
+
+	select {
+	case <-op.stop:
+		return nil, false, errPoolClosed
+	case op.requests <- req:
+	default:
+		return nil, false, nil
+	}
+
+	select {
+	case <-op.stop:
+		return nil, false, errPoolClosed
+	case obj := <-req.result:
+		return obj, true, nil
+	}
+}
+
 func (op *objectPool) put(obj PooledObject) error {
 	if obj == nil {
 		return fmt.Errorf("pool %s: nil object returned", op.name)
@@ -214,6 +237,31 @@ func (op *objectPool) put(obj PooledObject) error {
 	default:
 		op.leases.Delete(key)
 		return fmt.Errorf("pool %s: unexpected lease state for %T", op.name, obj)
+	}
+}
+
+func (op *objectPool) tryPut(obj PooledObject) (bool, error) {
+	if obj == nil {
+		return false, fmt.Errorf("pool %s: nil object returned", op.name)
+	}
+	key := pointerKey(obj)
+	value, ok := op.leases.Load(key)
+	if !ok {
+		return false, fmt.Errorf("pool %s: double put detected for %T", op.name, obj)
+	}
+	l, ok := value.(*lease)
+	if !ok {
+		op.leases.Delete(key)
+		return false, fmt.Errorf("pool %s: invalid lease type %T", op.name, value)
+	}
+	obj.Reset()
+	obj.SetReturned(true)
+	select {
+	case l.returnCh <- obj:
+		return true, nil
+	default:
+		op.leases.Delete(key)
+		return false, fmt.Errorf("pool %s: unexpected lease state for %T", op.name, obj)
 	}
 }
 

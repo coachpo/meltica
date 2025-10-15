@@ -149,14 +149,16 @@ func (r *Runtime) currentRoutingVersion() int {
 }
 
 func (r *Runtime) releaseEvent(evt *schema.Event) {
-	pool.RecycleCanonicalEvent(r.pools, evt)
+	if r.pools != nil {
+		r.pools.RecycleCanonicalEvent(evt)
+	}
 }
 
 func (r *Runtime) cloneForPublish(ctx context.Context, evt *schema.Event) *schema.Event {
 	if evt == nil {
 		return nil
 	}
-	pooled, err := pool.BorrowCanonicalEvent(ctx, r.pools)
+	pooled, err := r.pools.BorrowCanonicalEvent(ctx)
 	if err != nil || pooled == nil {
 		return nil
 	}

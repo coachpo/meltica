@@ -234,14 +234,16 @@ func (b *MemoryBus) recycle(evt *schema.Event) {
 	if evt == nil {
 		return
 	}
-	pool.RecycleCanonicalEvent(b.pools, evt)
+	if b.pools != nil {
+		b.pools.RecycleCanonicalEvent(evt)
+	}
 }
 
 func (b *MemoryBus) borrowFanoutEvent(ctx context.Context, src *schema.Event) (*schema.Event, error) {
 	if b.pools == nil || src == nil {
 		return nil, fmt.Errorf("databus/publish: canonical event pool unavailable")
 	}
-	dup, err := pool.BorrowCanonicalEvent(ctx, b.pools)
+	dup, err := b.pools.BorrowCanonicalEvent(ctx)
 	if err != nil || dup == nil {
 		return nil, fmt.Errorf("databus/publish: borrow duplicate: %w", err)
 	}

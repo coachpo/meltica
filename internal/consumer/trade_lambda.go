@@ -71,19 +71,25 @@ func (l *TradeLambda) consume(ctx context.Context, subscriptionID databus.Subscr
 
 func (l *TradeLambda) handleTradeEvent(evt *schema.Event) {
 	if evt == nil || evt.Type != schema.EventTypeTrade {
-		pool.RecycleCanonicalEvent(l.pools, evt)
+		if l.pools != nil {
+			l.pools.RecycleCanonicalEvent(evt)
+		}
 		return
 	}
 
 	payload, ok := evt.Payload.(schema.TradePayload)
 	if !ok {
-		pool.RecycleCanonicalEvent(l.pools, evt)
+		if l.pools != nil {
+			l.pools.RecycleCanonicalEvent(evt)
+		}
 		return
 	}
 
 	l.printTrade(evt, payload)
 
-	pool.RecycleCanonicalEvent(l.pools, evt)
+	if l.pools != nil {
+		l.pools.RecycleCanonicalEvent(evt)
+	}
 }
 
 func (l *TradeLambda) printTrade(evt *schema.Event, payload schema.TradePayload) {

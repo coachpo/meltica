@@ -71,19 +71,25 @@ func (l *TickerLambda) consume(ctx context.Context, subscriptionID databus.Subsc
 
 func (l *TickerLambda) handleTickerEvent(evt *schema.Event) {
 	if evt == nil || evt.Type != schema.EventTypeTicker {
-		pool.RecycleCanonicalEvent(l.pools, evt)
+		if l.pools != nil {
+			l.pools.RecycleCanonicalEvent(evt)
+		}
 		return
 	}
 
 	payload, ok := evt.Payload.(schema.TickerPayload)
 	if !ok {
-		pool.RecycleCanonicalEvent(l.pools, evt)
+		if l.pools != nil {
+			l.pools.RecycleCanonicalEvent(evt)
+		}
 		return
 	}
 
 	l.printTicker(evt, payload)
 
-	pool.RecycleCanonicalEvent(l.pools, evt)
+	if l.pools != nil {
+		l.pools.RecycleCanonicalEvent(evt)
+	}
 }
 
 func (l *TickerLambda) printTicker(evt *schema.Event, payload schema.TickerPayload) {
