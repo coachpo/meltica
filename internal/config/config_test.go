@@ -1,49 +1,92 @@
 package config
 
 import (
-	"context"
 	"os"
 	"testing"
-	"time"
 )
 
 // Example unit test for internal package
-func TestStreamOrderingConfigDefaults(t *testing.T) {
-	cfg := StreamOrderingConfig{}
-
-	if cfg.LatenessTolerance == 0 {
-		cfg.LatenessTolerance = 150 * time.Millisecond
-	}
-	if cfg.FlushInterval == 0 {
-		cfg.FlushInterval = 50 * time.Millisecond
-	}
-	if cfg.MaxBufferSize == 0 {
-		cfg.MaxBufferSize = 1024
-	}
-
-	if cfg.LatenessTolerance != 150*time.Millisecond {
-		t.Errorf("expected default LatenessTolerance 150ms, got %v", cfg.LatenessTolerance)
+func TestDefaultEnvironment(t *testing.T) {
+	cfg := Default()
+	
+	if cfg.Environment != EnvProd {
+		t.Errorf("expected prod environment, got %s", cfg.Environment)
 	}
 }
 
-func TestLoadStreamingConfig(t *testing.T) {
-	// Skip if test config file doesn't exist
-	if _, err := os.Stat("streaming.example.yaml"); os.IsNotExist(err) {
-		t.Skip("streaming.example.yaml not found")
+func TestDefault(t *testing.T) {
+	cfg := Default()
+
+	if cfg.Environment != EnvProd {
+		t.Errorf("expected default environment to be prod, got %s", cfg.Environment)
 	}
 
-	ctx := context.Background()
-	cfg, err := LoadStreamingConfig(ctx, "streaming.example.yaml")
-	if err != nil {
-		t.Fatalf("LoadStreamingConfig() error = %v", err)
+	binance, ok := cfg.Exchanges[ExchangeBinance]
+	if !ok {
+		t.Fatal("expected Binance exchange settings")
 	}
 
-	if cfg == nil {
-		t.Fatal("expected non-nil config")
+	if binance.REST[BinanceRESTSurfaceSpot] == "" {
+		t.Error("expected Binance spot URL")
 	}
+	if binance.HTTPTimeout == 0 {
+		t.Error("expected non-zero HTTP timeout")
+	}
+}
 
-	// Verify basic structure
-	if cfg.Databus.BufferSize == 0 {
-		t.Error("expected non-zero Databus.BufferSize")
+func TestFromEnv(t *testing.T) {
+	// Save and restore environment
+	oldEnv := os.Getenv("MELTICA_ENV")
+	defer os.Setenv("MELTICA_ENV", oldEnv)
+
+	os.Setenv("MELTICA_ENV", "dev")
+	cfg := FromEnv()
+
+	if cfg.Environment != EnvDev {
+		t.Errorf("expected env=dev, got %s", cfg.Environment)
+	}
+}
+
+func TestApply(t *testing.T) {
+	base := Default()
+	
+	modified := Apply(base, WithEnvironment(EnvStaging))
+
+	if modified.Environment != EnvStaging {
+		t.Errorf("expected staging environment, got %s", modified.Environment)
+	}
+	
+	// Verify base wasn't modified
+	if base.Environment != EnvProd {
+		t.Error("expected base config to remain unchanged")
+	}
+}
+
+func TestSettingsExchange(t *testing.T) {
+	cfg := Default()
+	
+	binance, ok := cfg.Exchange(ExchangeBinance)
+	if !ok {
+		t.Fatal("expected to find Binance exchange")
+	}
+	
+	if binance.REST[BinanceRESTSurfaceSpot] == "" {
+		t.Error("expected spot URL")
+	}
+}
+
+func TestWithBinanceAPI(t *testing.T) {
+	cfg := Apply(Default(), WithBinanceAPI("test-key", "test-secret"))
+	
+	binance, ok := cfg.Exchange(ExchangeBinance)
+	if !ok {
+		t.Fatal("expected Binance exchange")
+	}
+	
+	if binance.Credentials.APIKey != "test-key" {
+		t.Errorf("expected API key test-key, got %s", binance.Credentials.APIKey)
+	}
+	if binance.Credentials.APISecret != "test-secret" {
+		t.Errorf("expected API secret test-secret, got %s", binance.Credentials.APISecret)
 	}
 }

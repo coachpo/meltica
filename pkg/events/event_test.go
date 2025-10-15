@@ -10,7 +10,7 @@ func TestEventReset(t *testing.T) {
 	ev := &Event{
 		TraceID:        "test-123",
 		RoutingVersion: 5,
-		Kind:           KindTrade,
+		Kind:           1, // arbitrary test value
 		Payload:        "test data",
 	}
 
@@ -25,6 +25,9 @@ func TestEventReset(t *testing.T) {
 	if ev.Payload != nil {
 		t.Errorf("expected Payload to be nil after Reset, got %v", ev.Payload)
 	}
+	if ev.Kind != 0 {
+		t.Errorf("expected Kind to be 0 after Reset, got %d", ev.Kind)
+	}
 }
 
 func TestEventKindString(t *testing.T) {
@@ -32,9 +35,10 @@ func TestEventKindString(t *testing.T) {
 		kind EventKind
 		want string
 	}{
-		{KindTrade, "Trade"},
-		{KindTicker, "Ticker"},
-		{KindBookSnapshot, "BookSnapshot"},
+		{KindMarketData, "market_data"},
+		{KindExecReport, "exec_report"},
+		{KindControlAck, "control_ack"},
+		{KindControlResult, "control_result"},
 	}
 
 	for _, tt := range tests {
@@ -52,10 +56,10 @@ func TestEventKindIsCritical(t *testing.T) {
 		kind EventKind
 		want bool
 	}{
-		{"Trade is critical", KindTrade, true},
 		{"ExecReport is critical", KindExecReport, true},
-		{"Ticker is not critical", KindTicker, false},
-		{"BookUpdate is not critical", KindBookUpdate, false},
+		{"ControlAck is critical", KindControlAck, true},
+		{"ControlResult is critical", KindControlResult, true},
+		{"MarketData is not critical", KindMarketData, false},
 	}
 
 	for _, tt := range tests {
@@ -71,8 +75,7 @@ func BenchmarkEventReset(b *testing.B) {
 	ev := &Event{
 		TraceID:        "test-trace",
 		RoutingVersion: 10,
-		Kind:           KindTrade,
-		EmitTS:         time.Now(),
+		Kind:           KindMarketData,
 		IngestTS:       time.Now(),
 	}
 
