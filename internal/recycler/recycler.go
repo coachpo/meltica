@@ -20,9 +20,6 @@ type Interface interface {
 	CheckoutEvent(*schema.Event)
 	RecycleEvent(*schema.Event)
 	RecycleMany([]*schema.Event)
-	BorrowMerged(ctx context.Context) (*schema.MergedEvent, error)
-	CheckoutMerged(*schema.MergedEvent)
-	RecycleMerged(*schema.MergedEvent)
 }
 
 // Manager implements Interface backed by the shared pool manager.
@@ -54,35 +51,8 @@ func (m *Manager) BorrowEvent(ctx context.Context) (*schema.Event, error) {
 	return event, nil
 }
 
-// BorrowMerged acquires a MergedEvent from the pool manager.
-func (m *Manager) BorrowMerged(ctx context.Context) (*schema.MergedEvent, error) {
-	if m == nil || m.pools == nil {
-		ev := new(schema.MergedEvent)
-		return ev, nil
-	}
-	obj, err := m.acquire(ctx, "MergedEvent")
-	if err != nil {
-		return nil, err
-	}
-	merged, ok := obj.(*schema.MergedEvent)
-	if !ok {
-		m.pools.Put("MergedEvent", obj)
-		return nil, fmt.Errorf("recycler: unexpected merged object type %T", obj)
-	}
-	merged.Reset()
-	return merged, nil
-}
-
 // CheckoutEvent marks the event as checked out from the pool for double-Put detection.
 func (*Manager) CheckoutEvent(evt *schema.Event) {
-	if evt == nil {
-		return
-	}
-	evt.SetReturned(false)
-}
-
-// CheckoutMerged marks the merged event as checked out.
-func (*Manager) CheckoutMerged(evt *schema.MergedEvent) {
 	if evt == nil {
 		return
 	}
@@ -104,17 +74,6 @@ func (m *Manager) RecycleEvent(evt *schema.Event) {
 func (m *Manager) RecycleMany(events []*schema.Event) {
 	for _, evt := range events {
 		m.RecycleEvent(evt)
-	}
-}
-
-// RecycleMerged resets and returns the merged event.
-func (m *Manager) RecycleMerged(evt *schema.MergedEvent) {
-	if evt == nil {
-		return
-	}
-	evt.Reset()
-	if m != nil && m.pools != nil {
-		m.pools.Put("MergedEvent", evt)
 	}
 }
 

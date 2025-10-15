@@ -105,20 +105,6 @@ type ProviderConfig struct {
 	BookRefreshInterval time.Duration `yaml:"book_refresh_interval"`
 }
 
-// MergeRuleConfig defines orchestrator merge behaviour for multi-provider subscriptions.
-type MergeRuleConfig struct {
-	MergeKey       string        `yaml:"merge_key"`
-	Providers      []string      `yaml:"providers"`
-	WindowDuration time.Duration `yaml:"window_duration"`
-	MaxEvents      int           `yaml:"max_events"`
-	PartialPolicy  string        `yaml:"partial_policy"`
-}
-
-// OrchestratorConfig captures merge rules for V2 configuration.
-type OrchestratorConfig struct {
-	MergeRules []MergeRuleConfig `yaml:"merge_rules"`
-}
-
 // StreamOrderingConfig configures dispatcher ordering buffers.
 type StreamOrderingConfig struct {
 	LatenessTolerance time.Duration `yaml:"lateness_tolerance"`
@@ -144,7 +130,6 @@ type SubscriptionConfig struct {
 	Symbol     string   `yaml:"symbol"`
 	Providers  []string `yaml:"providers"`
 	EventTypes []string `yaml:"event_types"`
-	Merged     bool     `yaml:"merged"`
 }
 
 // ConsumerConfig captures consumer runtime settings including trading switch state.
@@ -157,11 +142,10 @@ type ConsumerConfig struct {
 
 // StreamingConfigV2 reflects the V2 monolithic configuration layout introduced in plan.md.
 type StreamingConfigV2 struct {
-	Providers    []ProviderConfig        `yaml:"providers"`
-	Orchestrator OrchestratorConfig      `yaml:"orchestrator"`
-	Dispatcher   DispatcherRuntimeConfig `yaml:"dispatcher"`
-	Consumers    []ConsumerConfig        `yaml:"consumers"`
-	Telemetry    TelemetryConfig         `yaml:"telemetry"`
+	Providers  []ProviderConfig        `yaml:"providers"`
+	Dispatcher DispatcherRuntimeConfig `yaml:"dispatcher"`
+	Consumers  []ConsumerConfig        `yaml:"consumers"`
+	Telemetry  TelemetryConfig         `yaml:"telemetry"`
 }
 
 // LoadStreamingConfig loads a streaming configuration YAML document from disk.
@@ -260,25 +244,6 @@ func (c StreamingConfigV2) Validate(ctx context.Context) error {
 		}
 		if p.BookRefreshInterval <= 0 {
 			return fmt.Errorf("provider[%d]: book_refresh_interval must be >0", i)
-		}
-	}
-
-	for i, rule := range c.Orchestrator.MergeRules {
-		if strings.TrimSpace(rule.MergeKey) == "" {
-			return fmt.Errorf("orchestrator.merge_rules[%d]: merge_key required", i)
-		}
-		if len(rule.Providers) < 2 {
-			return fmt.Errorf("orchestrator.merge_rules[%d]: at least two providers required", i)
-		}
-		if rule.WindowDuration <= 0 {
-			return fmt.Errorf("orchestrator.merge_rules[%d]: window_duration must be >0", i)
-		}
-		if rule.MaxEvents <= 0 {
-			return fmt.Errorf("orchestrator.merge_rules[%d]: max_events must be >0", i)
-		}
-		policy := strings.ToLower(strings.TrimSpace(rule.PartialPolicy))
-		if policy != "suppress" && policy != "emit" && policy != "drop" {
-			return fmt.Errorf("orchestrator.merge_rules[%d]: partial_policy must be suppress|emit|drop", i)
 		}
 	}
 

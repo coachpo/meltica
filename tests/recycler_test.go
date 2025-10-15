@@ -17,10 +17,9 @@ const poisonSentinel uint64 = 0xDEADBEEFDEADBEEF
 func newTestRecycler(t *testing.T) *recycler.RecyclerImpl {
 	t.Helper()
 	eventPool := &sync.Pool{New: func() any { return &events.Event{} }}
-	mergedPool := &sync.Pool{New: func() any { return &events.MergedEvent{} }}
 	execPool := &sync.Pool{New: func() any { return &events.ExecReport{} }}
 	metrics := recycler.NewRecyclerMetrics(prometheus.NewRegistry())
-	return recycler.NewRecycler(eventPool, mergedPool, execPool, metrics)
+	return recycler.NewRecycler(eventPool, execPool, metrics)
 }
 
 func TestRecycleEventResetsFields(t *testing.T) {

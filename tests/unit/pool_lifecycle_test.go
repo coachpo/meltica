@@ -83,32 +83,6 @@ func TestCanonicalEventResetZeroesFields(t *testing.T) {
 	require.False(t, evt.IsReturned())
 }
 
-func TestMergedEventResetZeroesFields(t *testing.T) {
-	merged := &schema.MergedEvent{
-		MergeID:     "merge",
-		Symbol:      "BTC-USDT",
-		EventType:   schema.EventTypeBookUpdate,
-		WindowOpen:  111,
-		WindowClose: 222,
-		Fragments:   []schema.CanonicalEvent{{Provider: "binance"}},
-		IsComplete:  true,
-		TraceID:     "trace",
-	}
-	merged.SetReturned(true)
-
-	merged.Reset()
-
-	require.Equal(t, "", merged.MergeID)
-	require.Equal(t, "", merged.Symbol)
-	require.Equal(t, schema.EventType(""), merged.EventType)
-	require.Equal(t, int64(0), merged.WindowOpen)
-	require.Equal(t, int64(0), merged.WindowClose)
-	require.Nil(t, merged.Fragments)
-	require.False(t, merged.IsComplete)
-	require.Equal(t, "", merged.TraceID)
-	require.False(t, merged.IsReturned())
-}
-
 func TestOrderRequestResetZeroesFields(t *testing.T) {
 	price := "100.00"
 	req := &schema.OrderRequest{

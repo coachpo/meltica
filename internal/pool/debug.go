@@ -104,15 +104,6 @@ func (d *debugState) poison(obj PooledObject) {
 		v.EmitTS = time.Unix(1, 0)
 		v.Payload = map[string]any{"poison": true}
 		v.TraceID = poisonString
-	case *schema.MergedEvent:
-		v.MergeID = poisonString
-		v.Symbol = poisonString
-		v.EventType = schema.EventType("POISON")
-		v.WindowOpen = -1
-		v.WindowClose = -1
-		v.Fragments = nil
-		v.IsComplete = false
-		v.TraceID = poisonString
 	case *schema.OrderRequest:
 		v.ClientOrderID = poisonString
 		v.ConsumerID = poisonString

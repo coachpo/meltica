@@ -14,16 +14,15 @@ import (
 func newTestRecycler(t *testing.T) *RecyclerImpl {
 	t.Helper()
 	eventPool := &sync.Pool{New: func() any { return &events.Event{} }}
-	mergedPool := &sync.Pool{New: func() any { return &events.MergedEvent{} }}
 	execPool := &sync.Pool{New: func() any { return &events.ExecReport{} }}
 	metrics := NewRecyclerMetrics(prometheus.NewRegistry())
-	return NewRecycler(eventPool, mergedPool, execPool, metrics)
+	return NewRecycler(eventPool, execPool, metrics)
 }
 
 func TestRecycleEventResetsAndRecordsMetrics(t *testing.T) {
 	metrics := NewRecyclerMetrics(prometheus.NewRegistry())
 	eventPool := &sync.Pool{New: func() any { return &events.Event{} }}
-	recycler := NewRecycler(eventPool, &sync.Pool{}, &sync.Pool{}, metrics)
+	recycler := NewRecycler(eventPool, &sync.Pool{}, metrics)
 
 	ev := &events.Event{
 		TraceID:        "trace",
@@ -49,7 +48,7 @@ func TestRecycleEventResetsAndRecordsMetrics(t *testing.T) {
 
 func TestRecycleManyIgnoresNilEvents(t *testing.T) {
 	metrics := NewRecyclerMetrics(prometheus.NewRegistry())
-	recycler := NewRecycler(&sync.Pool{New: func() any { return &events.Event{} }}, &sync.Pool{}, &sync.Pool{}, metrics)
+	recycler := NewRecycler(&sync.Pool{New: func() any { return &events.Event{} }}, &sync.Pool{}, metrics)
 
 	recycler.RecycleMany([]*events.Event{
 		nil,
@@ -67,7 +66,7 @@ func TestRecycleManyIgnoresNilEvents(t *testing.T) {
 
 func TestDebugDoublePutDetection(t *testing.T) {
 	metrics := NewRecyclerMetrics(prometheus.NewRegistry())
-	recycler := NewRecycler(&sync.Pool{}, &sync.Pool{}, &sync.Pool{}, metrics)
+	recycler := NewRecycler(&sync.Pool{}, &sync.Pool{}, metrics)
 	recycler.EnableDebugMode()
 	ev := &events.Event{}
 	recycler.RecycleEvent(ev)
@@ -85,7 +84,7 @@ func TestDebugDoublePutDetection(t *testing.T) {
 }
 
 func TestCheckoutAllowsReuseInDebugMode(t *testing.T) {
-	recycler := NewRecycler(&sync.Pool{}, &sync.Pool{}, &sync.Pool{}, NewRecyclerMetrics(prometheus.NewRegistry()))
+	recycler := NewRecycler(&sync.Pool{}, &sync.Pool{}, NewRecyclerMetrics(prometheus.NewRegistry()))
 	recycler.EnableDebugMode()
 	ev := &events.Event{}
 	recycler.RecycleEvent(ev)
@@ -96,22 +95,11 @@ func TestCheckoutAllowsReuseInDebugMode(t *testing.T) {
 }
 
 func TestRecycleExecReportResetsFields(t *testing.T) {
-	recycler := NewRecycler(&sync.Pool{}, &sync.Pool{}, &sync.Pool{}, NewRecyclerMetrics(prometheus.NewRegistry()))
+	recycler := NewRecycler(&sync.Pool{}, &sync.Pool{}, NewRecyclerMetrics(prometheus.NewRegistry()))
 	report := &events.ExecReport{TraceID: "t", ClientOrderID: "c", ExchangeID: "e", Status: "s", Reason: "r"}
 	recycler.RecycleExecReport(report)
 	if report.TraceID != "" || report.ClientOrderID != "" || report.ExchangeID != "" || report.Status != "" || report.Reason != "" {
 		t.Fatalf("exec report not reset: %+v", report)
-	}
-}
-
-func TestRecycleMergedEventResetsAndReturnsToPool(t *testing.T) {
-	mergedPool := &sync.Pool{New: func() any { return &events.MergedEvent{} }}
-	recycler := NewRecycler(&sync.Pool{}, mergedPool, &sync.Pool{}, NewRecyclerMetrics(prometheus.NewRegistry()))
-	recycler.EnableDebugMode()
-	merged := &events.MergedEvent{Event: events.Event{TraceID: "x"}, SourceProviders: []string{"a"}, MergeWindowID: "id"}
-	recycler.RecycleMergedEvent(merged)
-	if merged.TraceID != "" || len(merged.SourceProviders) != 0 || merged.MergeWindowID != "" {
-		t.Fatalf("merged event not reset: %+v", merged)
 	}
 }
 
@@ -130,10 +118,9 @@ func TestGlobalInitialization(t *testing.T) {
 	}
 
 	eventPool := &sync.Pool{New: func() any { return &events.Event{} }}
-	mergedPool := &sync.Pool{New: func() any { return &events.MergedEvent{} }}
 	execPool := &sync.Pool{New: func() any { return &events.ExecReport{} }}
 	metrics := NewRecyclerMetrics(prometheus.NewRegistry())
-	InitGlobal(eventPool, mergedPool, execPool, metrics)
+	InitGlobal(eventPool, execPool, metrics)
 
 	if Global() == nil {
 		t.Fatalf("expected global recycler instance")

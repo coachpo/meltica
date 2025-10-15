@@ -83,7 +83,7 @@ type QueryOrderPayload struct {
 	Symbol        string `json:"symbol"`
 }
 
-// MergeConfig defines windowed merge behaviour for orchestrator subscriptions.
+// MergeConfig defines legacy windowed merge behaviour for merged subscriptions.
 type MergeConfig struct {
 	WindowDuration time.Duration `json:"window_duration"`
 	MaxEvents      int           `json:"max_events"`

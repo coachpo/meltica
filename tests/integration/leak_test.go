@@ -21,10 +21,9 @@ func TestConsumerWrapperNoGoroutineLeaksUnderPanics(t *testing.T) {
 	defer goleak.VerifyNone(t)
 
 	eventPool := &sync.Pool{New: func() any { return &events.Event{} }}
-	mergedPool := &sync.Pool{New: func() any { return &events.MergedEvent{} }}
 	execPool := &sync.Pool{New: func() any { return &events.ExecReport{} }}
 	recyclerMetrics := recycler.NewRecyclerMetrics(prometheus.NewRegistry())
-	rec := recycler.NewRecycler(eventPool, mergedPool, execPool, recyclerMetrics)
+	rec := recycler.NewRecycler(eventPool, execPool, recyclerMetrics)
 	meter := consumer.NewConsumerMetrics(prometheus.NewRegistry())
 	wrapper := consumer.NewWrapper("leak-consumer", rec, meter)
 
@@ -64,10 +63,9 @@ func TestFanoutNoGoroutineLeaks(t *testing.T) {
 	defer goleak.VerifyNone(t)
 
 	eventPool := &sync.Pool{New: func() any { return &events.Event{} }}
-	mergedPool := &sync.Pool{New: func() any { return &events.MergedEvent{} }}
 	execPool := &sync.Pool{New: func() any { return &events.ExecReport{} }}
 	recyclerMetrics := recycler.NewRecyclerMetrics(prometheus.NewRegistry())
-	rec := recycler.NewRecycler(eventPool, mergedPool, execPool, recyclerMetrics)
+	rec := recycler.NewRecycler(eventPool, execPool, recyclerMetrics)
 	fanout := dispatcher.NewFanout(rec, eventPool, nil, 8)
 
 	subscribers := []dispatcher.Subscriber{

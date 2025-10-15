@@ -3,7 +3,6 @@ title Component View (Monolith Boundaries)
 
 package "Monolith Process" {
   [Control Bus Handler] as Ctrl
-  [Orchestrator] as Orc
   [Dispatcher] as Disp
   [Data Bus] as DBus
   [Recycler] as Recycler
@@ -19,8 +18,7 @@ package "Monolith Process" {
   }
 }
 
-PO --> Orc : Canonical Events
-Orc --> Disp : Merged/Canonical Events
+PO --> Disp : Canonical Events
 Disp --> DBus
 DBus --> Trade
 DBus --> Ticker
@@ -29,7 +27,6 @@ DBus --> OrderBook
 Trade --> Ctrl : Control Commands
 Ticker --> Ctrl : Control Commands
 OrderBook --> Ctrl : Control Commands
-Ctrl --> Orc : Merge Configs
 Ctrl --> Disp : Routing Tables (versioned)
 
 Disp --> PO : Provider Orders (idempotent)

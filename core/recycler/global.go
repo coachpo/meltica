@@ -11,9 +11,9 @@ var (
 )
 
 // InitGlobal initializes the singleton recycler instance. Subsequent calls are no-ops.
-func InitGlobal(eventPool, mergedEventPool, execReportPool *sync.Pool, metrics *RecyclerMetrics) {
+func InitGlobal(eventPool, execReportPool *sync.Pool, metrics *RecyclerMetrics) {
 	initOnce.Do(func() {
-		instance := NewRecycler(eventPool, mergedEventPool, execReportPool, metrics)
+		instance := NewRecycler(eventPool, execReportPool, metrics)
 		globalInstance.Store(instance)
 	})
 }

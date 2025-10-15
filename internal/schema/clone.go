@@ -69,15 +69,6 @@ func clonePayload(payload any) any {
 		return append([]byte(nil), v...)
 	case map[string]any:
 		return cloneMapStringAny(v)
-	case *MergedEvent:
-		return cloneMergedEvent(v)
-	case MergedEvent:
-		cloned := cloneMergedEvent(&v)
-		if cloned == nil {
-			var emptyMerged MergedEvent
-			return emptyMerged
-		}
-		return *cloned
 	default:
 		return v
 	}
@@ -165,25 +156,4 @@ func cloneSliceAny(src []any) []any {
 		out[i] = cloneInterface(src[i])
 	}
 	return out
-}
-
-func cloneMergedEvent(src *MergedEvent) *MergedEvent {
-	if src == nil {
-		return nil
-	}
-	clone := *src
-	clone.returned = false
-	if len(src.Fragments) > 0 {
-		clone.Fragments = make([]CanonicalEvent, len(src.Fragments))
-		for i := range src.Fragments {
-			fragmentClone := CloneEvent((*Event)(&src.Fragments[i]))
-			if fragmentClone != nil {
-				clone.Fragments[i] = CanonicalEvent(*fragmentClone)
-			} else {
-				var empty CanonicalEvent
-				clone.Fragments[i] = empty
-			}
-		}
-	}
-	return &clone
 }

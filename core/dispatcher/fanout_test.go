@@ -30,18 +30,16 @@ func (s *stubRecycler) RecycleEvent(ev *events.Event) {
 	s.mu.Unlock()
 }
 
-func (s *stubRecycler) RecycleMergedEvent(*events.MergedEvent) {}
-func (s *stubRecycler) RecycleExecReport(*events.ExecReport)   {}
+func (s *stubRecycler) RecycleExecReport(*events.ExecReport) {}
 func (s *stubRecycler) RecycleMany(events []*events.Event) {
 	for _, ev := range events {
 		s.RecycleEvent(ev)
 	}
 }
-func (s *stubRecycler) EnableDebugMode()                        {}
-func (s *stubRecycler) DisableDebugMode()                       {}
-func (s *stubRecycler) CheckoutEvent(*events.Event)             {}
-func (s *stubRecycler) CheckoutMergedEvent(*events.MergedEvent) {}
-func (s *stubRecycler) CheckoutExecReport(*events.ExecReport)   {}
+func (s *stubRecycler) EnableDebugMode()                      {}
+func (s *stubRecycler) DisableDebugMode()                     {}
+func (s *stubRecycler) CheckoutEvent(*events.Event)           {}
+func (s *stubRecycler) CheckoutExecReport(*events.ExecReport) {}
 
 func (s *stubRecycler) count() int {
 	s.mu.Lock()

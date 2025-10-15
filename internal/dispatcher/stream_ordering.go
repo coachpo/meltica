@@ -215,7 +215,3 @@ func (h *eventHeap) Pop() any {
 	*h = old[0 : n-1]
 	return x
 }
-
-func cloneEventForFanOut(evt *schema.Event) *schema.Event {
-	return schema.CloneEvent(evt)
-}

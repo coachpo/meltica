@@ -9,7 +9,8 @@ import (
 	"time"
 
 	"github.com/coachpo/meltica/internal/bus/controlbus"
-	"github.com/coachpo/meltica/internal/conductor"
+	"github.com/coachpo/meltica/internal/bus/databus"
+	"github.com/coachpo/meltica/internal/recycler"
 	"github.com/coachpo/meltica/internal/schema"
 )
 
@@ -23,12 +24,6 @@ type OrderSubmitter interface {
 type TradingStateStore interface {
 	Set(consumerID string, enabled bool)
 	Enabled(consumerID string) bool
-}
-
-// MergeConfigurator coordinates orchestrator merge rules.
-type MergeConfigurator interface {
-	UpsertMergeRule(def conductor.MergeRuleDefinition)
-	RemoveMergeRule(symbol string, typ schema.EventType)
 }
 
 // SubscriptionManager defines the contract for managing native adapter subscriptions.
@@ -54,10 +49,11 @@ func WithTradingState(store TradingStateStore) ControllerOption {
 	}
 }
 
-// WithMergeConfigurator wires a merge configurator for orchestrator rules.
-func WithMergeConfigurator(cfg MergeConfigurator) ControllerOption {
+// WithControlPublisher configures the dispatcher to emit control acknowledgements on the data bus.
+func WithControlPublisher(bus databus.Bus, rec recycler.Interface) ControllerOption {
 	return func(c *Controller) {
-		c.merges = cfg
+		c.eventBus = bus
+		c.recycler = rec
 	}
 }
 
@@ -69,9 +65,11 @@ type Controller struct {
 
 	orders  OrderSubmitter
 	trading TradingStateStore
-	merges  MergeConfigurator
 
 	version atomic.Int64
+
+	eventBus databus.Bus
+	recycler recycler.Interface
 }
 
 // NewController creates a dispatcher control controller.
@@ -120,47 +118,47 @@ func (c *Controller) handle(ctx context.Context, msg schema.ControlMessage) sche
 		var payload schema.Subscribe
 		if err := msg.DecodePayload(&payload); err != nil {
 			ack.ErrorMessage = err.Error()
-			return ack
+			return c.finalizeAck(ctx, msg.Type, ack)
 		}
 		return c.handleSubscribe(ctx, payload, ack)
 	case schema.ControlMessageUnsubscribe:
 		var payload schema.Unsubscribe
 		if err := msg.DecodePayload(&payload); err != nil {
 			ack.ErrorMessage = err.Error()
-			return ack
+			return c.finalizeAck(ctx, msg.Type, ack)
 		}
 		return c.handleUnsubscribe(ctx, payload, ack)
 	case schema.ControlMessageMergedSubscribe:
 		var payload schema.MergedSubscribePayload
 		if err := msg.DecodePayload(&payload); err != nil {
 			ack.ErrorMessage = err.Error()
-			return ack
+			return c.finalizeAck(ctx, msg.Type, ack)
 		}
 		return c.handleMergedSubscribe(ctx, payload, ack)
 	case schema.ControlMessageSubmitOrder:
 		var payload schema.SubmitOrderPayload
 		if err := msg.DecodePayload(&payload); err != nil {
 			ack.ErrorMessage = err.Error()
-			return ack
+			return c.finalizeAck(ctx, msg.Type, ack)
 		}
 		return c.handleSubmitOrder(ctx, msg.ConsumerID, payload, ack)
 	case schema.ControlMessageSetTradingMode:
 		var payload schema.TradingModePayload
 		if err := msg.DecodePayload(&payload); err != nil {
 			ack.ErrorMessage = err.Error()
-			return ack
+			return c.finalizeAck(ctx, msg.Type, ack)
 		}
-		return c.handleTradingMode(msg.ConsumerID, payload, ack)
+		return c.handleTradingMode(ctx, msg.ConsumerID, payload, ack)
 	case schema.ControlMessageQueryOrder:
 		var payload schema.QueryOrderPayload
 		if err := msg.DecodePayload(&payload); err != nil {
 			ack.ErrorMessage = err.Error()
-			return ack
+			return c.finalizeAck(ctx, msg.Type, ack)
 		}
 		return c.handleQueryOrder(ctx, payload, ack)
 	default:
 		ack.ErrorMessage = "unsupported command"
-		return ack
+		return c.finalizeAck(ctx, msg.Type, ack)
 	}
 }
 
@@ -168,7 +166,7 @@ func (c *Controller) handleSubscribe(ctx context.Context, cmd schema.Subscribe, 
 	typ := cmd.Type
 	if err := typ.Validate(); err != nil {
 		ack.ErrorMessage = err.Error()
-		return ack
+		return c.finalizeAck(ctx, schema.ControlMessageSubscribe, ack)
 	}
 
 	route, ok := c.table.Lookup(typ)
@@ -180,86 +178,55 @@ func (c *Controller) handleSubscribe(ctx context.Context, cmd schema.Subscribe, 
 	}
 	if err := c.table.Upsert(route); err != nil {
 		ack.ErrorMessage = err.Error()
-		return ack
+		return c.finalizeAck(ctx, schema.ControlMessageSubscribe, ack)
 	}
 	if c.manager != nil {
 		if err := c.manager.Activate(ctx, route); err != nil {
 			ack.ErrorMessage = err.Error()
-			return ack
+			return c.finalizeAck(ctx, schema.ControlMessageSubscribe, ack)
 		}
 	}
-	version := c.version.Add(1)
-	c.table.SetVersion(version)
+	version := c.bumpVersion()
 	ack.Success = true
 	ack.RoutingVersion = int(version)
-	return ack
+	return c.finalizeAck(ctx, schema.ControlMessageSubscribe, ack)
 }
 
 func (c *Controller) handleUnsubscribe(ctx context.Context, cmd schema.Unsubscribe, ack schema.ControlAcknowledgement) schema.ControlAcknowledgement {
 	typ := cmd.Type
 	if err := typ.Validate(); err != nil {
 		ack.ErrorMessage = err.Error()
-		return ack
+		return c.finalizeAck(ctx, schema.ControlMessageUnsubscribe, ack)
 	}
 	if _, ok := c.table.Lookup(typ); !ok {
 		ack.RoutingVersion = int(c.version.Load())
 		ack.ErrorMessage = "no active subscription"
-		return ack
+		return c.finalizeAck(ctx, schema.ControlMessageUnsubscribe, ack)
 	}
 	c.table.Remove(typ)
 	if c.manager != nil {
 		if err := c.manager.Deactivate(ctx, typ); err != nil {
 			ack.ErrorMessage = err.Error()
-			return ack
+			return c.finalizeAck(ctx, schema.ControlMessageUnsubscribe, ack)
 		}
 	}
-	version := c.version.Add(1)
-	c.table.SetVersion(version)
+	version := c.bumpVersion()
 	ack.Success = true
 	ack.RoutingVersion = int(version)
-	return ack
+	return c.finalizeAck(ctx, schema.ControlMessageUnsubscribe, ack)
 }
 
 func (c *Controller) handleMergedSubscribe(ctx context.Context, payload schema.MergedSubscribePayload, ack schema.ControlAcknowledgement) schema.ControlAcknowledgement {
-	if c.merges == nil {
-		ack.ErrorMessage = "merged subscriptions unavailable"
-		return ack
-	}
-
-	symbol := strings.TrimSpace(payload.Symbol)
-	if symbol == "" {
-		ack.ErrorMessage = "symbol required"
-		return ack
-	}
-	if len(payload.EventTypes) == 0 {
-		ack.ErrorMessage = "event types required"
-		return ack
-	}
-	for _, eventType := range payload.EventTypes {
-		eventType = strings.TrimSpace(eventType)
-		if eventType == "" {
-			continue
-		}
-		def := conductor.MergeRuleDefinition{
-			Symbol:         symbol,
-			EventType:      schema.EventType(strings.ToUpper(eventType)),
-			Providers:      payload.Providers,
-			WindowDuration: payload.MergeConfig.WindowDuration,
-			MaxEvents:      payload.MergeConfig.MaxEvents,
-		}
-		c.merges.UpsertMergeRule(def)
-	}
-	version := c.version.Add(1)
-	c.table.SetVersion(version)
-	ack.Success = true
-	ack.RoutingVersion = int(version)
-	return ack
+	_ = ctx
+	_ = payload
+	ack.ErrorMessage = "merged subscriptions unsupported"
+	return c.finalizeAck(ctx, schema.ControlMessageMergedSubscribe, ack)
 }
 
 func (c *Controller) handleSubmitOrder(ctx context.Context, consumerID string, payload schema.SubmitOrderPayload, ack schema.ControlAcknowledgement) schema.ControlAcknowledgement {
 	if c.orders == nil {
 		ack.ErrorMessage = "order submission unavailable"
-		return ack
+		return c.finalizeAck(ctx, schema.ControlMessageSubmitOrder, ack)
 	}
 	consumerID = strings.TrimSpace(consumerID)
 	if consumerID == "" {
@@ -268,19 +235,19 @@ func (c *Controller) handleSubmitOrder(ctx context.Context, consumerID string, p
 	}
 	if c.trading != nil && !c.trading.Enabled(consumerID) {
 		ack.ErrorMessage = fmt.Sprintf("trading disabled for consumer %s", consumerID)
-		return ack
+		return c.finalizeAck(ctx, schema.ControlMessageSubmitOrder, ack)
 	}
 	if strings.TrimSpace(payload.ClientOrderID) == "" {
 		ack.ErrorMessage = "client_order_id required"
-		return ack
+		return c.finalizeAck(ctx, schema.ControlMessageSubmitOrder, ack)
 	}
 	if strings.TrimSpace(payload.Symbol) == "" {
 		ack.ErrorMessage = "symbol required"
-		return ack
+		return c.finalizeAck(ctx, schema.ControlMessageSubmitOrder, ack)
 	}
 	if strings.TrimSpace(payload.Quantity) == "" {
 		ack.ErrorMessage = "quantity required"
-		return ack
+		return c.finalizeAck(ctx, schema.ControlMessageSubmitOrder, ack)
 	}
 	order := schema.OrderRequest{
 		ClientOrderID: payload.ClientOrderID,
@@ -301,45 +268,44 @@ func (c *Controller) handleSubmitOrder(ctx context.Context, consumerID string, p
 	}
 	if err := schema.ValidateInstrument(order.Symbol); err != nil {
 		ack.ErrorMessage = err.Error()
-		return ack
+		return c.finalizeAck(ctx, schema.ControlMessageSubmitOrder, ack)
 	}
 	if err := c.orders.SubmitOrder(ctx, order); err != nil {
 		ack.ErrorMessage = err.Error()
-		return ack
+		return c.finalizeAck(ctx, schema.ControlMessageSubmitOrder, ack)
 	}
 	version := c.version.Load()
 	ack.Success = true
 	ack.RoutingVersion = int(version)
-	return ack
+	return c.finalizeAck(ctx, schema.ControlMessageSubmitOrder, ack)
 }
 
-func (c *Controller) handleTradingMode(consumerID string, payload schema.TradingModePayload, ack schema.ControlAcknowledgement) schema.ControlAcknowledgement {
+func (c *Controller) handleTradingMode(ctx context.Context, consumerID string, payload schema.TradingModePayload, ack schema.ControlAcknowledgement) schema.ControlAcknowledgement {
 	if c.trading == nil {
 		ack.ErrorMessage = "trading state unavailable"
-		return ack
+		return c.finalizeAck(ctx, schema.ControlMessageSetTradingMode, ack)
 	}
 	consumerID = strings.TrimSpace(consumerID)
 	if consumerID == "" {
 		ack.ErrorMessage = "consumer id required"
-		return ack
+		return c.finalizeAck(ctx, schema.ControlMessageSetTradingMode, ack)
 	}
 	c.trading.Set(consumerID, payload.Enabled)
-	version := c.version.Add(1)
-	c.table.SetVersion(version)
+	version := c.bumpVersion()
 	ack.Success = true
 	ack.RoutingVersion = int(version)
-	return ack
+	return c.finalizeAck(ctx, schema.ControlMessageSetTradingMode, ack)
 }
 
 func (c *Controller) handleQueryOrder(ctx context.Context, payload schema.QueryOrderPayload, ack schema.ControlAcknowledgement) schema.ControlAcknowledgement {
 	if c.orders == nil {
 		ack.ErrorMessage = "order queries unavailable"
-		return ack
+		return c.finalizeAck(ctx, schema.ControlMessageQueryOrder, ack)
 	}
 	clientOrderID := strings.TrimSpace(payload.ClientOrderID)
 	if clientOrderID == "" {
 		ack.ErrorMessage = "client_order_id required"
-		return ack
+		return c.finalizeAck(ctx, schema.ControlMessageQueryOrder, ack)
 	}
 	provider := strings.TrimSpace(payload.Provider)
 	if provider == "" {
@@ -348,16 +314,16 @@ func (c *Controller) handleQueryOrder(ctx context.Context, payload schema.QueryO
 	report, found, err := c.orders.QueryOrder(ctx, provider, clientOrderID)
 	if err != nil {
 		ack.ErrorMessage = err.Error()
-		return ack
+		return c.finalizeAck(ctx, schema.ControlMessageQueryOrder, ack)
 	}
 	if !found {
 		ack.ErrorMessage = "order not found"
-		return ack
+		return c.finalizeAck(ctx, schema.ControlMessageQueryOrder, ack)
 	}
 	ack.Success = true
 	ack.Result = report
 	ack.RoutingVersion = int(c.version.Load())
-	return ack
+	return c.finalizeAck(ctx, schema.ControlMessageQueryOrder, ack)
 }
 
 func mergeFilters(existing []FilterRule, overrides map[string]any) []FilterRule {
@@ -367,4 +333,97 @@ func mergeFilters(existing []FilterRule, overrides map[string]any) []FilterRule 
 		rules = append(rules, FilterRule{Field: field, Op: "eq", Value: value})
 	}
 	return rules
+}
+
+func (c *Controller) finalizeAck(ctx context.Context, typ schema.ControlMessageType, ack schema.ControlAcknowledgement) schema.ControlAcknowledgement {
+	c.emitControlEvents(ctx, typ, ack)
+	return ack
+}
+
+func (c *Controller) emitControlEvents(ctx context.Context, typ schema.ControlMessageType, ack schema.ControlAcknowledgement) {
+	if c.eventBus == nil {
+		return
+	}
+	payload := schema.ControlAckPayload{
+		MessageID:      ack.MessageID,
+		ConsumerID:     ack.ConsumerID,
+		CommandType:    typ,
+		Success:        ack.Success,
+		RoutingVersion: ack.RoutingVersion,
+		ErrorMessage:   ack.ErrorMessage,
+		Timestamp:      ack.Timestamp,
+	}
+	evt := c.newControlEvent(ctx, schema.EventTypeControlAck, ack.MessageID, payload, ack.RoutingVersion)
+	c.publishEvent(ctx, evt)
+
+	if ack.Result != nil {
+		resPayload := schema.ControlResultPayload{
+			MessageID:      ack.MessageID,
+			ConsumerID:     ack.ConsumerID,
+			CommandType:    typ,
+			RoutingVersion: ack.RoutingVersion,
+			Result:         ack.Result,
+			Timestamp:      ack.Timestamp,
+		}
+		resEvt := c.newControlEvent(ctx, schema.EventTypeControlResult, ack.MessageID, resPayload, ack.RoutingVersion)
+		c.publishEvent(ctx, resEvt)
+	}
+}
+
+func (c *Controller) newControlEvent(ctx context.Context, typ schema.EventType, messageID string, payload any, routingVersion int) *schema.Event {
+	evt := c.borrowEvent(ctx)
+	if evt == nil {
+		return nil
+	}
+	evt.Provider = "dispatcher"
+	evt.Type = typ
+	evt.Symbol = "CONTROL"
+	id := strings.TrimSpace(messageID)
+	if id == "" {
+		id = fmt.Sprintf("%s-%d", typ, time.Now().UTC().UnixNano())
+	}
+	evt.EventID = fmt.Sprintf("control:%s:%s", typ, id)
+	evt.IngestTS = time.Now().UTC()
+	evt.EmitTS = evt.IngestTS
+	evt.Payload = payload
+	evt.RoutingVersion = routingVersion
+	return evt
+}
+
+func (c *Controller) publishEvent(ctx context.Context, evt *schema.Event) {
+	if evt == nil {
+		return
+	}
+	if c.eventBus != nil {
+		_ = c.eventBus.Publish(ctx, evt)
+	}
+	c.recycleEvent(evt)
+}
+
+func (c *Controller) borrowEvent(ctx context.Context) *schema.Event {
+	if c.recycler != nil {
+		evt, err := c.recycler.BorrowEvent(ctx)
+		if err == nil && evt != nil {
+			c.recycler.CheckoutEvent(evt)
+			return evt
+		}
+	}
+	return new(schema.Event)
+}
+
+func (c *Controller) recycleEvent(evt *schema.Event) {
+	if evt == nil {
+		return
+	}
+	if c.recycler != nil {
+		c.recycler.RecycleEvent(evt)
+	}
+}
+
+func (c *Controller) bumpVersion() int64 {
+	version := c.version.Add(1)
+	if c.table != nil {
+		c.table.SetVersion(version)
+	}
+	return version
 }

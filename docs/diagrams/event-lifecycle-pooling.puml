@@ -4,7 +4,6 @@ title Canonical Event Lifecycle With Pool, Recycler, and Control Bus
 database "Event Pool (sync.Pool)" as Pool
 queue "Control Bus" as ControlBus
 participant "Provider Component" as Provider
-participant "Orchestrator" as Orchestrator
 participant "Dispatcher" as Dispatcher
 queue "Data Bus" as DataBus
 actor "Consumer A (lambda)" as CON_A
@@ -12,26 +11,15 @@ actor "Consumer B (lambda)" as CON_B
 participant "Recycler\n(reset + put back)" as Recycler
 
 group Control plane
-  CON_A -> ControlBus : Subscribe / SubscribeMerged / Unsubscribe
+  CON_A -> ControlBus : Subscribe / Unsubscribe
   CON_B -> ControlBus : SubmitOrder / QueryOrder
-  ControlBus -> Orchestrator : merge configs (keys, window, partial=suppress)
   ControlBus -> Dispatcher : routing updates (versioned)
 end group
 
-loop Event lifecycle (per canonical or merged event)
+loop Event lifecycle (per canonical event)
   Pool --> Provider : Get() *Event
-  Provider -> Orchestrator : *Event
-
-  alt Merge needed
-    Orchestrator -> Pool : Get() *Merged
-    Orchestrator -> Orchestrator : compose merged from partials
-    Orchestrator -> Recycler : recycle(partials)
-    Orchestrator -> Orchestrator : tag routing_version (current)
-    Orchestrator -> Dispatcher : *Merged
-  else No merge
-    Orchestrator -> Orchestrator : tag routing_version (current)
-    Orchestrator -> Dispatcher : *Event
-  end
+  Provider -> Dispatcher : *Event
+  Dispatcher -> Dispatcher : stamp routing_version (current)
 
   Dispatcher -> Dispatcher : find subscribers (routing table)
   alt fan-out > 1

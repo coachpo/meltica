@@ -15,7 +15,6 @@ import (
 	"github.com/coachpo/meltica/internal/adapters/binance"
 	"github.com/coachpo/meltica/internal/bus/controlbus"
 	"github.com/coachpo/meltica/internal/bus/databus"
-	"github.com/coachpo/meltica/internal/conductor"
 	"github.com/coachpo/meltica/internal/consumer"
 	"github.com/coachpo/meltica/internal/dispatcher"
 	"github.com/coachpo/meltica/internal/pool"
@@ -61,7 +60,6 @@ func main() {
 	registerPool("WsFrame", 200, func() interface{} { return new(schema.WsFrame) })
 	registerPool("ProviderRaw", 200, func() interface{} { return new(schema.ProviderRaw) })
 	registerPool("CanonicalEvent", 300, func() interface{} { return new(schema.CanonicalEvent) })
-	registerPool("MergedEvent", 50, func() interface{} { return new(schema.MergedEvent) })
 	registerPool("OrderRequest", 20, func() interface{} { return new(schema.OrderRequest) })
 	registerPool("ExecReport", 20, func() interface{} { return new(schema.ExecReport) })
 	defer func() {
@@ -113,14 +111,6 @@ func main() {
 		}
 	}()
 
-	eventOrchestrator := conductor.NewEventOrchestratorWithPool(poolMgr)
-	eventOrchestrator.AddProvider("binance", provider.Events(), provider.Errors())
-	go func() {
-		if err := eventOrchestrator.Start(ctx); err != nil && err != context.Canceled {
-			logger.Printf("orchestrator: %v", err)
-		}
-	}()
-
 	runtimeCfg := config.DispatcherRuntimeConfig{
 		StreamOrdering: config.StreamOrderingConfig{
 			LatenessTolerance: 150 * time.Millisecond,
@@ -129,10 +119,10 @@ func main() {
 		},
 	}
 
-	dispatcherRuntime := dispatcher.NewRuntime(bus, poolMgr, rec, runtimeCfg, nil)
-	dispatchErrs := dispatcherRuntime.Start(ctx, eventOrchestrator.Events())
+	dispatcherRuntime := dispatcher.NewRuntime(bus, table, poolMgr, rec, runtimeCfg, nil)
+	dispatchErrs := dispatcherRuntime.Start(ctx, provider.Events())
 
-	go logErrors(logger, "orchestrator", eventOrchestrator.Errors())
+	go logErrors(logger, "provider", provider.Errors())
 	go logErrors(logger, "dispatcher", dispatchErrs)
 
 	subscriptionManager := binance.NewSubscriptionManager(provider)
@@ -190,7 +180,7 @@ func main() {
 		subscriptionManager,
 		dispatcher.WithOrderSubmitter(provider),
 		dispatcher.WithTradingState(tradingState),
-		dispatcher.WithMergeConfigurator(eventOrchestrator),
+		dispatcher.WithControlPublisher(bus, rec),
 	)
 	go func() {
 		if err := controller.Start(ctx); err != nil && err != context.Canceled {
@@ -225,8 +215,6 @@ func main() {
 	}
 }
 
-
-
 func drainConsumer(logger *log.Logger, events <-chan *schema.Event, errs <-chan error) {
 	for events != nil || errs != nil {
 		select {
@@ -249,8 +237,6 @@ func drainConsumer(logger *log.Logger, events <-chan *schema.Event, errs <-chan 
 		}
 	}
 }
-
-
 
 func routeFromConfig(name string, cfg config.RouteConfig) dispatcher.Route {
 	filters := make([]dispatcher.FilterRule, 0, len(cfg.Filters))

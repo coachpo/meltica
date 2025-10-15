@@ -16,10 +16,9 @@ import (
 func newConsumerWrapper(t testing.TB, consumerID string) (*consumer.Wrapper, *consumer.ConsumerMetrics) {
 	t.Helper()
 	eventPool := &sync.Pool{New: func() any { return &events.Event{} }}
-	mergedPool := &sync.Pool{New: func() any { return &events.MergedEvent{} }}
 	execPool := &sync.Pool{New: func() any { return &events.ExecReport{} }}
 	metrics := recycler.NewRecyclerMetrics(prometheus.NewRegistry())
-	rec := recycler.NewRecycler(eventPool, mergedPool, execPool, metrics)
+	rec := recycler.NewRecycler(eventPool, execPool, metrics)
 	meter := consumer.NewConsumerMetrics(prometheus.NewRegistry())
 	return consumer.NewWrapper(consumerID, rec, meter), meter
 }

@@ -42,10 +42,9 @@ func TestFanoutErrorLoggingIncludesTraceContext(t *testing.T) {
 	defer observability.SetLogger(nil)
 
 	eventPool := &sync.Pool{New: func() any { return &events.Event{} }}
-	mergedPool := &sync.Pool{New: func() any { return &events.MergedEvent{} }}
 	execPool := &sync.Pool{New: func() any { return &events.ExecReport{} }}
 	recyclerMetrics := recycler.NewRecyclerMetrics(prometheus.NewRegistry())
-	rec := recycler.NewRecycler(eventPool, mergedPool, execPool, recyclerMetrics)
+	rec := recycler.NewRecycler(eventPool, execPool, recyclerMetrics)
 	fanout := dispatcher.NewFanout(rec, eventPool, nil, 4)
 
 	subscribers := []dispatcher.Subscriber{

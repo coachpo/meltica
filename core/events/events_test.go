@@ -59,20 +59,6 @@ func TestEventReset(t *testing.T) {
 	}
 }
 
-func TestMergedEventReset(t *testing.T) {
-	merged := &events.MergedEvent{
-		Event:           events.Event{TraceID: "trace", Kind: events.KindMarketData},
-		SourceProviders: []string{"a", "b"},
-		MergeWindowID:   "window",
-	}
-
-	merged.Reset()
-
-	if merged.TraceID != "" || len(merged.SourceProviders) != 0 || merged.MergeWindowID != "" {
-		t.Fatalf("merged event not reset: %+v", merged)
-	}
-}
-
 func TestExecReportReset(t *testing.T) {
 	report := &events.ExecReport{
 		TraceID:       "trace",

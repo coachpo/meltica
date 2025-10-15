@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -21,11 +22,11 @@ type ProviderOptions struct {
 
 // Provider streams canonical events from Binance transports.
 type Provider struct {
-	name         string
-	ws           *WSClient
-	rest         *RESTClient
-	opts         ProviderOptions
-	clock        func() time.Time
+	name  string
+	ws    *WSClient
+	rest  *RESTClient
+	opts  ProviderOptions
+	clock func() time.Time
 
 	events chan *schema.Event
 	errs   chan error
@@ -42,6 +43,7 @@ type Provider struct {
 	reports   map[string]schema.ExecReport
 	bookMu    sync.Mutex
 	books     map[string]*BookAssembler
+	pending   map[string][]*schema.Event
 }
 
 type routeHandle struct {
@@ -60,10 +62,10 @@ func NewProvider(name string, ws *WSClient, rest *RESTClient, opts ProviderOptio
 	provider.rest = rest
 	provider.opts = opts
 	provider.clock = time.Now
-	
+
 	// Note: Book assembler is passed to ws client in constructor
 	// Type assertion not needed as ws is already of correct type
-	
+
 	provider.events = make(chan *schema.Event, 128)
 	provider.errs = make(chan error, 8)
 	provider.orders = make(chan schema.OrderRequest, 128)
@@ -71,6 +73,7 @@ func NewProvider(name string, ws *WSClient, rest *RESTClient, opts ProviderOptio
 	provider.orderBook = make(map[string]schema.OrderRequest)
 	provider.reports = make(map[string]schema.ExecReport)
 	provider.books = make(map[string]*BookAssembler)
+	provider.pending = make(map[string][]*schema.Event)
 	return provider
 }
 
@@ -366,44 +369,108 @@ func (p *Provider) bookAssembler(symbol string) *BookAssembler {
 	return assembler
 }
 
-func (p *Provider) prepareOrderBook(evt *schema.Event) error {
+func (p *Provider) prepareOrderBook(evt *schema.Event) ([]*schema.Event, bool, error) {
 	if evt == nil {
-		return nil
+		return nil, false, nil
 	}
 	switch evt.Type {
 	case schema.EventTypeBookSnapshot:
 		payload, ok := coerceBookSnapshot(evt.Payload)
 		if !ok {
-			return fmt.Errorf("provider %s: invalid book snapshot payload", p.name)
+			return nil, false, fmt.Errorf("provider %s: invalid book snapshot payload", p.name)
 		}
 		assembler := p.bookAssembler(evt.Symbol)
 		if assembler == nil {
-			return nil
+			return nil, true, nil
 		}
 		snap, err := assembler.ApplySnapshot(payload, evt.SeqProvider)
 		if err != nil {
-			return err
+			return nil, false, err
 		}
 		evt.Payload = snap
+		extra := p.flushBufferedUpdates(evt.Symbol, assembler)
+		return extra, true, nil
 	case schema.EventTypeBookUpdate:
 		payload, ok := coerceBookUpdate(evt.Payload)
 		if !ok {
-			return fmt.Errorf("provider %s: invalid book update payload", p.name)
+			return nil, false, fmt.Errorf("provider %s: invalid book update payload", p.name)
 		}
 		assembler := p.bookAssembler(evt.Symbol)
 		if assembler == nil {
-			return nil
+			return nil, true, nil
 		}
 		update, err := assembler.ApplyUpdate(payload, evt.SeqProvider)
 		if err != nil {
 			if errors.Is(err, ErrBookNotInitialized) {
-				return nil
+				p.bufferBookUpdate(evt.Symbol, evt)
+				return nil, false, nil
 			}
-			return err
+			return nil, false, err
 		}
 		evt.Payload = update
+		return nil, true, nil
+	default:
+		return nil, true, nil
 	}
-	return nil
+}
+
+func (p *Provider) bufferBookUpdate(symbol string, evt *schema.Event) {
+	if evt == nil {
+		return
+	}
+	symbol = strings.ToUpper(strings.TrimSpace(symbol))
+	if symbol == "" {
+		return
+	}
+	p.bookMu.Lock()
+	p.pending[symbol] = append(p.pending[symbol], evt)
+	p.bookMu.Unlock()
+}
+
+func (p *Provider) flushBufferedUpdates(symbol string, assembler *BookAssembler) []*schema.Event {
+	symbol = strings.ToUpper(strings.TrimSpace(symbol))
+	if symbol == "" {
+		return nil
+	}
+	p.bookMu.Lock()
+	updates := p.pending[symbol]
+	delete(p.pending, symbol)
+	p.bookMu.Unlock()
+	if len(updates) == 0 {
+		return nil
+	}
+	sort.Slice(updates, func(i, j int) bool {
+		if updates[i] == nil {
+			return false
+		}
+		if updates[j] == nil {
+			return true
+		}
+		return updates[i].SeqProvider < updates[j].SeqProvider
+	})
+	result := make([]*schema.Event, 0, len(updates))
+	for _, evt := range updates {
+		if evt == nil {
+			continue
+		}
+		payload, ok := coerceBookUpdate(evt.Payload)
+		if !ok {
+			continue
+		}
+		update, err := assembler.ApplyUpdate(payload, evt.SeqProvider)
+		if err != nil {
+			if !errors.Is(err, ErrBookNotInitialized) {
+				p.emitError(err)
+			}
+			continue
+		}
+		evt.Payload = update
+		if evt.EmitTS.IsZero() {
+			evt.EmitTS = p.clock().UTC()
+		}
+		result = append(result, evt)
+	}
+	return result
 }
 
 func (p *Provider) emitEvent(evt *schema.Event) {
@@ -416,8 +483,24 @@ func (p *Provider) emitEvent(evt *schema.Event) {
 	if evt.EmitTS.IsZero() {
 		evt.EmitTS = p.clock().UTC()
 	}
-	if err := p.prepareOrderBook(evt); err != nil {
+	extra, emitCurrent, err := p.prepareOrderBook(evt)
+	if err != nil {
 		p.emitError(err)
+		return
+	}
+	if emitCurrent {
+		p.forwardEvent(evt)
+	}
+	if len(extra) == 0 {
+		return
+	}
+	for _, update := range extra {
+		p.forwardEvent(update)
+	}
+}
+
+func (p *Provider) forwardEvent(evt *schema.Event) {
+	if evt == nil {
 		return
 	}
 	if p.ctx == nil {

@@ -11,24 +11,22 @@ import (
 
 // RecyclerImpl provides the concrete implementation backed by sync.Pool instances.
 type RecyclerImpl struct { //nolint:revive
-	eventPool       *sync.Pool
-	mergedEventPool *sync.Pool
-	execReportPool  *sync.Pool
-	metrics         *RecyclerMetrics
-	debugEnabled    atomic.Bool
-	putTracker      sync.Map
+	eventPool      *sync.Pool
+	execReportPool *sync.Pool
+	metrics        *RecyclerMetrics
+	debugEnabled   atomic.Bool
+	putTracker     sync.Map
 }
 
 // NewRecycler constructs a RecyclerImpl with the provided pools and metrics instruments.
-func NewRecycler(eventPool, mergedEventPool, execReportPool *sync.Pool, metrics *RecyclerMetrics) *RecyclerImpl {
+func NewRecycler(eventPool, execReportPool *sync.Pool, metrics *RecyclerMetrics) *RecyclerImpl {
 	if metrics == nil {
 		metrics = NewRecyclerMetrics(nil)
 	}
 	r := &RecyclerImpl{ //nolint:exhaustruct
-		eventPool:       eventPool,
-		mergedEventPool: mergedEventPool,
-		execReportPool:  execReportPool,
-		metrics:         metrics,
+		eventPool:      eventPool,
+		execReportPool: execReportPool,
+		metrics:        metrics,
 	}
 	return r
 }
@@ -51,27 +49,6 @@ func (r *RecyclerImpl) RecycleEvent(ev *events.Event) {
 		poisonEventMemory(ptr)
 	}
 	r.eventPool.Put(ev)
-	r.metrics.observeRecycle(kind, started)
-}
-
-// RecycleMergedEvent resets a merged event and returns it to the merged event pool.
-func (r *RecyclerImpl) RecycleMergedEvent(ev *events.MergedEvent) {
-	if ev == nil || r.mergedEventPool == nil {
-		return
-	}
-	debugMode := r.debugEnabled.Load()
-	var ptr unsafe.Pointer
-	if debugMode {
-		ptr = unsafe.Pointer(ev) //nolint:gosec
-		r.guardDoublePut(ptr)
-	}
-	kind := ev.Kind
-	started := time.Now()
-	ev.Reset()
-	if debugMode {
-		poisonEventMemory(ptr)
-	}
-	r.mergedEventPool.Put(ev)
 	r.metrics.observeRecycle(kind, started)
 }
 
@@ -115,17 +92,6 @@ func (r *RecyclerImpl) DisableDebugMode() {
 
 // CheckoutEvent marks an event as out-of-pool, clearing debug trackers for subsequent reuse.
 func (r *RecyclerImpl) CheckoutEvent(ev *events.Event) {
-	if ev == nil {
-		return
-	}
-	if r.debugEnabled.Load() {
-		ptr := unsafe.Pointer(ev) //nolint:gosec
-		r.releasePointer(ptr)
-	}
-}
-
-// CheckoutMergedEvent marks a merged event as out-of-pool, clearing debug trackers for subsequent reuse.
-func (r *RecyclerImpl) CheckoutMergedEvent(ev *events.MergedEvent) {
 	if ev == nil {
 		return
 	}

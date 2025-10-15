@@ -13,7 +13,6 @@ import (
 	"github.com/coachpo/meltica/config"
 	"github.com/coachpo/meltica/internal/adapters/binance"
 	"github.com/coachpo/meltica/internal/bus/databus"
-	"github.com/coachpo/meltica/internal/conductor"
 	"github.com/coachpo/meltica/internal/dispatcher"
 	"github.com/coachpo/meltica/internal/observability"
 	"github.com/coachpo/meltica/internal/pool"
@@ -35,7 +34,6 @@ func BenchmarkEndToEndLatency(b *testing.B) {
 	registerPool("WsFrame", 512, func() interface{} { return &schema.WsFrame{} })
 	registerPool("ProviderRaw", 512, func() interface{} { return &schema.ProviderRaw{} })
 	registerPool("CanonicalEvent", 1024, func() interface{} { return &schema.Event{} })
-	registerPool("MergedEvent", 128, func() interface{} { return &schema.MergedEvent{} })
 
 	ws := NewFakeWebSocket(b.N + 1024)
 	parser := binance.NewParserWithPool("binance", pools)
@@ -45,18 +43,8 @@ func BenchmarkEndToEndLatency(b *testing.B) {
 	})
 	require.NoError(b, provider.Start(ctx))
 
-	orch := conductor.NewEventOrchestratorWithPool(pools)
-	orch.AddProvider("binance", provider.Events(), provider.Errors())
-	orchErrs := make(chan error, 8)
-	go func() {
-		err := orch.Start(ctx)
-		if err != nil && err != context.Canceled {
-			orchErrs <- err
-		}
-		close(orchErrs)
-	}()
-
 	bus := databus.NewMemoryBus(databus.MemoryConfig{BufferSize: 2048})
+	table := dispatcher.NewTable()
 	dispatchCfg := config.DispatcherRuntimeConfig{
 		StreamOrdering: config.StreamOrderingConfig{
 			LatenessTolerance: 150 * time.Millisecond,
@@ -64,8 +52,9 @@ func BenchmarkEndToEndLatency(b *testing.B) {
 			MaxBufferSize:     2048,
 		},
 	}
-	dispatch := dispatcher.NewRuntime(bus, pools, nil, dispatchCfg, observability.NewRuntimeMetrics())
-	dispatchErrs := dispatch.Start(ctx, orch.Events())
+	dispatch := dispatcher.NewRuntime(bus, table, pools, nil, dispatchCfg, observability.NewRuntimeMetrics())
+	dispatchErrs := dispatch.Start(ctx, provider.Events())
+	providerErrs := provider.Errors()
 
 	_, tradeCh, err := bus.Subscribe(ctx, schema.EventTypeTrade)
 	require.NoError(b, err)
@@ -74,7 +63,7 @@ func BenchmarkEndToEndLatency(b *testing.B) {
 	const warmup = 16
 	for i := 0; i < warmup; i++ {
 		ws.Publish(encodeAggTradeFrame(uint64(i + 1)))
-		awaitTradeEvent(b, tradeCh, dispatchErrs, orchErrs)
+		awaitTradeEvent(b, tradeCh, dispatchErrs, providerErrs)
 	}
 
 	durations := make([]time.Duration, 0, b.N)
@@ -82,7 +71,7 @@ func BenchmarkEndToEndLatency(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		start := time.Now()
 		ws.Publish(encodeAggTradeFrame(uint64(i + 1 + warmup)))
-		awaitTradeEvent(b, tradeCh, dispatchErrs, orchErrs)
+		awaitTradeEvent(b, tradeCh, dispatchErrs, providerErrs)
 		durations = append(durations, time.Since(start))
 	}
 	b.StopTimer()
@@ -109,7 +98,7 @@ func BenchmarkEndToEndLatency(b *testing.B) {
 	b.ReportMetric(float64(p99)/float64(time.Millisecond), "p99_ms")
 }
 
-func awaitTradeEvent(b *testing.B, tradeCh <-chan *schema.Event, dispatchErrs <-chan error, orchErrs <-chan error) *schema.Event {
+func awaitTradeEvent(b *testing.B, tradeCh <-chan *schema.Event, dispatchErrs <-chan error, providerErrs <-chan error) *schema.Event {
 	b.Helper()
 	timer := time.NewTimer(500 * time.Millisecond)
 	defer timer.Stop()
@@ -127,9 +116,9 @@ func awaitTradeEvent(b *testing.B, tradeCh <-chan *schema.Event, dispatchErrs <-
 			if ok && err != nil {
 				b.Fatalf("dispatcher error: %v", err)
 			}
-		case err, ok := <-orchErrs:
+		case err, ok := <-providerErrs:
 			if ok && err != nil {
-				b.Fatalf("orchestrator error: %v", err)
+				b.Fatalf("provider error: %v", err)
 			}
 		case <-timer.C:
 			b.Fatalf("timeout waiting for trade event")

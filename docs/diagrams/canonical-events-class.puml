@@ -13,20 +13,6 @@ class CanonicalEvent {
   +payload: Any
 }
 
-class MergedEvent {
-  +merge_id: String
-  +providers: List<String>
-  +symbols: List<String>
-  +event_types: List<String>
-  +merge_key: Map<String,Any>
-  +window_start: Instant
-  +window_end: Instant
-  +duration_ms: Long
-  +count: Int
-  +routing_version: Long
-  +items: List<ItemRef>
-}
-
 class ItemRef { 
   +ref_event_id: String
   +payload: Any 
@@ -85,5 +71,4 @@ class CommandResult {
 }
 
 CanonicalEvent "1" o- "*" ItemRef : payload
-MergedEvent "1" o- "*" ItemRef
 @enduml

@@ -27,14 +27,12 @@ func (r *recyclerStub) RecycleEvent(ev *events.Event) {
 	r.mu.Unlock()
 }
 
-func (r *recyclerStub) RecycleMergedEvent(*events.MergedEvent)  {}
-func (r *recyclerStub) RecycleExecReport(*events.ExecReport)    {}
-func (r *recyclerStub) RecycleMany([]*events.Event)             {}
-func (r *recyclerStub) EnableDebugMode()                        {}
-func (r *recyclerStub) DisableDebugMode()                       {}
-func (r *recyclerStub) CheckoutEvent(*events.Event)             {}
-func (r *recyclerStub) CheckoutMergedEvent(*events.MergedEvent) {}
-func (r *recyclerStub) CheckoutExecReport(*events.ExecReport)   {}
+func (r *recyclerStub) RecycleExecReport(*events.ExecReport)  {}
+func (r *recyclerStub) RecycleMany([]*events.Event)           {}
+func (r *recyclerStub) EnableDebugMode()                      {}
+func (r *recyclerStub) DisableDebugMode()                     {}
+func (r *recyclerStub) CheckoutEvent(*events.Event)           {}
+func (r *recyclerStub) CheckoutExecReport(*events.ExecReport) {}
 
 func (r *recyclerStub) recycled() int {
 	r.mu.Lock()

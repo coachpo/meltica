@@ -12,7 +12,6 @@ import (
 	"github.com/coachpo/meltica/internal/adapters/binance"
 	"github.com/coachpo/meltica/internal/bus/controlbus"
 	"github.com/coachpo/meltica/internal/bus/databus"
-	"github.com/coachpo/meltica/internal/conductor"
 	"github.com/coachpo/meltica/internal/dispatcher"
 	"github.com/coachpo/meltica/internal/observability"
 	"github.com/coachpo/meltica/internal/schema"
@@ -34,11 +33,12 @@ func TestSubscriptionManagementLifecycle(t *testing.T) {
 	bus := databus.NewMemoryBus(databus.MemoryConfig{BufferSize: 16})
 	defer bus.Close()
 
-	eventOrchestrator := conductor.NewEventOrchestrator()
-	eventOrchestrator.AddProvider("binance", provider.Events(), provider.Errors())
-	go func() {
-		_ = eventOrchestrator.Start(ctx)
-	}()
+	table := dispatcher.NewTable()
+	route := dispatcher.Route{
+		Type:     schema.CanonicalType("TRADE"),
+		WSTopics: []string{"btcusdt@aggTrade"},
+	}
+	require.NoError(t, table.Upsert(route))
 
 	runtimeCfg := config.DispatcherRuntimeConfig{
 		StreamOrdering: config.StreamOrderingConfig{
@@ -51,19 +51,13 @@ func TestSubscriptionManagementLifecycle(t *testing.T) {
 			TokenBurst:         100,
 		},
 	}
-	dispatch := dispatcher.NewRuntime(bus, nil, nil, runtimeCfg, observability.NewRuntimeMetrics())
-	dispatchErrs := dispatch.Start(ctx, eventOrchestrator.Events())
+	dispatch := dispatcher.NewRuntime(bus, table, nil, nil, runtimeCfg, observability.NewRuntimeMetrics())
+	dispatchErrs := dispatch.Start(ctx, provider.Events())
 	go drainErrors(t, dispatchErrs)
+	go drainErrors(t, provider.Errors())
 
 	controlBus := controlbus.NewMemoryBus(controlbus.MemoryConfig{BufferSize: 8})
 	defer controlBus.Close()
-
-	table := dispatcher.NewTable()
-	route := dispatcher.Route{
-		Type:     schema.CanonicalType("TRADE"),
-		WSTopics: []string{"btcusdt@aggTrade"},
-	}
-	require.NoError(t, table.Upsert(route))
 
 	subManager := binance.NewSubscriptionManager(provider)
 	controller := dispatcher.NewController(table, controlBus, subManager)

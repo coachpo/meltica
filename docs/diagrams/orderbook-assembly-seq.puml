@@ -8,7 +8,7 @@ box "Combination (Provider-side components)" #LightBlue
   participant "Parser" as Parser
 end box
 
-participant "Orchestrator" as Orc
+participant "Dispatcher" as Disp
 
 WS -> Parser : Raw frame
 Parser -> BA : BookUpdatePayload{symbol=BTC-USDT, seq=1001, checksum}
@@ -31,5 +31,5 @@ alt Checksum verification fails
   BA -> BA : Reject event; emit error
 end
 
-BA -> Orc : Canonical BookUpdate/BookSnapshot events
+BA -> Disp : Canonical BookUpdate/BookSnapshot events
 @enduml

@@ -4,7 +4,6 @@ title Control Bus: Subscribe, SubmitOrder, QueryOrder
 actor "Consumer lambda" as CON
 queue "Control Bus" as CB
 participant "Control Handler" as Ctrl
-participant "Orchestrator" as Orc
 participant "Dispatcher" as Disp
 participant "Provider Adapter" as Prov
 queue "Data Bus" as DBus
@@ -20,8 +19,7 @@ CON -> CB : ControlCommand{cmd=SubmitOrder, reply_to=CON, client_order_id=xyz}
 CB -> Ctrl : deliver
 Ctrl -> CB : CommandAck{accepted}
 Ctrl -> Prov : ProviderOrder{client_order_id=xyz}
-Prov -> Orc : ExecReport{ACK}
-Orc -> Disp : ExecReport
+Prov -> Disp : ExecReport{ACK}
 Disp -> DBus : publish
 DBus --> CON : ExecReport
 

@@ -14,6 +14,7 @@ import (
 // Runtime coordinates dispatcher ingestion and delivery.
 type Runtime struct {
 	bus            databus.Bus
+	table          *Table
 	pools          *pool.PoolManager
 	rec            recycler.Interface
 	cfg            config.DispatcherRuntimeConfig
@@ -25,12 +26,13 @@ type Runtime struct {
 }
 
 // NewRuntime constructs a dispatcher runtime instance.
-func NewRuntime(bus databus.Bus, pools *pool.PoolManager, rec recycler.Interface, cfg config.DispatcherRuntimeConfig, metrics interface{}) *Runtime {
+func NewRuntime(bus databus.Bus, table *Table, pools *pool.PoolManager, rec recycler.Interface, cfg config.DispatcherRuntimeConfig, metrics interface{}) *Runtime {
 	// metrics parameter is ignored - observability removed
 	clock := time.Now
 	ordering := NewStreamOrdering(cfg.StreamOrdering, clock)
 	runtime := new(Runtime)
 	runtime.bus = bus
+	runtime.table = table
 	runtime.pools = pools
 	runtime.rec = rec
 	runtime.cfg = cfg
@@ -67,12 +69,7 @@ func (r *Runtime) run(ctx context.Context, events <-chan *schema.Event, errCh ch
 			if evt.Provider == "" {
 				evt.Provider = "binance"
 			}
-			// Set routing version on events
-			if evt.RoutingVersion == 0 {
-				// You would need to get this from the table/controller
-				// For now, we'll set it to 0 to indicate no special routing
-			}
-			clone := cloneEventForFanOut(evt)
+			clone := r.cloneForPublish(ctx, evt)
 			if clone != nil {
 				if err := r.bus.Publish(ctx, clone); err != nil {
 					select {
@@ -98,6 +95,12 @@ func (r *Runtime) run(ctx context.Context, events <-chan *schema.Event, errCh ch
 			}
 			if evt == nil {
 				continue
+			}
+			if rv := r.currentRoutingVersion(); rv > 0 {
+				evt.RoutingVersion = rv
+			}
+			if evt.EmitTS.IsZero() {
+				evt.EmitTS = r.clock().UTC()
 			}
 			if !r.markSeen(evt.EventID) {
 				r.releaseEvent(evt)
@@ -141,6 +144,13 @@ func (r *Runtime) gcDedupe(now time.Time) {
 	}
 }
 
+func (r *Runtime) currentRoutingVersion() int {
+	if r.table == nil {
+		return 0
+	}
+	return int(r.table.Version())
+}
+
 func (r *Runtime) releaseEvent(evt *schema.Event) {
 	if evt == nil || r.pools == nil {
 		if r.rec != nil {
@@ -153,4 +163,23 @@ func (r *Runtime) releaseEvent(evt *schema.Event) {
 		return
 	}
 	r.pools.Put("CanonicalEvent", evt)
+}
+
+func (r *Runtime) cloneForPublish(ctx context.Context, evt *schema.Event) *schema.Event {
+	if evt == nil {
+		return nil
+	}
+	cloned := schema.CloneEvent(evt)
+	if cloned == nil {
+		return nil
+	}
+	if r.rec != nil {
+		pooled, err := r.rec.BorrowEvent(ctx)
+		if err == nil && pooled != nil {
+			r.rec.CheckoutEvent(pooled)
+			*pooled = *cloned
+			return pooled
+		}
+	}
+	return cloned
 }

@@ -26,13 +26,6 @@ func TestLoadStreamingConfigV2(t *testing.T) {
   rest_endpoint: https://coinbase
   symbols: ["BTC-USDT"]
   book_refresh_interval: 1s
-orchestrator:
-  merge_rules:
-    - merge_key: trade
-      providers: ["binance", "coinbase"]
-      window_duration: 1s
-      max_events: 5
-      partial_policy: suppress
 dispatcher:
   stream_ordering:
     lateness_tolerance: 1s
@@ -50,7 +43,6 @@ consumers:
       - symbol: BTC-USDT
         providers: ["binance", "coinbase"]
         event_types: ["TRADE"]
-        merged: true
 telemetry:
   otlpEndpoint: http://otel
   serviceName: meltica-gateway

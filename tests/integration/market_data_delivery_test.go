@@ -11,7 +11,6 @@ import (
 	"github.com/coachpo/meltica/config"
 	"github.com/coachpo/meltica/internal/adapters/binance"
 	"github.com/coachpo/meltica/internal/bus/databus"
-	"github.com/coachpo/meltica/internal/conductor"
 	"github.com/coachpo/meltica/internal/dispatcher"
 	"github.com/coachpo/meltica/internal/observability"
 	"github.com/coachpo/meltica/internal/schema"
@@ -52,6 +51,7 @@ func TestMarketDataEndToEndDelivery(t *testing.T) {
 
 	bus := databus.NewMemoryBus(databus.MemoryConfig{BufferSize: 16})
 	metrics := observability.NewRuntimeMetrics()
+	table := dispatcher.NewTable()
 	dispatcherCfg := config.DispatcherRuntimeConfig{
 		StreamOrdering: config.StreamOrderingConfig{
 			LatenessTolerance: 150 * time.Millisecond,
@@ -59,13 +59,15 @@ func TestMarketDataEndToEndDelivery(t *testing.T) {
 			MaxBufferSize:     16,
 		},
 	}
-	dispatch := dispatcher.NewRuntime(bus, nil, nil, dispatcherCfg, metrics)
-
-	orch := conductor.NewEventOrchestrator()
-	orch.AddProvider("binance", provider.Events(), provider.Errors())
-	go orch.Start(ctx)
-
-	dispatchErrs := dispatch.Start(ctx, orch.Events())
+	dispatch := dispatcher.NewRuntime(bus, table, nil, nil, dispatcherCfg, metrics)
+	dispatchErrs := dispatch.Start(ctx, provider.Events())
+	go func() {
+		for err := range provider.Errors() {
+			if err != nil {
+				t.Logf("provider error: %v", err)
+			}
+		}
+	}()
 
 	_, snapshotCh, err := bus.Subscribe(ctx, schema.EventTypeBookSnapshot)
 	require.NoError(t, err)

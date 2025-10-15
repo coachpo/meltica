@@ -30,10 +30,9 @@ func (t *trackingRecycler) pointer(ev *events.Event) uintptr {
 func newTrackingRecycler(tb testing.TB) (*trackingRecycler, *sync.Pool) {
 	tb.Helper()
 	eventPool := &sync.Pool{New: func() any { return &events.Event{} }}
-	mergedPool := &sync.Pool{New: func() any { return &events.MergedEvent{} }}
 	execPool := &sync.Pool{New: func() any { return &events.ExecReport{} }}
 	metrics := recycler.NewRecyclerMetrics(prometheus.NewRegistry())
-	impl := recycler.NewRecycler(eventPool, mergedPool, execPool, metrics)
+	impl := recycler.NewRecycler(eventPool, execPool, metrics)
 	return &trackingRecycler{impl: impl, eventPool: eventPool}, eventPool
 }
 
@@ -60,10 +59,6 @@ func (t *trackingRecycler) RecycleEvent(ev *events.Event) {
 	t.impl.RecycleEvent(ev)
 }
 
-func (t *trackingRecycler) RecycleMergedEvent(ev *events.MergedEvent) {
-	t.impl.RecycleMergedEvent(ev)
-}
-
 func (t *trackingRecycler) RecycleExecReport(er *events.ExecReport) {
 	t.impl.RecycleExecReport(er)
 }
@@ -82,10 +77,6 @@ func (t *trackingRecycler) DisableDebugMode() {
 
 func (t *trackingRecycler) CheckoutEvent(ev *events.Event) {
 	t.impl.CheckoutEvent(ev)
-}
-
-func (t *trackingRecycler) CheckoutMergedEvent(ev *events.MergedEvent) {
-	t.impl.CheckoutMergedEvent(ev)
 }
 
 func (t *trackingRecycler) CheckoutExecReport(er *events.ExecReport) {
