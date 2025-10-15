@@ -66,15 +66,14 @@ func (r *Runtime) run(ctx context.Context, events <-chan *schema.Event, errCh ch
 			if evt.Provider == "" {
 				evt.Provider = "binance"
 			}
-			clone := r.cloneForPublish(ctx, evt)
-			if clone != nil {
-				if err := r.bus.Publish(ctx, clone); err != nil {
-					select {
-					case errCh <- err:
-					default:
-					}
+			// Pass original event to bus; bus handles routing and cloning
+			if err := r.bus.Publish(ctx, evt); err != nil {
+				select {
+				case errCh <- err:
+				default:
 				}
 			}
+			// Recycle source event after Publish returns
 			r.releaseEvent(evt)
 			batch[i] = nil
 		}
@@ -152,16 +151,4 @@ func (r *Runtime) releaseEvent(evt *schema.Event) {
 	if r.pools != nil {
 		r.pools.RecycleCanonicalEvent(evt)
 	}
-}
-
-func (r *Runtime) cloneForPublish(ctx context.Context, evt *schema.Event) *schema.Event {
-	if evt == nil {
-		return nil
-	}
-	pooled, err := r.pools.BorrowCanonicalEvent(ctx)
-	if err != nil || pooled == nil {
-		return nil
-	}
-	schema.CopyEvent(pooled, evt)
-	return pooled
 }
