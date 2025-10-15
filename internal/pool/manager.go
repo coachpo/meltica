@@ -41,7 +41,7 @@ func NewPoolManager() *PoolManager {
 }
 
 // RegisterPool registers a bounded pool with the provided name, capacity, and constructor.
-func (pm *PoolManager) RegisterPool(name string, capacity int, newFunc func() interface{}) error {
+func (pm *PoolManager) RegisterPool(name string, capacity int, newFunc func() any) error {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 
@@ -158,13 +158,8 @@ func (pm *PoolManager) TryGetMany(poolName string, count int) ([]PooledObject, b
 	return objects, true, nil
 }
 
-// Put returns an object to the named pool, panicking if the pool is unknown or the object type is invalid.
-func (pm *PoolManager) Put(poolName string, obj interface{}) {
-	po, ok := obj.(PooledObject)
-	if !ok {
-		panic(fmt.Sprintf("pool manager: object does not implement PooledObject: %T", obj))
-	}
-
+// Put returns an object to the named pool, panicking if the pool is unknown.
+func (pm *PoolManager) Put(poolName string, obj PooledObject) {
 	pool, err := pm.lookup(poolName)
 	if err != nil {
 		panic(err)
@@ -172,7 +167,7 @@ func (pm *PoolManager) Put(poolName string, obj interface{}) {
 
 	defer pm.inFlight.Done()
 	defer pm.activeCount.Add(-1)
-	if err := pool.put(po); err != nil {
+	if err := pool.put(obj); err != nil {
 		panic(err)
 	}
 }
@@ -189,18 +184,13 @@ func (pm *PoolManager) PutMany(poolName string, objects []PooledObject) {
 
 // TryPut attempts to return an object to the pool without blocking.
 // It returns false when the pool rejected the object (for example due to a double put).
-func (pm *PoolManager) TryPut(poolName string, obj interface{}) (bool, error) {
-	po, ok := obj.(PooledObject)
-	if !ok {
-		return false, fmt.Errorf("pool manager: object does not implement PooledObject: %T", obj)
-	}
-
+func (pm *PoolManager) TryPut(poolName string, obj PooledObject) (bool, error) {
 	pool, err := pm.lookup(poolName)
 	if err != nil {
 		return false, err
 	}
 
-	success, putErr := pool.tryPut(po)
+	success, putErr := pool.tryPut(obj)
 	if success {
 		pm.inFlight.Done()
 		pm.activeCount.Add(-1)
@@ -226,11 +216,7 @@ func (pm *PoolManager) TryPutMany(poolName string, objects []PooledObject) (bool
 		if obj == nil {
 			continue
 		}
-		po, ok := obj.(PooledObject)
-		if !ok {
-			return false, fmt.Errorf("pool manager: object does not implement PooledObject: %T", obj)
-		}
-		putSuccess, putErr := pool.tryPut(po)
+		putSuccess, putErr := pool.tryPut(obj)
 		if putSuccess {
 			pm.inFlight.Done()
 			pm.activeCount.Add(-1)
