@@ -25,7 +25,6 @@ var DefaultInstruments = []string{"BTC-USDT", "ETH-USDT"}
 // Options configures the fake provider runtime.
 type Options struct {
 	Name                 string
-	Instruments          []string
 	TickerInterval       time.Duration
 	TradeInterval        time.Duration
 	BookSnapshotInterval time.Duration
@@ -36,7 +35,6 @@ type Options struct {
 // Provider emits synthetic market data covering tickers, trades, and order book events.
 type Provider struct {
 	name                 string
-	instruments          []string
 	tickerInterval       time.Duration
 	tradeInterval        time.Duration
 	bookSnapshotInterval time.Duration
@@ -95,10 +93,6 @@ func NewProvider(opts Options) *Provider {
 	if name == "" {
 		name = "fake"
 	}
-	instruments := normaliseInstruments(opts.Instruments)
-	if len(instruments) == 0 {
-		instruments = normaliseInstruments(DefaultInstruments)
-	}
 	tickerInterval := opts.TickerInterval
 	if tickerInterval <= 0 {
 		tickerInterval = time.Second
@@ -118,7 +112,6 @@ func NewProvider(opts Options) *Provider {
 
 	p := &Provider{
 		name:                 name,
-		instruments:          instruments,
 		tickerInterval:       tickerInterval,
 		tradeInterval:        tradeInterval,
 		bookSnapshotInterval: bookSnapshotInterval,
@@ -250,9 +243,6 @@ func (p *Provider) startRouteLocked(route dispatcher.Route, evtType schema.Event
 	routeCtx, cancel := context.WithCancel(p.ctx)
 	handle := &routeHandle{cancel: cancel}
 	instruments := instrumentsFromRoute(route)
-	if len(instruments) == 0 {
-		instruments = append([]string(nil), p.instruments...)
-	}
 	if len(instruments) == 0 {
 		instruments = normaliseInstruments(DefaultInstruments)
 	}
@@ -537,7 +527,7 @@ func (p *Provider) consumeOrders(ctx context.Context) {
 
 func (p *Provider) handleOrder(order schema.OrderRequest) {
 	if strings.TrimSpace(order.Symbol) == "" {
-		order.Symbol = p.instruments[0]
+		order.Symbol = DefaultInstruments[0]
 	}
 	if order.Timestamp.IsZero() {
 		order.Timestamp = p.clock().UTC()

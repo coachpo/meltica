@@ -8,8 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"slices"
-	"strings"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -27,7 +26,7 @@ import (
 )
 
 func main() {
-	cfgPath := flag.String("config", "config/streaming.yaml", "Path to streaming configuration file")
+	cfgPath := flag.String("config", "", "Path to streaming configuration file (default: streaming.yml or streaming.yaml alongside binary)")
 	flag.Parse()
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -82,7 +81,6 @@ func main() {
 
 	provider := fake.NewProvider(fake.Options{
 		Name:               "fake",
-		Instruments:        collectInstruments(table.Routes()),
 		TickerInterval:     1000 * time.Microsecond,
 		TradeInterval:      1000 * time.Microsecond,
 		BookUpdateInterval: 1000 * time.Microsecond,
@@ -201,45 +199,6 @@ func main() {
 	}
 }
 
-func collectInstruments(routes map[schema.CanonicalType]dispatcher.Route) []string {
-	set := make(map[string]struct{})
-	for _, route := range routes {
-		for _, filter := range route.Filters {
-			if strings.EqualFold(filter.Field, "instrument") {
-				appendInstrument(filter.Value, set)
-			}
-		}
-	}
-	if len(set) == 0 {
-		return nil
-	}
-	out := make([]string, 0, len(set))
-	for inst := range set {
-		out = append(out, inst)
-	}
-	slices.Sort(out)
-	return out
-}
-
-func appendInstrument(value any, set map[string]struct{}) {
-	switch v := value.(type) {
-	case string:
-		instrument := strings.ToUpper(strings.TrimSpace(v))
-		if instrument != "" {
-			set[instrument] = struct{}{}
-		}
-	case []string:
-		for _, entry := range v {
-			appendInstrument(entry, set)
-		}
-	case []any:
-		for _, entry := range v {
-			appendInstrument(entry, set)
-		}
-	}
-}
-
-
 func routeFromConfig(name string, cfg config.RouteConfig) dispatcher.Route {
 	filters := iter.Map(cfg.Filters, func(f *config.FilterRuleConfig) dispatcher.FilterRule {
 		return dispatcher.FilterRule{Field: f.Field, Op: f.Op, Value: f.Value}
@@ -264,19 +223,23 @@ func logErrors(logger *log.Logger, stage string, errs <-chan error) {
 }
 
 func resolveConfigPath(flagValue string) string {
-	if flagValue == "" {
-		candidates := []string{
-			"config/streaming.yaml",
-			"internal/config/streaming.yaml",
-			"config/streaming.example.yaml",
-			"internal/config/streaming.example.yaml",
-		}
-		for _, candidate := range candidates {
-			if _, err := os.Stat(candidate); err == nil {
-				return candidate
-			}
-		}
-		return candidates[0]
+	if flagValue != "" {
+		return flagValue
 	}
-	return flagValue
+
+	execPath, err := os.Executable()
+	if err != nil {
+		log.Fatalf("failed to determine executable path: %v", err)
+	}
+	execDir := filepath.Dir(execPath)
+
+	for _, name := range []string{"streaming.yml", "streaming.yaml"} {
+		path := filepath.Join(execDir, name)
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+	}
+
+	log.Fatalf("config file not found: expected streaming.yml or streaming.yaml in %s", execDir)
+	return ""
 }
