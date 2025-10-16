@@ -12,23 +12,20 @@ import (
 // CanonicalType identifies canonical Meltica event categories (e.g. TICKER, ORDERBOOK.SNAPSHOT).
 type CanonicalType string
 
-// MelticaEvent represents a canonical event emitted by the dispatcher or conductor.
-type MelticaEvent struct {
-	Type           CanonicalType
-	Source         string
-	Ts             time.Time
-	Instrument     string
-	Market         string
-	Seq            uint64
-	Key            string
-	Payload        any
-	Latency        time.Duration
-	TraceID        string
-	RoutingVersion int
-}
-
-// RawInstance is the pre-canonicalized payload produced by upstream adapters.
+// RawInstance is a pre-canonicalized payload produced by upstream adapters.
 type RawInstance map[string]any
+
+// Clone returns a deep copy of the raw instance.
+func (r RawInstance) Clone() RawInstance {
+	if len(r) == 0 {
+		return RawInstance{}
+	}
+	out := make(RawInstance, len(r))
+	for k, v := range r {
+		out[k] = v
+	}
+	return out
+}
 
 // Subscribe represents a control plane command to add a canonical route.
 type Subscribe struct {
@@ -44,24 +41,6 @@ type Unsubscribe struct {
 	TraceID   string        `json:"traceId,omitempty"`
 	RequestID string        `json:"requestId,omitempty"`
 }
-
-// Command identifies a control bus command envelope.
-type Command interface {
-	commandKind() CommandKind
-}
-
-// CommandKind identifies command type names.
-type CommandKind string
-
-const (
-	// CommandKindSubscribe represents a subscribe request.
-	CommandKindSubscribe CommandKind = "subscribe"
-	// CommandKindUnsubscribe represents an unsubscribe request.
-	CommandKindUnsubscribe CommandKind = "unsubscribe"
-)
-
-func (Subscribe) commandKind() CommandKind   { return CommandKindSubscribe }
-func (Unsubscribe) commandKind() CommandKind { return CommandKindUnsubscribe }
 
 // Validate ensures the canonical type adheres to spec.
 func (c CanonicalType) Validate() error {
@@ -109,18 +88,6 @@ func ValidateInstrument(symbol string) error {
 // BuildEventKey constructs the default idempotency key for an event.
 func BuildEventKey(instr string, typ CanonicalType, seq uint64) string {
 	return fmt.Sprintf("%s:%s:%d", strings.TrimSpace(instr), string(typ), seq)
-}
-
-// Clone returns a deep copy of the raw instance.
-func (r RawInstance) Clone() RawInstance {
-	if len(r) == 0 {
-		return RawInstance{}
-	}
-	out := make(RawInstance, len(r))
-	for k, v := range r {
-		out[k] = v
-	}
-	return out
 }
 
 // Event represents a canonical event emitted by providers or dispatcher.
