@@ -21,6 +21,7 @@ import (
 	"github.com/coachpo/meltica/internal/dispatcher"
 	"github.com/coachpo/meltica/internal/pool"
 	"github.com/coachpo/meltica/internal/schema"
+	"github.com/coachpo/meltica/internal/telemetry"
 	"github.com/sourcegraph/conc"
 	"github.com/sourcegraph/conc/iter"
 )
@@ -39,6 +40,24 @@ func main() {
 
 	logger := log.New(os.Stdout, "gateway ", log.LstdFlags|log.Lmicroseconds)
 	logger.Printf("configuration loaded: routes=%d", len(streamingCfg.Dispatcher.Routes))
+
+	telemetryCfg := telemetry.DefaultConfig()
+	telemetryProvider, err := telemetry.NewProvider(ctx, telemetryCfg)
+	if err != nil {
+		log.Fatalf("initialize telemetry: %v", err)
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := telemetryProvider.Shutdown(shutdownCtx); err != nil {
+			logger.Printf("telemetry shutdown: %v", err)
+		}
+	}()
+	if telemetryCfg.Enabled {
+		logger.Printf("telemetry initialized: endpoint=%s", telemetryCfg.OTLPEndpoint)
+	} else {
+		logger.Printf("telemetry disabled")
+	}
 
 	poolMgr := pool.NewPoolManager()
 	registerPool := func(name string, capacity int, factory func() interface{}) {

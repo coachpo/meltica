@@ -7,6 +7,10 @@ import (
 	"sync/atomic"
 
 	concpool "github.com/sourcegraph/conc/pool"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/coachpo/meltica/internal/errs"
 	"github.com/coachpo/meltica/internal/pool"
@@ -26,6 +30,12 @@ type MemoryBus struct {
 	shutdownOnce sync.Once
 	nextID       uint64
 	workers      int
+
+	tracer                 trace.Tracer
+	eventsPublishedCounter metric.Int64Counter
+	subscriberGauge        metric.Int64UpDownCounter
+	deliveryErrorCounter   metric.Int64Counter
+	fanoutHistogram        metric.Int64Histogram
 }
 
 type subscriber struct {
@@ -46,6 +56,22 @@ func NewMemoryBus(cfg MemoryConfig) *MemoryBus {
 	bus.pools = cfg.Pools
 	bus.subscribers = make(map[schema.EventType]map[SubscriptionID]*subscriber)
 	bus.workers = cfg.FanoutWorkers
+
+	bus.tracer = otel.Tracer("databus")
+	meter := otel.Meter("databus")
+	bus.eventsPublishedCounter, _ = meter.Int64Counter("databus.events.published",
+		metric.WithDescription("Number of events published to the bus"),
+		metric.WithUnit("{event}"))
+	bus.subscriberGauge, _ = meter.Int64UpDownCounter("databus.subscribers",
+		metric.WithDescription("Number of active subscribers"),
+		metric.WithUnit("{subscriber}"))
+	bus.deliveryErrorCounter, _ = meter.Int64Counter("databus.delivery.errors",
+		metric.WithDescription("Number of event delivery errors"),
+		metric.WithUnit("{error}"))
+	bus.fanoutHistogram, _ = meter.Int64Histogram("databus.fanout.size",
+		metric.WithDescription("Number of subscribers per fanout"),
+		metric.WithUnit("{subscriber}"))
+
 	return bus
 }
 
@@ -62,6 +88,13 @@ func (b *MemoryBus) Publish(ctx context.Context, evt *schema.Event) error {
 		return errs.New("databus/publish", errs.CodeInvalid, errs.WithMessage("event type required"))
 	}
 
+	ctx, span := b.tracer.Start(ctx, "databus.Publish",
+		trace.WithAttributes(
+			attribute.String("event.type", string(evt.Type)),
+			attribute.String("event.provider", evt.Provider),
+		))
+	defer span.End()
+
 	// ROUTE FIRST: snapshot subscribers before any pool operations.
 	b.mu.RLock()
 	subMap := b.subscribers[evt.Type]
@@ -71,6 +104,12 @@ func (b *MemoryBus) Publish(ctx context.Context, evt *schema.Event) error {
 		subscribers = append(subscribers, sub)
 	}
 	b.mu.RUnlock()
+
+	span.SetAttributes(attribute.Int("subscribers.count", n))
+	if b.fanoutHistogram != nil {
+		b.fanoutHistogram.Record(ctx, int64(n), metric.WithAttributes(
+			attribute.String("event.type", string(evt.Type))))
+	}
 
 	// SHORT-CIRCUIT: no subscribers means no pool work, no delivery.
 	if n == 0 {
@@ -83,6 +122,12 @@ func (b *MemoryBus) Publish(ctx context.Context, evt *schema.Event) error {
 	if err != nil {
 		// Source event not cloned; bus must recycle it.
 		b.recycle(evt)
+		span.RecordError(err)
+		if b.deliveryErrorCounter != nil {
+			b.deliveryErrorCounter.Add(ctx, 1, metric.WithAttributes(
+				attribute.String("error", "clone_batch_failed"),
+				attribute.String("event.type", string(evt.Type))))
+		}
 		return err
 	}
 
@@ -92,8 +137,21 @@ func (b *MemoryBus) Publish(ctx context.Context, evt *schema.Event) error {
 	if err := b.dispatch(ctx, subscribers, clones); err != nil {
 		// Source event must still be recycled; clones already handled by dispatch.
 		b.recycle(evt)
+		span.RecordError(err)
+		if b.deliveryErrorCounter != nil {
+			b.deliveryErrorCounter.Add(ctx, 1, metric.WithAttributes(
+				attribute.String("error", "dispatch_failed"),
+				attribute.String("event.type", string(evt.Type))))
+		}
 		return err
 	}
+
+	if b.eventsPublishedCounter != nil {
+		b.eventsPublishedCounter.Add(ctx, 1, metric.WithAttributes(
+			attribute.String("event.type", string(evt.Type)),
+			attribute.String("event.provider", evt.Provider)))
+	}
+
 	// Source event is no longer needed; recycle it.
 	b.recycle(evt)
 	return nil
@@ -123,6 +181,11 @@ func (b *MemoryBus) Subscribe(ctx context.Context, typ schema.EventType) (Subscr
 	b.subscribers[typ][id] = sub
 	b.mu.Unlock()
 
+	if b.subscriberGauge != nil {
+		b.subscriberGauge.Add(ctx, 1, metric.WithAttributes(
+			attribute.String("event.type", string(typ))))
+	}
+
 	go b.observe(typ, id, sub)
 	return id, sub.ch, nil
 }
@@ -140,6 +203,10 @@ func (b *MemoryBus) Unsubscribe(id SubscriptionID) {
 				delete(b.subscribers, typ)
 			}
 			b.mu.Unlock()
+			if b.subscriberGauge != nil {
+				b.subscriberGauge.Add(context.Background(), -1, metric.WithAttributes(
+					attribute.String("event.type", string(typ))))
+			}
 			sub.close()
 			return
 		}
@@ -209,6 +276,13 @@ func (b *MemoryBus) deliverWithRecycle(ctx context.Context, sub *subscriber, evt
 // dispatch delivers pre-borrowed clones to subscribers.
 // Each subscriber gets its dedicated clone; deliverWithRecycle handles recycling.
 func (b *MemoryBus) dispatch(ctx context.Context, subs []*subscriber, clones []*schema.Event) error {
+	ctx, span := b.tracer.Start(ctx, "databus.dispatch",
+		trace.WithAttributes(
+			attribute.Int("subscribers.count", len(subs)),
+			attribute.Int("clones.count", len(clones)),
+		))
+	defer span.End()
+
 	if len(subs) == 0 {
 		// No subscribers, recycle all pre-borrowed clones.
 		b.pools.RecycleCanonicalEvents(clones)
@@ -217,7 +291,9 @@ func (b *MemoryBus) dispatch(ctx context.Context, subs []*subscriber, clones []*
 	if len(clones) != len(subs) {
 		// Validation failure, recycle all clones before returning error.
 		b.pools.RecycleCanonicalEvents(clones)
-		return fmt.Errorf("databus/dispatch: clone count (%d) != subscriber count (%d)", len(clones), len(subs))
+		err := fmt.Errorf("databus/dispatch: clone count (%d) != subscriber count (%d)", len(clones), len(subs))
+		span.RecordError(err)
+		return err
 	}
 
 	workerLimit := b.workers
@@ -249,6 +325,7 @@ func (b *MemoryBus) dispatch(ctx context.Context, subs []*subscriber, clones []*
 
 	for err := range errCh {
 		if err != nil {
+			span.RecordError(err)
 			return err
 		}
 	}

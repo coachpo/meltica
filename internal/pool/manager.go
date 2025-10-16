@@ -9,6 +9,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/coachpo/meltica/internal/schema"
 )
 
@@ -30,6 +35,12 @@ type PoolManager struct {
 	shutdownOnce sync.Once
 	inFlight     sync.WaitGroup
 	activeCount  atomic.Int64
+
+	tracer                 trace.Tracer
+	objectsBorrowedCounter metric.Int64Counter
+	objectsReturnedCounter metric.Int64Counter
+	activeObjectsGauge     metric.Int64UpDownCounter
+	borrowDuration         metric.Float64Histogram
 }
 
 // NewPoolManager constructs an initialized pool manager ready for pool registration.
@@ -37,6 +48,22 @@ func NewPoolManager() *PoolManager {
 	pm := new(PoolManager)
 	pm.pools = make(map[string]*objectPool)
 	pm.shutdownCh = make(chan struct{})
+
+	pm.tracer = otel.Tracer("pool")
+	meter := otel.Meter("pool")
+	pm.objectsBorrowedCounter, _ = meter.Int64Counter("pool.objects.borrowed",
+		metric.WithDescription("Number of objects borrowed from pools"),
+		metric.WithUnit("{object}"))
+	pm.objectsReturnedCounter, _ = meter.Int64Counter("pool.objects.returned",
+		metric.WithDescription("Number of objects returned to pools"),
+		metric.WithUnit("{object}"))
+	pm.activeObjectsGauge, _ = meter.Int64UpDownCounter("pool.objects.active",
+		metric.WithDescription("Number of currently active borrowed objects"),
+		metric.WithUnit("{object}"))
+	pm.borrowDuration, _ = meter.Float64Histogram("pool.borrow.duration",
+		metric.WithDescription("Time taken to borrow an object from pool"),
+		metric.WithUnit("ms"))
+
 	return pm
 }
 
@@ -73,24 +100,47 @@ func (pm *PoolManager) RegisterPool(name string, capacity int, newFunc func() an
 
 // Get acquires an object from the named pool respecting manager shutdown state.
 func (pm *PoolManager) Get(ctx context.Context, poolName string) (PooledObject, error) {
+	start := time.Now()
+	ctx, span := pm.tracer.Start(ctx, "pool.Get",
+		trace.WithAttributes(attribute.String("pool.name", poolName)))
+	defer span.End()
+
 	select {
 	case <-pm.shutdownCh:
+		span.RecordError(ErrPoolManagerClosed)
 		return nil, ErrPoolManagerClosed
 	default:
 	}
 
 	pool, err := pm.lookup(poolName)
 	if err != nil {
+		span.RecordError(err)
 		return nil, err
 	}
 
 	obj, err := pool.get(ctx)
 	if err != nil {
+		span.RecordError(err)
 		return nil, fmt.Errorf("pool manager: get %s: %w", poolName, err)
 	}
 
 	pm.inFlight.Add(1)
 	pm.activeCount.Add(1)
+
+	if pm.objectsBorrowedCounter != nil {
+		pm.objectsBorrowedCounter.Add(ctx, 1, metric.WithAttributes(
+			attribute.String("pool.name", poolName)))
+	}
+	if pm.activeObjectsGauge != nil {
+		pm.activeObjectsGauge.Add(ctx, 1, metric.WithAttributes(
+			attribute.String("pool.name", poolName)))
+	}
+	if pm.borrowDuration != nil {
+		duration := time.Since(start).Milliseconds()
+		pm.borrowDuration.Record(ctx, float64(duration), metric.WithAttributes(
+			attribute.String("pool.name", poolName)))
+	}
+
 	return obj, nil
 }
 
@@ -160,6 +210,7 @@ func (pm *PoolManager) TryGetMany(poolName string, count int) ([]PooledObject, b
 
 // Put returns an object to the named pool, panicking if the pool is unknown.
 func (pm *PoolManager) Put(poolName string, obj PooledObject) {
+	ctx := context.Background()
 	pool, err := pm.lookup(poolName)
 	if err != nil {
 		panic(err)
@@ -169,6 +220,15 @@ func (pm *PoolManager) Put(poolName string, obj PooledObject) {
 	defer pm.activeCount.Add(-1)
 	if err := pool.put(obj); err != nil {
 		panic(err)
+	}
+
+	if pm.objectsReturnedCounter != nil {
+		pm.objectsReturnedCounter.Add(ctx, 1, metric.WithAttributes(
+			attribute.String("pool.name", poolName)))
+	}
+	if pm.activeObjectsGauge != nil {
+		pm.activeObjectsGauge.Add(ctx, -1, metric.WithAttributes(
+			attribute.String("pool.name", poolName)))
 	}
 }
 
