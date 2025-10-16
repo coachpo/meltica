@@ -1,3 +1,4 @@
+// Package shared provides common utilities for adapter implementations.
 package shared
 
 import (

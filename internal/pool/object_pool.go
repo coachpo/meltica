@@ -57,6 +57,7 @@ func newObjectPool(name string, capacity int, factory func() PooledObject) (*obj
 	if factory == nil {
 		return nil, fmt.Errorf("pool %s: factory required", name)
 	}
+	//nolint:exhaustruct // zero values for leases, closed, waitGroup are intentional
 	op := &objectPool{
 		name:     name,
 		factory:  factory,
@@ -179,7 +180,7 @@ func (op *objectPool) get(ctx context.Context) (PooledObject, error) {
 		return nil, errPoolClosed
 	case op.requests <- req:
 	case <-req.ctx.Done():
-		return nil, req.ctx.Err()
+		return nil, fmt.Errorf("request context cancelled: %w", req.ctx.Err())
 	}
 
 	select {
@@ -188,7 +189,7 @@ func (op *objectPool) get(ctx context.Context) (PooledObject, error) {
 	case obj := <-req.result:
 		return obj, nil
 	case <-req.ctx.Done():
-		return nil, req.ctx.Err()
+		return nil, fmt.Errorf("result wait context cancelled: %w", req.ctx.Err())
 	}
 }
 

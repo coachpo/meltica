@@ -45,7 +45,7 @@ func (l *TickerLambda) Start(ctx context.Context) (<-chan error, error) {
 	id, ch, err := l.bus.Subscribe(ctx, schema.EventTypeTicker)
 	if err != nil {
 		close(errs)
-		return nil, err
+		return nil, fmt.Errorf("subscribe to ticker events: %w", err)
 	}
 
 	go l.consume(ctx, databus.SubscriptionID(id), ch, errs)

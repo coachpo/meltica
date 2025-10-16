@@ -34,6 +34,7 @@ func NewLambda(id string, bus databus.Bus, pools *pool.PoolManager, logger *log.
 	if id == "" {
 		id = "lambda-consumer"
 	}
+	//nolint:exhaustruct // zero values for control, routingVersion, tradingEnabled are intentional
 	return &Lambda{
 		id:         id,
 		bus:        bus,
@@ -76,7 +77,7 @@ func (l *Lambda) Start(ctx context.Context, types []schema.EventType) (<-chan er
 			for _, sub := range subs {
 				l.bus.Unsubscribe(sub.id)
 			}
-			return nil, err
+			return nil, fmt.Errorf("subscribe to %s: %w", typ, err)
 		}
 		subs = append(subs, subscription{id: id, typ: typ, ch: ch})
 	}
@@ -99,7 +100,7 @@ func (l *Lambda) SendControlMessage(ctx context.Context, typ schema.ControlMessa
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return schema.ControlAcknowledgement{}, err
+		return schema.ControlAcknowledgement{}, fmt.Errorf("marshal control message payload: %w", err)
 	}
 	if ctx == nil {
 		ctx = context.Background()
@@ -111,7 +112,11 @@ func (l *Lambda) SendControlMessage(ctx context.Context, typ schema.ControlMessa
 		Payload:    body,
 		Timestamp:  time.Now().UTC(),
 	}
-	return l.control.Send(ctx, msg)
+	ack, err := l.control.Send(ctx, msg)
+	if err != nil {
+		return schema.ControlAcknowledgement{}, fmt.Errorf("send control message: %w", err)
+	}
+	return ack, nil
 }
 
 // Subscribe issues a subscribe command via the control bus.
@@ -176,6 +181,8 @@ func (l *Lambda) handleEvent(ctx context.Context, typ schema.EventType, evt *sch
 		l.processControlResult(evt)
 		l.recycleIfNeeded(evt)
 		return
+	case schema.EventTypeBookSnapshot, schema.EventTypeBookUpdate, schema.EventTypeTrade, schema.EventTypeTicker, schema.EventTypeExecReport, schema.EventTypeKlineSummary:
+		// Market data and execution reports - handled below
 	}
 	if rv := int64(evt.RoutingVersion); rv > 0 {
 		for {
@@ -197,10 +204,6 @@ func (l *Lambda) handleEvent(ctx context.Context, typ schema.EventType, evt *sch
 func (l *Lambda) printEvent(typ schema.EventType, evt *schema.Event) {
 	if evt == nil {
 		return
-	}
-	ts := evt.EmitTS
-	if ts.IsZero() {
-		ts = time.Now().UTC()
 	}
 	payload := fmt.Sprintf("%v", evt.Payload)
 	line := fmt.Sprintf(
@@ -224,6 +227,7 @@ func (l *Lambda) printEvent(typ schema.EventType, evt *schema.Event) {
 func (l *Lambda) processControlAck(evt *schema.Event) {
 	payload, ok := coerceControlAck(evt.Payload)
 	if !ok {
+		//nolint:exhaustruct // error case with minimal required fields
 		l.logControlAck(schema.ControlAckPayload{
 			MessageID:    evt.EventID,
 			CommandType:  schema.ControlMessageType(fmt.Sprintf("unknown:%s", evt.Type)),
@@ -246,6 +250,7 @@ func (l *Lambda) processControlAck(evt *schema.Event) {
 func (l *Lambda) processControlResult(evt *schema.Event) {
 	payload, ok := coerceControlResult(evt.Payload)
 	if !ok {
+		//nolint:exhaustruct // error case with minimal required fields
 		l.logControlResult(schema.ControlResultPayload{
 			MessageID:   evt.EventID,
 			CommandType: schema.ControlMessageType(fmt.Sprintf("unknown:%s", evt.Type)),
@@ -324,6 +329,12 @@ func isCritical(typ schema.EventType) bool {
 		schema.EventTypeControlAck,
 		schema.EventTypeControlResult:
 		return true
+	case schema.EventTypeBookSnapshot,
+		schema.EventTypeBookUpdate,
+		schema.EventTypeTrade,
+		schema.EventTypeTicker,
+		schema.EventTypeKlineSummary:
+		return false
 	default:
 		return false
 	}
@@ -337,6 +348,10 @@ func isMarketData(typ schema.EventType) bool {
 		schema.EventTypeKlineSummary,
 		schema.EventTypeTrade:
 		return true
+	case schema.EventTypeExecReport,
+		schema.EventTypeControlAck,
+		schema.EventTypeControlResult:
+		return false
 	default:
 		return false
 	}
@@ -363,10 +378,12 @@ func coerceControlAck(value any) (schema.ControlAckPayload, bool) {
 		return v, true
 	case *schema.ControlAckPayload:
 		if v == nil {
+			//nolint:exhaustruct // empty struct for error case
 			return schema.ControlAckPayload{}, false
 		}
 		return *v, true
 	default:
+		//nolint:exhaustruct // empty struct for error case
 		return schema.ControlAckPayload{}, false
 	}
 }
@@ -377,10 +394,12 @@ func coerceControlResult(value any) (schema.ControlResultPayload, bool) {
 		return v, true
 	case *schema.ControlResultPayload:
 		if v == nil {
+			//nolint:exhaustruct // empty struct for error case
 			return schema.ControlResultPayload{}, false
 		}
 		return *v, true
 	default:
+		//nolint:exhaustruct // empty struct for error case
 		return schema.ControlResultPayload{}, false
 	}
 }

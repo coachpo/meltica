@@ -64,7 +64,7 @@ func (l *OrderBookLambda) Start(ctx context.Context) (<-chan error, error) {
 	return errs, nil
 }
 
-func (l *OrderBookLambda) consumeSnapshots(ctx context.Context, subscriptionID databus.SubscriptionID, events <-chan *schema.Event, errs chan<- error) {
+func (l *OrderBookLambda) consumeSnapshots(ctx context.Context, subscriptionID databus.SubscriptionID, events <-chan *schema.Event, _ chan<- error) {
 	defer func() {
 		l.bus.Unsubscribe(subscriptionID)
 	}()
@@ -82,7 +82,7 @@ func (l *OrderBookLambda) consumeSnapshots(ctx context.Context, subscriptionID d
 	}
 }
 
-func (l *OrderBookLambda) consumeUpdates(ctx context.Context, subscriptionID databus.SubscriptionID, events <-chan *schema.Event, errs chan<- error) {
+func (l *OrderBookLambda) consumeUpdates(ctx context.Context, subscriptionID databus.SubscriptionID, events <-chan *schema.Event, _ chan<- error) {
 	defer func() {
 		l.bus.Unsubscribe(subscriptionID)
 	}()

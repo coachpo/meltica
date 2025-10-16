@@ -1,3 +1,4 @@
+// Package fake provides a synthetic market data provider for testing and development.
 package fake
 
 import (
@@ -110,6 +111,7 @@ func NewProvider(opts Options) *Provider {
 		bookUpdateInterval = 700 * time.Millisecond
 	}
 
+	//nolint:exhaustruct // zero values for ctx, cancel, started, mu, etc. are intentional
 	p := &Provider{
 		name:                 name,
 		tickerInterval:       tickerInterval,
@@ -192,6 +194,7 @@ func (p *Provider) QueryOrder(_ context.Context, provider, clientOrderID string)
 	report, ok := p.reports[key]
 	p.orderMu.RUnlock()
 	if !ok {
+		//nolint:exhaustruct // empty struct for error case
 		return schema.ExecReport{}, false, nil
 	}
 	return report, true, nil
@@ -241,6 +244,7 @@ func (p *Provider) UnsubscribeRoute(typ schema.CanonicalType) error {
 
 func (p *Provider) startRouteLocked(route dispatcher.Route, evtType schema.EventType) *routeHandle {
 	routeCtx, cancel := context.WithCancel(p.ctx)
+	//nolint:exhaustruct // zero value for wg is intentional
 	handle := &routeHandle{cancel: cancel}
 	instruments := instrumentsFromRoute(route)
 	if len(instruments) == 0 {
@@ -262,6 +266,8 @@ func (p *Provider) runGenerator(ctx context.Context, evtType schema.EventType, i
 		p.streamBookSnapshots(ctx, instruments)
 	case schema.EventTypeBookUpdate:
 		p.streamBookUpdates(ctx, instruments)
+	case schema.EventTypeExecReport, schema.EventTypeKlineSummary, schema.EventTypeControlAck, schema.EventTypeControlResult:
+		<-ctx.Done()
 	default:
 		<-ctx.Done()
 	}
@@ -533,6 +539,7 @@ func (p *Provider) handleOrder(order schema.OrderRequest) {
 		order.Timestamp = p.clock().UTC()
 	}
 	key := orderKey(order.Provider, order.ClientOrderID)
+	//nolint:exhaustruct // zero values for optional fields are intentional
 	report := schema.ExecReport{
 		ClientOrderID: order.ClientOrderID,
 		Provider:      order.Provider,
@@ -548,6 +555,7 @@ func (p *Provider) handleOrder(order schema.OrderRequest) {
 
 	seq := p.nextSeq(schema.EventTypeExecReport, order.Symbol)
 	ts := p.clock().UTC()
+	//nolint:exhaustruct // zero value for RejectReason is intentional
 	payload := schema.ExecReportPayload{
 		ClientOrderID:   order.ClientOrderID,
 		ExchangeOrderID: order.ClientOrderID,
@@ -606,6 +614,7 @@ func (p *Provider) getInstrumentState(instrument string) *instrumentState {
 }
 
 func newInstrumentState(symbol string, basePrice float64) *instrumentState {
+	//nolint:exhaustruct // zero values for mu, bids, asks, hasSnapshot are intentional
 	state := &instrumentState{
 		instrument: symbol,
 		basePrice:  basePrice,
@@ -633,7 +642,7 @@ func (s *instrumentState) bumpOrderBook(seq uint64) {
 	}
 	amplitude := 0.2 * math.Sin(float64(seq%10))
 	if len(s.bids) > 0 {
-		s.bids[0].price = max(s.lastPrice-0.3, s.basePrice*0.5)
+		s.bids[0].price = maxFloat64(s.lastPrice-0.3, s.basePrice*0.5)
 		s.bids[0].quantity = 1.0 + 0.2*math.Abs(amplitude)
 	}
 	if len(s.asks) > 0 {
@@ -785,7 +794,7 @@ func stringOrDefault(value *string) string {
 	return *value
 }
 
-func max(a, b float64) float64 {
+func maxFloat64(a, b float64) float64 {
 	if a > b {
 		return a
 	}

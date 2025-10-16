@@ -36,8 +36,7 @@ type Runtime struct {
 }
 
 // NewRuntime constructs a dispatcher runtime instance.
-func NewRuntime(bus databus.Bus, table *Table, pools *pool.PoolManager, cfg config.DispatcherRuntimeConfig, metrics interface{}) *Runtime {
-	// metrics parameter is ignored - observability removed
+func NewRuntime(bus databus.Bus, table *Table, pools *pool.PoolManager, cfg config.DispatcherRuntimeConfig, _ interface{}) *Runtime {
 	clock := time.Now
 	ordering := NewStreamOrdering(cfg.StreamOrdering, clock)
 	runtime := new(Runtime)

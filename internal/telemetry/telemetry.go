@@ -24,6 +24,7 @@ const (
 	serviceVersion = "1.0.0"
 )
 
+// Config defines OpenTelemetry configuration parameters.
 type Config struct {
 	Enabled          bool
 	OTLPEndpoint     string
@@ -37,6 +38,7 @@ type Config struct {
 	ServiceNamespace string
 }
 
+// DefaultConfig returns the default telemetry configuration based on environment variables.
 func DefaultConfig() Config {
 	endpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
 	if endpoint == "" {
@@ -60,14 +62,17 @@ func DefaultConfig() Config {
 	}
 }
 
+// Provider manages OpenTelemetry tracer and meter providers.
 type Provider struct {
 	tracerProvider *sdktrace.TracerProvider
 	meterProvider  *sdkmetric.MeterProvider
 	config         Config
 }
 
+// NewProvider initializes a new telemetry provider with the given configuration.
 func NewProvider(ctx context.Context, cfg Config) (*Provider, error) {
 	if !cfg.Enabled {
+		//nolint:exhaustruct // zero values for tracerProvider and meterProvider when disabled
 		return &Provider{config: cfg}, nil
 	}
 
@@ -83,7 +88,9 @@ func NewProvider(ctx context.Context, cfg Config) (*Provider, error) {
 
 	mp, err := newMeterProvider(ctx, res, cfg)
 	if err != nil {
-		tp.Shutdown(ctx)
+		if shutdownErr := tp.Shutdown(ctx); shutdownErr != nil {
+			return nil, fmt.Errorf("create meter provider: %w (shutdown error: %v)", err, shutdownErr)
+		}
 		return nil, fmt.Errorf("create meter provider: %w", err)
 	}
 
@@ -101,6 +108,7 @@ func NewProvider(ctx context.Context, cfg Config) (*Provider, error) {
 	}, nil
 }
 
+// Shutdown gracefully shuts down the telemetry provider.
 func (p *Provider) Shutdown(ctx context.Context) error {
 	if p.tracerProvider == nil && p.meterProvider == nil {
 		return nil
@@ -123,6 +131,7 @@ func (p *Provider) Shutdown(ctx context.Context) error {
 	return err
 }
 
+// Tracer returns a tracer with the given name.
 func (p *Provider) Tracer(name string, opts ...trace.TracerOption) trace.Tracer {
 	if p.tracerProvider == nil {
 		return otel.Tracer(name, opts...)
@@ -130,6 +139,7 @@ func (p *Provider) Tracer(name string, opts ...trace.TracerOption) trace.Tracer 
 	return p.tracerProvider.Tracer(name, opts...)
 }
 
+// Meter returns a meter with the given name.
 func (p *Provider) Meter(name string, opts ...metric.MeterOption) metric.Meter {
 	if p.meterProvider == nil {
 		return otel.Meter(name, opts...)
@@ -152,7 +162,11 @@ func newResource(ctx context.Context, cfg Config) (*resource.Resource, error) {
 	attrs = append(attrs, resource.WithProcessRuntimeName())
 	attrs = append(attrs, resource.WithProcessRuntimeVersion())
 	attrs = append(attrs, resource.WithHost())
-	return resource.New(ctx, attrs...)
+	res, err := resource.New(ctx, attrs...)
+	if err != nil {
+		return nil, fmt.Errorf("create telemetry resource: %w", err)
+	}
+	return res, nil
 }
 
 func newTracerProvider(ctx context.Context, res *resource.Resource, cfg Config) (*sdktrace.TracerProvider, error) {

@@ -36,6 +36,7 @@ type BookAssembler struct {
 
 // NewBookAssembler constructs an empty order book assembler.
 func NewBookAssembler() *BookAssembler {
+	//nolint:exhaustruct // zero values for mu, seq, ready, checksum are intentional
 	return &BookAssembler{
 		bids: make(map[string]string),
 		asks: make(map[string]string),
@@ -208,9 +209,7 @@ func normaliseDecimal(value string) string {
 		return value
 	}
 	value = strings.TrimRight(value, "0")
-	if strings.HasSuffix(value, ".") {
-		value = strings.TrimSuffix(value, ".")
-	}
+	value = strings.TrimSuffix(value, ".")
 	if value == "" || value == "-" {
 		return "0"
 	}

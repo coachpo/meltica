@@ -225,6 +225,7 @@ func (p *Provider) handleOrder(order schema.OrderRequest) {
 	p.orderBook[key] = order
 	p.orderMu.Unlock()
 
+	//nolint:exhaustruct // zero values for optional fields are intentional
 	report := schema.ExecReport{
 		ClientOrderID: order.ClientOrderID,
 		Provider:      order.Provider,
@@ -247,9 +248,14 @@ func (p *Provider) handleOrder(order schema.OrderRequest) {
 	evt.Provider = order.Provider
 	evt.Symbol = order.Symbol
 	evt.Type = schema.EventTypeExecReport
-	evt.SeqProvider = uint64(now.UnixNano())
+	nanos := now.UnixNano()
+	if nanos < 0 {
+		nanos = 0
+	}
+	evt.SeqProvider = uint64(nanos) //nolint:gosec // timestamp conversion is safe
 	evt.IngestTS = now
 	evt.EmitTS = now
+	//nolint:exhaustruct // zero value for RejectReason is intentional
 	evt.Payload = schema.ExecReportPayload{
 		ClientOrderID:   order.ClientOrderID,
 		ExchangeOrderID: order.ClientOrderID,
@@ -427,6 +433,8 @@ func (p *Provider) prepareOrderBook(evt *schema.Event) ([]*schema.Event, bool, e
 		}
 		evt.Payload = update
 		return nil, true, nil
+	case schema.EventTypeTrade, schema.EventTypeTicker, schema.EventTypeExecReport, schema.EventTypeKlineSummary, schema.EventTypeControlAck, schema.EventTypeControlResult:
+		return nil, true, nil
 	default:
 		return nil, true, nil
 	}
@@ -579,10 +587,12 @@ func coerceBookSnapshot(value any) (schema.BookSnapshotPayload, bool) {
 		return v, true
 	case *schema.BookSnapshotPayload:
 		if v == nil {
+			//nolint:exhaustruct // empty struct for error case
 			return schema.BookSnapshotPayload{}, false
 		}
 		return *v, true
 	default:
+		//nolint:exhaustruct // empty struct for error case
 		return schema.BookSnapshotPayload{}, false
 	}
 }
@@ -593,10 +603,12 @@ func coerceBookUpdate(value any) (schema.BookUpdatePayload, bool) {
 		return v, true
 	case *schema.BookUpdatePayload:
 		if v == nil {
+			//nolint:exhaustruct // empty struct for error case
 			return schema.BookUpdatePayload{}, false
 		}
 		return *v, true
 	default:
+		//nolint:exhaustruct // empty struct for error case
 		return schema.BookUpdatePayload{}, false
 	}
 }

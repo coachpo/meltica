@@ -165,6 +165,7 @@ func (c *Controller) handleSubscribe(ctx context.Context, cmd schema.Subscribe, 
 
 	route, ok := c.table.Lookup(typ)
 	if !ok {
+		//nolint:exhaustruct // route initialized with only type, other fields added later
 		route = Route{Type: typ}
 	}
 	if len(cmd.Filters) > 0 {
@@ -236,6 +237,7 @@ func (c *Controller) handleSubmitOrder(ctx context.Context, consumerID string, p
 		ack.ErrorMessage = "quantity required"
 		return c.finalizeAck(ctx, schema.ControlMessageSubmitOrder, ack)
 	}
+	//nolint:exhaustruct // zero value for TIF is intentional
 	order := schema.OrderRequest{
 		ClientOrderID: payload.ClientOrderID,
 		ConsumerID:    consumerID,

@@ -98,6 +98,7 @@ func main() {
 		}
 	}
 
+	//nolint:exhaustruct // optional fields use zero values
 	provider := fake.NewProvider(fake.Options{
 		Name:               "fake",
 		TickerInterval:     1000 * time.Microsecond,
@@ -109,6 +110,7 @@ func main() {
 		logger.Fatalf("start provider: %v", err)
 	}
 
+	//nolint:exhaustruct // optional fields use zero values
 	runtimeCfg := config.DispatcherRuntimeConfig{
 		StreamOrdering: config.StreamOrderingConfig{
 			LatenessTolerance: 150 * time.Millisecond,
