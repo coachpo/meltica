@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -46,13 +47,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("initialize telemetry: %v", err)
 	}
-	defer func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := telemetryProvider.Shutdown(shutdownCtx); err != nil {
-			logger.Printf("telemetry shutdown: %v", err)
-		}
-	}()
 	if telemetryCfg.Enabled {
 		logger.Printf("telemetry initialized: endpoint=%s", telemetryCfg.OTLPEndpoint)
 	} else {
@@ -70,26 +64,16 @@ func main() {
 	registerPool("CanonicalEvent", 1000, func() interface{} { return new(schema.CanonicalEvent) })
 	registerPool("OrderRequest", 20, func() interface{} { return new(schema.OrderRequest) })
 	registerPool("ExecReport", 20, func() interface{} { return new(schema.ExecReport) })
-	defer func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := poolMgr.Shutdown(shutdownCtx); err != nil {
-			logger.Printf("pool shutdown: %v", err)
-		}
-	}()
 
 	var lifecycle conc.WaitGroup
-	defer lifecycle.Wait()
 
 	bus := databus.NewMemoryBus(databus.MemoryConfig{
 		BufferSize:    streamingCfg.Databus.BufferSize,
 		FanoutWorkers: 8,
 		Pools:         poolMgr,
 	})
-	defer bus.Close()
 
 	controlBus := controlbus.NewMemoryBus(controlbus.MemoryConfig{BufferSize: 16})
-	defer controlBus.Close()
 
 	table := dispatcher.NewTable()
 	for name, cfg := range streamingCfg.Dispatcher.Routes {
@@ -207,17 +191,115 @@ func main() {
 
 	logger.Print("gateway started; awaiting shutdown signal")
 	<-ctx.Done()
-	logger.Print("shutdown requested")
-	cancel()
+	logger.Print("shutdown signal received, initiating graceful shutdown")
 
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer shutdownCancel()
-	if err := controlServer.Shutdown(shutdownCtx); err != nil {
-		logger.Printf("control server shutdown: %v", err)
+
+	shutdownStart := time.Now()
+	performGracefulShutdown(shutdownCtx, logger, gracefulShutdownConfig{
+		controlServer:       controlServer,
+		mainContextCancel:   cancel,
+		lifecycle:           &lifecycle,
+		provider:            provider,
+		controlBus:          controlBus,
+		bus:                 bus,
+		poolMgr:             poolMgr,
+		telemetryProvider:   telemetryProvider,
+		tradeLambda:         tradeLambda,
+		tickerLambda:        tickerLambda,
+		orderbookLambda:     orderbookLambda,
+		dispatcherRuntime:   dispatcherRuntime,
+		subscriptionManager: subscriptionManager,
+	})
+
+	logger.Printf("shutdown completed in %v", time.Since(shutdownStart))
+}
+
+type gracefulShutdownConfig struct {
+	controlServer       *http.Server
+	mainContextCancel   context.CancelFunc
+	lifecycle           *conc.WaitGroup
+	provider            *fake.Provider
+	controlBus          controlbus.Bus
+	bus                 databus.Bus
+	poolMgr             *pool.PoolManager
+	telemetryProvider   *telemetry.Provider
+	tradeLambda         *consumer.TradeLambda
+	tickerLambda        *consumer.TickerLambda
+	orderbookLambda     *consumer.OrderBookLambda
+	dispatcherRuntime   *dispatcher.Runtime
+	subscriptionManager *shared.SubscriptionManager
+}
+
+func performGracefulShutdown(ctx context.Context, logger *log.Logger, cfg gracefulShutdownConfig) {
+	shutdownStep := func(name string, timeout time.Duration, fn func(context.Context) error) {
+		stepCtx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		logger.Printf("shutdown: %s...", name)
+		if err := fn(stepCtx); err != nil {
+			logger.Printf("shutdown: %s failed: %v", name, err)
+		} else {
+			logger.Printf("shutdown: %s completed", name)
+		}
 	}
-	if err := shutdownCtx.Err(); err != nil {
-		logger.Printf("shutdown deadline reached: %v", err)
-	}
+
+	shutdownStep("stopping control server", 5*time.Second, func(stepCtx context.Context) error {
+		return cfg.controlServer.Shutdown(stepCtx)
+	})
+
+	logger.Print("shutdown: cancelling main context")
+	cfg.mainContextCancel()
+
+	shutdownStep("waiting for lifecycle goroutines", 10*time.Second, func(stepCtx context.Context) error {
+		done := make(chan struct{})
+		go func() {
+			cfg.lifecycle.Wait()
+			close(done)
+		}()
+		select {
+		case <-done:
+			return nil
+		case <-stepCtx.Done():
+			return fmt.Errorf("timeout waiting for goroutines: %w", stepCtx.Err())
+		}
+	})
+
+	shutdownStep("closing control bus", 2*time.Second, func(stepCtx context.Context) error {
+		done := make(chan struct{})
+		go func() {
+			cfg.controlBus.Close()
+			close(done)
+		}()
+		select {
+		case <-done:
+			return nil
+		case <-stepCtx.Done():
+			return stepCtx.Err()
+		}
+	})
+
+	shutdownStep("closing data bus", 2*time.Second, func(stepCtx context.Context) error {
+		done := make(chan struct{})
+		go func() {
+			cfg.bus.Close()
+			close(done)
+		}()
+		select {
+		case <-done:
+			return nil
+		case <-stepCtx.Done():
+			return stepCtx.Err()
+		}
+	})
+
+	shutdownStep("shutting down pool manager", 5*time.Second, func(stepCtx context.Context) error {
+		return cfg.poolMgr.Shutdown(stepCtx)
+	})
+
+	shutdownStep("shutting down telemetry", 5*time.Second, func(stepCtx context.Context) error {
+		return cfg.telemetryProvider.Shutdown(stepCtx)
+	})
 }
 
 func routeFromConfig(name string, cfg config.RouteConfig) dispatcher.Route {
