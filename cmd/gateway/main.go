@@ -18,8 +18,9 @@ import (
 	"github.com/coachpo/meltica/internal/bus/controlbus"
 	"github.com/coachpo/meltica/internal/bus/databus"
 	"github.com/coachpo/meltica/internal/config"
-	"github.com/coachpo/meltica/internal/consumer"
 	"github.com/coachpo/meltica/internal/dispatcher"
+	"github.com/coachpo/meltica/internal/lambda"
+	"github.com/coachpo/meltica/internal/lambda/strategies"
 	"github.com/coachpo/meltica/internal/pool"
 	"github.com/coachpo/meltica/internal/schema"
 	"github.com/coachpo/meltica/internal/telemetry"
@@ -120,18 +121,16 @@ func main() {
 		}
 	}
 
-	lambdaConfigs := []consumer.LambdaConfig{
+	lambdaConfigs := []lambda.Config{
 		{Symbol: "BTC-USDT", Provider: "fake"},
 		{Symbol: "ETH-USDT", Provider: "fake"},
 		{Symbol: "XRP-USDT", Provider: "fake"},
 	}
 
-	lambdas := make([]*consumer.Lambda, 0, len(lambdaConfigs))
 	for _, cfg := range lambdaConfigs {
-		lambda := consumer.NewLambda("", cfg, bus, controlBus, provider, poolMgr, logger)
-		lambdas = append(lambdas, lambda)
+		lam := lambda.NewBaseLambda("", cfg, bus, controlBus, provider, poolMgr, &strategies.NoOp{})
 		
-		if lambdaErrs, err := lambda.Start(ctx); err != nil {
+		if lambdaErrs, err := lam.Start(ctx); err != nil {
 			logger.Fatalf("start lambda %s: %v", cfg.Symbol, err)
 		} else {
 			lifecycle.Go(func() {

@@ -61,8 +61,6 @@ type Provider struct {
 	stateMu sync.Mutex
 	state   map[string]*instrumentState
 
-	orderMu sync.RWMutex
-
 	clock func() time.Time
 }
 
@@ -751,10 +749,6 @@ func formatPrice(value float64) string {
 
 func formatQuantity(value float64) string {
 	return fmt.Sprintf("%.4f", value)
-}
-
-func orderKey(provider, clientOrderID string) string {
-	return fmt.Sprintf("%s:%s", strings.ToLower(strings.TrimSpace(provider)), strings.TrimSpace(clientOrderID))
 }
 
 func stringOrDefault(value *string) string {
