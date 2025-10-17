@@ -139,9 +139,6 @@ func (e *Event) IsReturned() bool {
 	return e.returned
 }
 
-// CanonicalEvent is an alias for Event, representing canonical events in pooling contexts.
-type CanonicalEvent = Event
-
 // EventType enumerates canonical event categories.
 type EventType string
 

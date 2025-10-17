@@ -232,6 +232,6 @@ func (r *Runtime) currentRoutingVersion() int {
 
 func (r *Runtime) releaseEvent(evt *schema.Event) {
 	if r.pools != nil {
-		r.pools.RecycleCanonicalEvent(evt)
+		r.pools.ReturnEventInst(evt)
 	}
 }

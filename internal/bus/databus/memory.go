@@ -285,12 +285,12 @@ func (b *MemoryBus) dispatch(ctx context.Context, subs []*subscriber, clones []*
 
 	if len(subs) == 0 {
 		// No subscribers, recycle all pre-borrowed clones.
-		b.pools.RecycleCanonicalEvents(clones)
+		b.pools.ReturnEventInsts(clones)
 		return nil
 	}
 	if len(clones) != len(subs) {
 		// Validation failure, recycle all clones before returning error.
-		b.pools.RecycleCanonicalEvents(clones)
+		b.pools.ReturnEventInsts(clones)
 		err := fmt.Errorf("databus/dispatch: clone count (%d) != subscriber count (%d)", len(clones), len(subs))
 		span.RecordError(err)
 		return err
@@ -337,7 +337,7 @@ func (b *MemoryBus) recycle(evt *schema.Event) {
 		return
 	}
 	if b.pools != nil {
-		b.pools.RecycleCanonicalEvent(evt)
+		b.pools.ReturnEventInst(evt)
 	}
 }
 
@@ -355,19 +355,19 @@ func (b *MemoryBus) borrowBatchForFanout(ctx context.Context, src *schema.Event,
 		return nil, nil
 	}
 
-	clones, err := b.pools.BorrowCanonicalEvents(ctx, n)
+	clones, err := b.pools.BorrowEventInsts(ctx, n)
 	if err != nil {
 		return nil, fmt.Errorf("databus/publish: borrow batch: %w", err)
 	}
 	if len(clones) != n {
-		b.pools.RecycleCanonicalEvents(clones)
+		b.pools.ReturnEventInsts(clones)
 		return nil, fmt.Errorf("databus/publish: expected %d clones, got %d", n, len(clones))
 	}
 
 	// Copy source payload into each clone.
 	for _, clone := range clones {
 		if clone == nil {
-			b.pools.RecycleCanonicalEvents(clones)
+			b.pools.ReturnEventInsts(clones)
 			return nil, fmt.Errorf("databus/publish: nil clone in batch")
 		}
 		schema.CopyEvent(clone, src)

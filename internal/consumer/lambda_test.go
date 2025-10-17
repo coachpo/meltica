@@ -12,11 +12,18 @@ import (
 )
 
 func TestNewLambda(t *testing.T) {
-	mockBus := NewMockDataBus()
+	mockDataBus := NewMockDataBus()
+	mockControlBus := NewMockControlBus()
+	mockOrderSubmitter := NewMockOrderSubmitter()
 	pm := pool.NewPoolManager()
 	logger := log.New(os.Stdout, "[test] ", log.LstdFlags)
 
-	lambda := NewLambda("test-lambda", mockBus, pm, logger)
+	config := LambdaConfig{
+		Symbol:   "BTC-USDT",
+		Provider: "fake",
+	}
+
+	lambda := NewLambda("test-lambda", config, mockDataBus, mockControlBus, mockOrderSubmitter, pm, logger)
 
 	if lambda == nil {
 		t.Fatal("expected non-nil lambda")
@@ -24,180 +31,221 @@ func TestNewLambda(t *testing.T) {
 	if lambda.id != "test-lambda" {
 		t.Errorf("expected id 'test-lambda', got %s", lambda.id)
 	}
-	if lambda.consumerID != "test-lambda" {
-		t.Errorf("expected consumerID 'test-lambda', got %s", lambda.consumerID)
+	if lambda.config.Symbol != "BTC-USDT" {
+		t.Errorf("expected symbol 'BTC-USDT', got %s", lambda.config.Symbol)
+	}
+	if lambda.config.Provider != "fake" {
+		t.Errorf("expected provider 'fake', got %s", lambda.config.Provider)
 	}
 }
 
 func TestNewLambdaDefaultID(t *testing.T) {
-	mockBus := NewMockDataBus()
+	mockDataBus := NewMockDataBus()
+	mockControlBus := NewMockControlBus()
 	pm := pool.NewPoolManager()
 	logger := log.New(os.Stdout, "[test] ", log.LstdFlags)
 
-	lambda := NewLambda("", mockBus, pm, logger)
+	config := LambdaConfig{
+		Symbol:   "ETH-USDT",
+		Provider: "fake",
+	}
 
-	if lambda.id != "lambda-consumer" {
-		t.Errorf("expected default id 'lambda-consumer', got %s", lambda.id)
+	lambda := NewLambda("", config, mockDataBus, mockControlBus, NewMockOrderSubmitter(), pm, logger)
+
+	if lambda.id != "lambda-ETH-USDT" {
+		t.Errorf("expected default id 'lambda-ETH-USDT', got %s", lambda.id)
 	}
 }
 
 func TestLambdaStartWithNilBus(t *testing.T) {
+	mockControlBus := NewMockControlBus()
 	pm := pool.NewPoolManager()
 	logger := log.New(os.Stdout, "[test] ", log.LstdFlags)
 
-	lambda := NewLambda("test", nil, pm, logger)
+	config := LambdaConfig{
+		Symbol:   "BTC-USDT",
+		Provider: "fake",
+	}
+
+	lambda := NewLambda("test", config, nil, mockControlBus, NewMockOrderSubmitter(), pm, logger)
 
 	ctx := context.Background()
-	_, err := lambda.Start(ctx, []schema.EventType{"TRADE"})
+	_, err := lambda.Start(ctx)
 
 	if err == nil {
-		t.Error("expected error when starting with nil bus")
+		t.Error("expected error when starting with nil data bus")
+	}
+}
+
+func TestLambdaStartWithNilControlBus(t *testing.T) {
+	mockDataBus := NewMockDataBus()
+	pm := pool.NewPoolManager()
+	logger := log.New(os.Stdout, "[test] ", log.LstdFlags)
+
+	config := LambdaConfig{
+		Symbol:   "BTC-USDT",
+		Provider: "fake",
+	}
+
+	lambda := NewLambda("test", config, mockDataBus, nil, NewMockOrderSubmitter(), pm, logger)
+
+	ctx := context.Background()
+	_, err := lambda.Start(ctx)
+
+	if err == nil {
+		t.Error("expected error when starting with nil control bus")
 	}
 }
 
 func TestLambdaStartAndSubscribe(t *testing.T) {
-	mockBus := NewMockDataBus()
+	mockDataBus := NewMockDataBus()
+	mockControlBus := NewMockControlBus()
 	pm := pool.NewPoolManager()
 	logger := log.New(os.Stdout, "[test] ", log.LstdFlags)
 
-	lambda := NewLambda("test-lambda", mockBus, pm, logger)
+	config := LambdaConfig{
+		Symbol:   "BTC-USDT",
+		Provider: "fake",
+	}
+
+	lambda := NewLambda("test-lambda", config, mockDataBus, mockControlBus, NewMockOrderSubmitter(), pm, logger)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	errCh, err := lambda.Start(ctx, []schema.EventType{"TRADE", "TICKER"})
+	errCh, err := lambda.Start(ctx)
 	if err != nil {
 		t.Fatalf("failed to start lambda: %v", err)
 	}
 
-	// Give it time to subscribe
 	time.Sleep(50 * time.Millisecond)
 
-	// Should have subscriptions for TRADE, TICKER, CONTROL_ACK, CONTROL_RESULT
-	subCount := mockBus.GetActiveSubscriptions()
-	if subCount != 4 {
-		t.Errorf("expected 4 subscriptions (TRADE, TICKER, CONTROL_ACK, CONTROL_RESULT), got %d", subCount)
+	subCount := mockDataBus.GetActiveSubscriptions()
+	if subCount != 5 {
+		t.Errorf("expected 5 subscriptions (TRADE, TICKER, BOOK_SNAPSHOT, BOOK_UPDATE, EXEC_REPORT), got %d", subCount)
 	}
 
-	// Check for errors
 	select {
 	case err := <-errCh:
 		t.Fatalf("unexpected error: %v", err)
 	case <-time.After(100 * time.Millisecond):
-		// Success - no errors
 	}
 
 	cancel()
 }
 
-// TestLambdaReceiveEvent demonstrates event consumption pattern
-// Note: Full event lifecycle testing requires proper pool integration
-func TestLambdaReceiveEvent(t *testing.T) {
-	t.Skip("Requires full pool setup for event lifecycle - see mock_bus_test.go for pattern")
-}
-
-func TestLambdaAttachControlBus(t *testing.T) {
+func TestLambdaEnableTrading(t *testing.T) {
 	mockDataBus := NewMockDataBus()
 	mockControlBus := NewMockControlBus()
 	pm := pool.NewPoolManager()
 	logger := log.New(os.Stdout, "[test] ", log.LstdFlags)
 
-	lambda := NewLambda("test-lambda", mockDataBus, pm, logger)
-	lambda.AttachControlBus(mockControlBus, "custom-consumer-id")
-
-	if lambda.control == nil {
-		t.Error("expected control bus to be attached")
+	config := LambdaConfig{
+		Symbol:   "BTC-USDT",
+		Provider: "fake",
 	}
-	if lambda.consumerID != "custom-consumer-id" {
-		t.Errorf("expected consumerID 'custom-consumer-id', got %s", lambda.consumerID)
+
+	lambda := NewLambda("test", config, mockDataBus, mockControlBus, NewMockOrderSubmitter(), pm, logger)
+
+	if lambda.tradingActive.Load() {
+		t.Error("expected trading to be disabled initially")
 	}
-}
 
-func TestLambdaSendControlMessageWithoutBus(t *testing.T) {
-	mockDataBus := NewMockDataBus()
-	pm := pool.NewPoolManager()
-	logger := log.New(os.Stdout, "[test] ", log.LstdFlags)
+	lambda.EnableTrading(true)
 
-	lambda := NewLambda("test-lambda", mockDataBus, pm, logger)
+	if !lambda.tradingActive.Load() {
+		t.Error("expected trading to be enabled after EnableTrading(true)")
+	}
 
-	ctx := context.Background()
-	_, err := lambda.SendControlMessage(ctx, "SUBSCRIBE", map[string]any{})
+	lambda.EnableTrading(false)
 
-	if err == nil {
-		t.Error("expected error when sending control message without control bus")
+	if lambda.tradingActive.Load() {
+		t.Error("expected trading to be disabled after EnableTrading(false)")
 	}
 }
 
-func TestLambdaSendControlMessage(t *testing.T) {
+func TestLambdaMatchesSymbol(t *testing.T) {
 	mockDataBus := NewMockDataBus()
 	mockControlBus := NewMockControlBus()
 	pm := pool.NewPoolManager()
 	logger := log.New(os.Stdout, "[test] ", log.LstdFlags)
 
-	lambda := NewLambda("test-lambda", mockDataBus, pm, logger)
-	lambda.AttachControlBus(mockControlBus, "test-consumer")
-
-	ctx := context.Background()
-
-	// Send a subscribe control message
-	payload := map[string]any{
-		"type":    "TICKER",
-		"filters": map[string]any{"symbol": "ETH-USD"},
+	config := LambdaConfig{
+		Symbol:   "BTC-USDT",
+		Provider: "fake",
 	}
 
-	ack, err := lambda.SendControlMessage(ctx, "SUBSCRIBE", payload)
-	if err != nil {
-		t.Fatalf("failed to send control message: %v", err)
+	lambda := NewLambda("test", config, mockDataBus, mockControlBus, NewMockOrderSubmitter(), pm, logger)
+
+	tests := []struct {
+		name     string
+		symbol   string
+		expected bool
+	}{
+		{"matching symbol", "BTC-USDT", true},
+		{"non-matching symbol", "ETH-USDT", false},
+		{"empty symbol", "", false},
 	}
 
-	if !ack.Success {
-		t.Error("expected successful acknowledgement")
-	}
-
-	// Verify message was recorded
-	messages := mockControlBus.GetMessages()
-	if len(messages) != 1 {
-		t.Fatalf("expected 1 message, got %d", len(messages))
-	}
-
-	if messages[0].Type != "SUBSCRIBE" {
-		t.Errorf("expected SUBSCRIBE type, got %s", messages[0].Type)
-	}
-	if messages[0].ConsumerID != "test-consumer" {
-		t.Errorf("expected consumer ID 'test-consumer', got %s", messages[0].ConsumerID)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			evt := &schema.Event{Symbol: tt.symbol}
+			result := lambda.matchesSymbol(evt)
+			if result != tt.expected {
+				t.Errorf("expected matchesSymbol=%v for symbol %s, got %v", tt.expected, tt.symbol, result)
+			}
+		})
 	}
 }
 
-func TestLambdaDuplicateEventTypes(t *testing.T) {
-	mockBus := NewMockDataBus()
+func TestLambdaMatchesProvider(t *testing.T) {
+	mockDataBus := NewMockDataBus()
+	mockControlBus := NewMockControlBus()
 	pm := pool.NewPoolManager()
 	logger := log.New(os.Stdout, "[test] ", log.LstdFlags)
 
-	lambda := NewLambda("test-lambda", mockBus, pm, logger)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	// Pass duplicate event types
-	_, err := lambda.Start(ctx, []schema.EventType{"TRADE", "TRADE", "TICKER"})
-	if err != nil {
-		t.Fatalf("failed to start lambda: %v", err)
+	config := LambdaConfig{
+		Symbol:   "BTC-USDT",
+		Provider: "fake",
 	}
 
-	time.Sleep(50 * time.Millisecond)
+	lambda := NewLambda("test", config, mockDataBus, mockControlBus, NewMockOrderSubmitter(), pm, logger)
 
-	// Should have 4 subscriptions (TRADE, TICKER, CONTROL_ACK, CONTROL_RESULT)
-	// Duplicates should be filtered out
-	subCount := mockBus.GetActiveSubscriptions()
-	if subCount != 4 {
-		t.Errorf("expected 4 subscriptions (duplicates filtered), got %d", subCount)
+	tests := []struct {
+		name     string
+		provider string
+		expected bool
+	}{
+		{"matching provider", "fake", true},
+		{"non-matching provider", "binance", false},
 	}
 
-	cancel()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			evt := &schema.Event{Provider: tt.provider}
+			result := lambda.matchesProvider(evt)
+			if result != tt.expected {
+				t.Errorf("expected matchesProvider=%v for provider %s, got %v", tt.expected, tt.provider, result)
+			}
+		})
+	}
 }
 
-// TestLambdaMultipleMessages demonstrates the pattern for testing event streams
-// Note: Full integration requires proper pool lifecycle management
-func TestLambdaMultipleMessages(t *testing.T) {
-	t.Skip("Requires full pool setup for event lifecycle - see mock_bus_test.go for pattern")
+func TestLambdaMatchesProviderEmpty(t *testing.T) {
+	mockDataBus := NewMockDataBus()
+	mockControlBus := NewMockControlBus()
+	pm := pool.NewPoolManager()
+	logger := log.New(os.Stdout, "[test] ", log.LstdFlags)
+
+	config := LambdaConfig{
+		Symbol:   "BTC-USDT",
+		Provider: "",
+	}
+
+	lambda := NewLambda("test", config, mockDataBus, mockControlBus, NewMockOrderSubmitter(), pm, logger)
+
+	evt := &schema.Event{Provider: "any-provider"}
+	if !lambda.matchesProvider(evt) {
+		t.Error("expected empty provider config to match any provider")
+	}
 }

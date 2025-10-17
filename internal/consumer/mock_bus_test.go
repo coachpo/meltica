@@ -249,3 +249,40 @@ func (m *MockControlBus) GetLastMessage() *schema.ControlMessage {
 	}
 	return &m.messages[len(m.messages)-1]
 }
+
+// MockOrderSubmitter implements OrderSubmitter for testing.
+type MockOrderSubmitter struct {
+	mu     sync.Mutex
+	orders []schema.OrderRequest
+	err    error
+}
+
+func NewMockOrderSubmitter() *MockOrderSubmitter {
+	return &MockOrderSubmitter{
+		orders: make([]schema.OrderRequest, 0),
+	}
+}
+
+func (m *MockOrderSubmitter) SubmitOrder(_ context.Context, req schema.OrderRequest) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.err != nil {
+		return m.err
+	}
+	m.orders = append(m.orders, req)
+	return nil
+}
+
+func (m *MockOrderSubmitter) GetOrders() []schema.OrderRequest {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	orders := make([]schema.OrderRequest, len(m.orders))
+	copy(orders, m.orders)
+	return orders
+}
+
+func (m *MockOrderSubmitter) SetError(err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.err = err
+}

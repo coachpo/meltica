@@ -294,11 +294,11 @@ func TestShutdown(t *testing.T) {
 	}
 }
 
-func TestBorrowCanonicalEvent(t *testing.T) {
+func TestBorrowEventInst(t *testing.T) {
 	pm := NewPoolManager()
 	
 	// Register canonical event pool
-	err := pm.RegisterPool("CanonicalEvent", 10, func() any {
+	err := pm.RegisterPool("Event", 10, func() any {
 		return &schema.Event{}
 	})
 	if err != nil {
@@ -307,9 +307,9 @@ func TestBorrowCanonicalEvent(t *testing.T) {
 	
 	ctx := context.Background()
 	
-	evt, err := pm.BorrowCanonicalEvent(ctx)
+	evt, err := pm.BorrowEventInst(ctx)
 	if err != nil {
-		t.Fatalf("BorrowCanonicalEvent failed: %v", err)
+		t.Fatalf("BorrowEventInst failed: %v", err)
 	}
 	if evt == nil {
 		t.Fatal("expected non-nil event")
@@ -320,13 +320,13 @@ func TestBorrowCanonicalEvent(t *testing.T) {
 		t.Error("expected reset event")
 	}
 	
-	pm.RecycleCanonicalEvent(evt)
+	pm.ReturnEventInst(evt)
 }
 
-func TestRecycleCanonicalEvent(t *testing.T) {
+func TestReturnEventInst(t *testing.T) {
 	pm := NewPoolManager()
 	
-	err := pm.RegisterPool("CanonicalEvent", 10, func() any {
+	err := pm.RegisterPool("Event", 10, func() any {
 		return &schema.Event{}
 	})
 	if err != nil {
@@ -335,19 +335,19 @@ func TestRecycleCanonicalEvent(t *testing.T) {
 	
 	ctx := context.Background()
 	
-	evt, err := pm.BorrowCanonicalEvent(ctx)
+	evt, err := pm.BorrowEventInst(ctx)
 	if err != nil {
-		t.Fatalf("BorrowCanonicalEvent failed: %v", err)
+		t.Fatalf("BorrowEventInst failed: %v", err)
 	}
 	
 	evt.EventID = "test-123"
 	
-	pm.RecycleCanonicalEvent(evt)
+	pm.ReturnEventInst(evt)
 	
 	// Borrow again
-	evt2, err := pm.BorrowCanonicalEvent(ctx)
+	evt2, err := pm.BorrowEventInst(ctx)
 	if err != nil {
-		t.Fatalf("second BorrowCanonicalEvent failed: %v", err)
+		t.Fatalf("second BorrowEventInst failed: %v", err)
 	}
 	
 	// Should be reset
@@ -355,13 +355,13 @@ func TestRecycleCanonicalEvent(t *testing.T) {
 		t.Error("expected reset event")
 	}
 	
-	pm.RecycleCanonicalEvent(evt2)
+	pm.ReturnEventInst(evt2)
 }
 
-func TestBorrowCanonicalEvents(t *testing.T) {
+func TestBorrowEventInsts(t *testing.T) {
 	pm := NewPoolManager()
 	
-	err := pm.RegisterPool("CanonicalEvent", 20, func() any {
+	err := pm.RegisterPool("Event", 20, func() any {
 		return &schema.Event{}
 	})
 	if err != nil {
@@ -370,9 +370,9 @@ func TestBorrowCanonicalEvents(t *testing.T) {
 	
 	ctx := context.Background()
 	
-	events, err := pm.BorrowCanonicalEvents(ctx, 5)
+	events, err := pm.BorrowEventInsts(ctx, 5)
 	if err != nil {
-		t.Fatalf("BorrowCanonicalEvents failed: %v", err)
+		t.Fatalf("BorrowEventInsts failed: %v", err)
 	}
 	if len(events) != 5 {
 		t.Errorf("expected 5 events, got %d", len(events))
@@ -384,21 +384,21 @@ func TestBorrowCanonicalEvents(t *testing.T) {
 		}
 	}
 	
-	pm.RecycleCanonicalEvents(events)
+	pm.ReturnEventInsts(events)
 }
 
-func TestRecycleCanonicalEventsNil(t *testing.T) {
+func TestReturnEventInstsNil(t *testing.T) {
 	pm := NewPoolManager()
 	
 	// Should not panic
-	pm.RecycleCanonicalEvents(nil)
-	pm.RecycleCanonicalEvents([]*schema.Event{})
+	pm.ReturnEventInsts(nil)
+	pm.ReturnEventInsts([]*schema.Event{})
 }
 
-func TestTryRecycleCanonicalEvent(t *testing.T) {
+func TestTryReturnEventInst(t *testing.T) {
 	pm := NewPoolManager()
 	
-	err := pm.RegisterPool("CanonicalEvent", 10, func() any {
+	err := pm.RegisterPool("Event", 10, func() any {
 		return &schema.Event{}
 	})
 	if err != nil {
@@ -407,13 +407,13 @@ func TestTryRecycleCanonicalEvent(t *testing.T) {
 	
 	ctx := context.Background()
 	
-	evt, err := pm.BorrowCanonicalEvent(ctx)
+	evt, err := pm.BorrowEventInst(ctx)
 	if err != nil {
-		t.Fatalf("BorrowCanonicalEvent failed: %v", err)
+		t.Fatalf("BorrowEventInst failed: %v", err)
 	}
 	
-	ok := pm.TryRecycleCanonicalEvent(evt)
+	ok := pm.TryReturnEventInst(evt)
 	if !ok {
-		t.Error("TryRecycleCanonicalEvent returned false")
+		t.Error("TryReturnEventInst returned false")
 	}
 }

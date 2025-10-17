@@ -14,10 +14,9 @@ import (
 	"github.com/coachpo/meltica/internal/schema"
 )
 
-// OrderSubmitter submits outbound orders and exposes query hooks.
+// OrderSubmitter submits outbound orders.
 type OrderSubmitter interface {
 	SubmitOrder(ctx context.Context, req schema.OrderRequest) error
-	QueryOrder(ctx context.Context, provider, clientOrderID string) (schema.ExecReport, bool, error)
 }
 
 // TradingStateStore records trading enablement flags per consumer.
@@ -128,14 +127,6 @@ func (c *Controller) handle(ctx context.Context, msg schema.ControlMessage) sche
 			return c.finalizeAck(ctx, msg.Type, ack)
 		}
 		return c.handleUnsubscribe(ctx, payload, ack)
-
-	case schema.ControlMessageSubmitOrder:
-		var payload schema.SubmitOrderPayload
-		if err := msg.DecodePayload(&payload); err != nil {
-			ack.ErrorMessage = err.Error()
-			return c.finalizeAck(ctx, msg.Type, ack)
-		}
-		return c.handleSubmitOrder(ctx, msg.ConsumerID, payload, ack)
 	case schema.ControlMessageSetTradingMode:
 		var payload schema.TradingModePayload
 		if err := msg.DecodePayload(&payload); err != nil {
@@ -143,13 +134,6 @@ func (c *Controller) handle(ctx context.Context, msg schema.ControlMessage) sche
 			return c.finalizeAck(ctx, msg.Type, ack)
 		}
 		return c.handleTradingMode(ctx, msg.ConsumerID, payload, ack)
-	case schema.ControlMessageQueryOrder:
-		var payload schema.QueryOrderPayload
-		if err := msg.DecodePayload(&payload); err != nil {
-			ack.ErrorMessage = err.Error()
-			return c.finalizeAck(ctx, msg.Type, ack)
-		}
-		return c.handleQueryOrder(ctx, payload, ack)
 	default:
 		ack.ErrorMessage = "unsupported command"
 		return c.finalizeAck(ctx, msg.Type, ack)
@@ -211,64 +195,6 @@ func (c *Controller) handleUnsubscribe(ctx context.Context, cmd schema.Unsubscri
 	return c.finalizeAck(ctx, schema.ControlMessageUnsubscribe, ack)
 }
 
-func (c *Controller) handleSubmitOrder(ctx context.Context, consumerID string, payload schema.SubmitOrderPayload, ack schema.ControlAcknowledgement) schema.ControlAcknowledgement {
-	if c.orders == nil {
-		ack.ErrorMessage = "order submission unavailable"
-		return c.finalizeAck(ctx, schema.ControlMessageSubmitOrder, ack)
-	}
-	consumerID = strings.TrimSpace(consumerID)
-	if consumerID == "" {
-		ack.ErrorMessage = "consumer id required"
-		return ack
-	}
-	if c.trading != nil && !c.trading.Enabled(consumerID) {
-		ack.ErrorMessage = fmt.Sprintf("trading disabled for consumer %s", consumerID)
-		return c.finalizeAck(ctx, schema.ControlMessageSubmitOrder, ack)
-	}
-	if strings.TrimSpace(payload.ClientOrderID) == "" {
-		ack.ErrorMessage = "client_order_id required"
-		return c.finalizeAck(ctx, schema.ControlMessageSubmitOrder, ack)
-	}
-	if strings.TrimSpace(payload.Symbol) == "" {
-		ack.ErrorMessage = "symbol required"
-		return c.finalizeAck(ctx, schema.ControlMessageSubmitOrder, ack)
-	}
-	if strings.TrimSpace(payload.Quantity) == "" {
-		ack.ErrorMessage = "quantity required"
-		return c.finalizeAck(ctx, schema.ControlMessageSubmitOrder, ack)
-	}
-	//nolint:exhaustruct // zero value for TIF is intentional
-	order := schema.OrderRequest{
-		ClientOrderID: payload.ClientOrderID,
-		ConsumerID:    consumerID,
-		Provider:      strings.TrimSpace(payload.Provider),
-		Symbol:        strings.TrimSpace(payload.Symbol),
-		Side:          payload.Side,
-		OrderType:     payload.OrderType,
-		Price:         payload.Price,
-		Quantity:      payload.Quantity,
-		Timestamp:     payload.Timestamp,
-	}
-	if order.Provider == "" {
-		order.Provider = "binance"
-	}
-	if order.Timestamp.IsZero() {
-		order.Timestamp = time.Now().UTC()
-	}
-	if err := schema.ValidateInstrument(order.Symbol); err != nil {
-		ack.ErrorMessage = err.Error()
-		return c.finalizeAck(ctx, schema.ControlMessageSubmitOrder, ack)
-	}
-	if err := c.orders.SubmitOrder(ctx, order); err != nil {
-		ack.ErrorMessage = err.Error()
-		return c.finalizeAck(ctx, schema.ControlMessageSubmitOrder, ack)
-	}
-	version := c.version.Load()
-	ack.Success = true
-	ack.RoutingVersion = int(version)
-	return c.finalizeAck(ctx, schema.ControlMessageSubmitOrder, ack)
-}
-
 func (c *Controller) handleTradingMode(ctx context.Context, consumerID string, payload schema.TradingModePayload, ack schema.ControlAcknowledgement) schema.ControlAcknowledgement {
 	if c.trading == nil {
 		ack.ErrorMessage = "trading state unavailable"
@@ -284,35 +210,6 @@ func (c *Controller) handleTradingMode(ctx context.Context, consumerID string, p
 	ack.Success = true
 	ack.RoutingVersion = int(version)
 	return c.finalizeAck(ctx, schema.ControlMessageSetTradingMode, ack)
-}
-
-func (c *Controller) handleQueryOrder(ctx context.Context, payload schema.QueryOrderPayload, ack schema.ControlAcknowledgement) schema.ControlAcknowledgement {
-	if c.orders == nil {
-		ack.ErrorMessage = "order queries unavailable"
-		return c.finalizeAck(ctx, schema.ControlMessageQueryOrder, ack)
-	}
-	clientOrderID := strings.TrimSpace(payload.ClientOrderID)
-	if clientOrderID == "" {
-		ack.ErrorMessage = "client_order_id required"
-		return c.finalizeAck(ctx, schema.ControlMessageQueryOrder, ack)
-	}
-	provider := strings.TrimSpace(payload.Provider)
-	if provider == "" {
-		provider = "binance"
-	}
-	report, found, err := c.orders.QueryOrder(ctx, provider, clientOrderID)
-	if err != nil {
-		ack.ErrorMessage = err.Error()
-		return c.finalizeAck(ctx, schema.ControlMessageQueryOrder, ack)
-	}
-	if !found {
-		ack.ErrorMessage = "order not found"
-		return c.finalizeAck(ctx, schema.ControlMessageQueryOrder, ack)
-	}
-	ack.Success = true
-	ack.Result = report
-	ack.RoutingVersion = int(c.version.Load())
-	return c.finalizeAck(ctx, schema.ControlMessageQueryOrder, ack)
 }
 
 func mergeFilters(existing []FilterRule, overrides map[string]any) []FilterRule {
@@ -392,7 +289,7 @@ func (c *Controller) publishEvent(ctx context.Context, evt *schema.Event) {
 }
 
 func (c *Controller) borrowEvent(ctx context.Context) *schema.Event {
-	evt, err := c.pools.BorrowCanonicalEvent(ctx)
+	evt, err := c.pools.BorrowEventInst(ctx)
 	if err != nil {
 		return nil
 	}
@@ -404,7 +301,7 @@ func (c *Controller) recycleEvent(evt *schema.Event) {
 		return
 	}
 	if c.pools != nil {
-		c.pools.RecycleCanonicalEvent(evt)
+		c.pools.ReturnEventInst(evt)
 	}
 }
 

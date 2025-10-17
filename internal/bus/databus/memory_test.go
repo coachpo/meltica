@@ -14,7 +14,7 @@ func setupTestBus(t *testing.T) (Bus, *pool.PoolManager) {
 	t.Helper()
 	
 	poolMgr := pool.NewPoolManager()
-	err := poolMgr.RegisterPool("CanonicalEvent", 100, func() interface{} {
+	err := poolMgr.RegisterPool("Event", 100, func() interface{} {
 		return new(schema.Event)
 	})
 	if err != nil {
@@ -108,9 +108,9 @@ func TestMemoryBusSubscribeAndPublish(t *testing.T) {
 	defer bus.Unsubscribe(subID)
 	
 	// Publish - borrow event from pool
-	testEvent, err := poolMgr.BorrowCanonicalEvent(ctx)
+	testEvent, err := poolMgr.BorrowEventInst(ctx)
 	if err != nil {
-		t.Fatalf("BorrowCanonicalEvent() error = %v", err)
+		t.Fatalf("BorrowEventInst() error = %v", err)
 	}
 	expectedEventID := "test-1"
 	testEvent.EventID = expectedEventID
@@ -133,7 +133,7 @@ func TestMemoryBusSubscribeAndPublish(t *testing.T) {
 			t.Errorf("expected EventID %s, got %s", expectedEventID, received.EventID)
 		}
 		// Recycle the received event
-		poolMgr.RecycleCanonicalEvent(received)
+		poolMgr.ReturnEventInst(received)
 	case <-time.After(1 * time.Second):
 		t.Fatal("timeout waiting for event")
 	}
@@ -217,9 +217,9 @@ func TestMemoryBusMultipleSubscribers(t *testing.T) {
 	defer bus.Unsubscribe(sub2)
 	
 	// Publish - borrow event from pool
-	testEvent, err := poolMgr.BorrowCanonicalEvent(ctx)
+	testEvent, err := poolMgr.BorrowEventInst(ctx)
 	if err != nil {
-		t.Fatalf("BorrowCanonicalEvent() error = %v", err)
+		t.Fatalf("BorrowEventInst() error = %v", err)
 	}
 	expectedEventID := "test-multi"
 	testEvent.EventID = expectedEventID
@@ -242,12 +242,12 @@ func TestMemoryBusMultipleSubscribers(t *testing.T) {
 		case evt := <-ch1:
 			if evt != nil && evt.EventID == expectedEventID {
 				received1 = true
-				poolMgr.RecycleCanonicalEvent(evt)
+				poolMgr.ReturnEventInst(evt)
 			}
 		case evt := <-ch2:
 			if evt != nil && evt.EventID == expectedEventID {
 				received2 = true
-				poolMgr.RecycleCanonicalEvent(evt)
+				poolMgr.ReturnEventInst(evt)
 			}
 		case <-timeout:
 			if !received1 {

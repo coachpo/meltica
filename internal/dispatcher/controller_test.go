@@ -37,11 +37,6 @@ func (m *mockOrderSubmitter) SubmitOrder(ctx context.Context, req schema.OrderRe
 	return nil
 }
 
-func (m *mockOrderSubmitter) QueryOrder(ctx context.Context, provider, clientOrderID string) (schema.ExecReport, bool, error) {
-	m.queries = append(m.queries, clientOrderID)
-	return schema.ExecReport{}, false, nil
-}
-
 type mockTradingStateStore struct {
 	states map[string]bool
 }

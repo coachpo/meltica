@@ -62,7 +62,6 @@ type Provider struct {
 	state   map[string]*instrumentState
 
 	orderMu sync.RWMutex
-	reports map[string]schema.ExecReport
 
 	clock func() time.Time
 }
@@ -124,7 +123,6 @@ func NewProvider(opts Options) *Provider {
 		routes:               make(map[schema.CanonicalType]*routeHandle),
 		seq:                  make(map[string]uint64),
 		state:                make(map[string]*instrumentState),
-		reports:              make(map[string]schema.ExecReport),
 		clock:                time.Now,
 		pools:                opts.Pools,
 	}
@@ -184,21 +182,7 @@ func (p *Provider) SubmitOrder(ctx context.Context, req schema.OrderRequest) err
 	}
 }
 
-// QueryOrder returns the stored execution report, if any.
-func (p *Provider) QueryOrder(_ context.Context, provider, clientOrderID string) (schema.ExecReport, bool, error) {
-	if strings.TrimSpace(provider) == "" {
-		provider = p.name
-	}
-	key := orderKey(provider, clientOrderID)
-	p.orderMu.RLock()
-	report, ok := p.reports[key]
-	p.orderMu.RUnlock()
-	if !ok {
-		//nolint:exhaustruct // empty struct for error case
-		return schema.ExecReport{}, false, nil
-	}
-	return report, true, nil
-}
+
 
 // SubscribeRoute activates a dispatcher route.
 func (p *Provider) SubscribeRoute(route dispatcher.Route) error {
@@ -479,7 +463,7 @@ func (p *Provider) borrowEvent(ctx context.Context) *schema.Event {
 	if requestCtx == nil {
 		requestCtx = context.Background()
 	}
-	evt, err := p.pools.BorrowCanonicalEvent(requestCtx)
+	evt, err := p.pools.BorrowEventInst(requestCtx)
 	if err != nil {
 		log.Printf("fake provider %s: borrow canonical event failed: %v", p.name, err)
 		p.emitError(fmt.Errorf("borrow canonical event: %w", err))
@@ -538,20 +522,6 @@ func (p *Provider) handleOrder(order schema.OrderRequest) {
 	if order.Timestamp.IsZero() {
 		order.Timestamp = p.clock().UTC()
 	}
-	key := orderKey(order.Provider, order.ClientOrderID)
-	//nolint:exhaustruct // zero values for optional fields are intentional
-	report := schema.ExecReport{
-		ClientOrderID: order.ClientOrderID,
-		Provider:      order.Provider,
-		Symbol:        normalizeInstrument(order.Symbol),
-		Status:        schema.ExecReportStateACK,
-		TransactTime:  p.clock().UTC().UnixNano(),
-		TraceID:       order.ClientOrderID,
-		DecisionID:    order.ConsumerID,
-	}
-	p.orderMu.Lock()
-	p.reports[key] = report
-	p.orderMu.Unlock()
 
 	seq := p.nextSeq(schema.EventTypeExecReport, order.Symbol)
 	ts := p.clock().UTC()

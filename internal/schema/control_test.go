@@ -116,44 +116,7 @@ func TestUnsubscribeValidateEmpty(t *testing.T) {
 	}
 }
 
-func TestSubmitOrderPayload(t *testing.T) {
-	price := "50000.00"
-	payload := SubmitOrderPayload{
-		ClientOrderID: "order-123",
-		Provider:      "binance",
-		Symbol:        "BTC-USD",
-		Side:          TradeSideBuy,
-		OrderType:     OrderTypeLimit,
-		Price:         &price,
-		Quantity:      "1.5",
-		Timestamp:     time.Now(),
-	}
-	
-	if payload.ClientOrderID == "" {
-		t.Error("expected non-empty ClientOrderID")
-	}
-	if payload.Price == nil {
-		t.Error("expected non-nil Price")
-	}
-	if *payload.Price != "50000.00" {
-		t.Errorf("expected price 50000.00, got %s", *payload.Price)
-	}
-}
 
-func TestQueryOrderPayload(t *testing.T) {
-	payload := QueryOrderPayload{
-		ClientOrderID: "order-123",
-		Provider:      "binance",
-		Symbol:        "BTC-USD",
-	}
-	
-	if payload.ClientOrderID == "" {
-		t.Error("expected non-empty ClientOrderID")
-	}
-	if payload.Provider == "" {
-		t.Error("expected non-empty Provider")
-	}
-}
 
 func TestTradingModePayload(t *testing.T) {
 	payload := TradingModePayload{

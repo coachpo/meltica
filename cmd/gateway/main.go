@@ -61,9 +61,8 @@ func main() {
 	}
 	registerPool("WsFrame", 200, func() interface{} { return new(schema.WsFrame) })
 	registerPool("ProviderRaw", 200, func() interface{} { return new(schema.ProviderRaw) })
-	registerPool("CanonicalEvent", 1000, func() interface{} { return new(schema.CanonicalEvent) })
+	registerPool("Event", 1000, func() interface{} { return new(schema.Event) })
 	registerPool("OrderRequest", 20, func() interface{} { return new(schema.OrderRequest) })
-	registerPool("ExecReport", 20, func() interface{} { return new(schema.ExecReport) })
 
 	var lifecycle conc.WaitGroup
 
@@ -121,46 +120,28 @@ func main() {
 		}
 	}
 
-	// Create three specialized lambda consumers
-	tradeLambda := consumer.NewTradeLambda("trade-consumer", bus, poolMgr, logger)
-	tickerLambda := consumer.NewTickerLambda("ticker-consumer", bus, poolMgr, logger)
-	orderbookLambda := consumer.NewOrderBookLambda("orderbook-consumer", bus, poolMgr, logger)
-
-	// Start all three lambdas
-	if tradeErrs, err := tradeLambda.Start(ctx); err != nil {
-		logger.Printf("trade lambda: %v", err)
-	} else {
-		lifecycle.Go(func() {
-			for err := range tradeErrs {
-				if err != nil {
-					logger.Printf("trade lambda: %v", err)
-				}
-			}
-		})
+	lambdaConfigs := []consumer.LambdaConfig{
+		{Symbol: "BTC-USDT", Provider: "fake"},
+		{Symbol: "ETH-USDT", Provider: "fake"},
+		{Symbol: "XRP-USDT", Provider: "fake"},
 	}
 
-	if tickerErrs, err := tickerLambda.Start(ctx); err != nil {
-		logger.Printf("ticker lambda: %v", err)
-	} else {
-		lifecycle.Go(func() {
-			for err := range tickerErrs {
-				if err != nil {
-					logger.Printf("ticker lambda: %v", err)
+	lambdas := make([]*consumer.Lambda, 0, len(lambdaConfigs))
+	for _, cfg := range lambdaConfigs {
+		lambda := consumer.NewLambda("", cfg, bus, controlBus, provider, poolMgr, logger)
+		lambdas = append(lambdas, lambda)
+		
+		if lambdaErrs, err := lambda.Start(ctx); err != nil {
+			logger.Fatalf("start lambda %s: %v", cfg.Symbol, err)
+		} else {
+			lifecycle.Go(func() {
+				for err := range lambdaErrs {
+					if err != nil {
+						logger.Printf("lambda %s: %v", cfg.Symbol, err)
+					}
 				}
-			}
-		})
-	}
-
-	if orderbookErrs, err := orderbookLambda.Start(ctx); err != nil {
-		logger.Printf("orderbook lambda: %v", err)
-	} else {
-		lifecycle.Go(func() {
-			for err := range orderbookErrs {
-				if err != nil {
-					logger.Printf("orderbook lambda: %v", err)
-				}
-			}
-		})
+			})
+		}
 	}
 	controller := dispatcher.NewController(
 		table,
@@ -206,9 +187,6 @@ func main() {
 		bus:                 bus,
 		poolMgr:             poolMgr,
 		telemetryProvider:   telemetryProvider,
-		tradeLambda:         tradeLambda,
-		tickerLambda:        tickerLambda,
-		orderbookLambda:     orderbookLambda,
 		dispatcherRuntime:   dispatcherRuntime,
 		subscriptionManager: subscriptionManager,
 	})
@@ -225,9 +203,6 @@ type gracefulShutdownConfig struct {
 	bus                 databus.Bus
 	poolMgr             *pool.PoolManager
 	telemetryProvider   *telemetry.Provider
-	tradeLambda         *consumer.TradeLambda
-	tickerLambda        *consumer.TickerLambda
-	orderbookLambda     *consumer.OrderBookLambda
 	dispatcherRuntime   *dispatcher.Runtime
 	subscriptionManager *shared.SubscriptionManager
 }

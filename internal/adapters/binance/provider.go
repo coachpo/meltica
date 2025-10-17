@@ -44,7 +44,6 @@ type Provider struct {
 	cancel    context.CancelFunc
 	orderMu   sync.RWMutex
 	orderBook map[string]schema.OrderRequest
-	reports   map[string]schema.ExecReport
 	bookMu    sync.Mutex
 	books     map[string]*BookAssembler
 	pending   map[string][]*schema.Event
@@ -76,7 +75,6 @@ func NewProvider(name string, ws *WSClient, rest *RESTClient, opts ProviderOptio
 	provider.orders = make(chan schema.OrderRequest, 128)
 	provider.routes = make(map[string]*routeHandle)
 	provider.orderBook = make(map[string]schema.OrderRequest)
-	provider.reports = make(map[string]schema.ExecReport)
 	provider.books = make(map[string]*BookAssembler)
 	provider.pending = make(map[string][]*schema.Event)
 	provider.pools = opts.Pools
@@ -225,20 +223,6 @@ func (p *Provider) handleOrder(order schema.OrderRequest) {
 	p.orderBook[key] = order
 	p.orderMu.Unlock()
 
-	//nolint:exhaustruct // zero values for optional fields are intentional
-	report := schema.ExecReport{
-		ClientOrderID: order.ClientOrderID,
-		Provider:      order.Provider,
-		Symbol:        order.Symbol,
-		Status:        schema.ExecReportStateACK,
-		TransactTime:  time.Now().UTC().UnixNano(),
-		TraceID:       order.ClientOrderID,
-		DecisionID:    order.ConsumerID,
-	}
-	p.orderMu.Lock()
-	p.reports[key] = report
-	p.orderMu.Unlock()
-
 	evt := p.borrowEvent(p.ctx)
 	if evt == nil {
 		return
@@ -280,7 +264,7 @@ func (p *Provider) borrowEvent(ctx context.Context) *schema.Event {
 	if requestCtx == nil {
 		requestCtx = context.Background()
 	}
-	evt, err := p.pools.BorrowCanonicalEvent(requestCtx)
+	evt, err := p.pools.BorrowEventInst(requestCtx)
 	if err != nil {
 		log.Printf("binance provider %s: borrow canonical event failed: %v", p.name, err)
 		p.emitError(fmt.Errorf("borrow canonical event: %w", err))
@@ -289,21 +273,7 @@ func (p *Provider) borrowEvent(ctx context.Context) *schema.Event {
 	return evt
 }
 
-// QueryOrder returns the latest execution report for the provided identifiers.
-func (p *Provider) QueryOrder(_ context.Context, provider, clientOrderID string) (schema.ExecReport, bool, error) {
-	if provider = strings.TrimSpace(provider); provider == "" {
-		provider = p.name
-	}
-	key := orderKey(provider, clientOrderID)
-	p.orderMu.RLock()
-	report, ok := p.reports[key]
-	p.orderMu.RUnlock()
-	if !ok {
-		var empty schema.ExecReport
-		return empty, false, nil
-	}
-	return report, true, nil
-}
+
 
 func (p *Provider) startRouteLocked(_ string, topics []string, pollers []RESTPoller) *routeHandle {
 	hasStreams := (len(topics) > 0 && p.ws != nil) || (len(pollers) > 0 && p.rest != nil)

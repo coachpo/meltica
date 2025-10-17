@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strconv"
 	"sync/atomic"
 	"time"
 
@@ -16,62 +17,91 @@ import (
 	"github.com/sourcegraph/conc"
 )
 
-// Lambda streams events from the data bus and applies a lambda handler before
-// recycling them.
+// LambdaConfig defines configuration for a lambda trading bot instance.
+type LambdaConfig struct {
+	Symbol   string
+	Provider string
+}
+
+// OrderSubmitter defines the interface for submitting orders to a provider.
+type OrderSubmitter interface {
+	SubmitOrder(ctx context.Context, req schema.OrderRequest) error
+}
+
+// Lambda is a trading bot that subscribes to market data for a specific symbol
+// and executes predefined trading logic.
 type Lambda struct {
-	id             string
-	bus            databus.Bus
-	control        controlbus.Bus
-	pools          *pool.PoolManager
-	logger         *log.Logger
-	routingVersion atomic.Int64
-	tradingEnabled atomic.Bool
-	consumerID     string
+	id            string
+	config        LambdaConfig
+	bus           databus.Bus
+	control       controlbus.Bus
+	orderSubmitter OrderSubmitter
+	pools         *pool.PoolManager
+	logger        *log.Logger
+	
+	lastPrice     atomic.Value
+	bidPrice      atomic.Value
+	askPrice      atomic.Value
+	tradingActive atomic.Bool
+	orderCount    atomic.Int64
 }
 
-// NewLambda constructs a lambda consumer that prints received events.
-func NewLambda(id string, bus databus.Bus, pools *pool.PoolManager, logger *log.Logger) *Lambda {
+type marketState struct {
+	lastPrice float64
+	bidPrice  float64
+	askPrice  float64
+	timestamp time.Time
+}
+
+// NewLambda creates a new trading lambda for a specific symbol and provider.
+func NewLambda(id string, config LambdaConfig, bus databus.Bus, control controlbus.Bus, orderSubmitter OrderSubmitter, pools *pool.PoolManager, logger *log.Logger) *Lambda {
 	if id == "" {
-		id = "lambda-consumer"
+		id = fmt.Sprintf("lambda-%s", config.Symbol)
 	}
-	//nolint:exhaustruct // zero values for control, routingVersion, tradingEnabled are intentional
-	return &Lambda{
-		id:         id,
-		bus:        bus,
-		pools:      pools,
-		logger:     logger,
-		consumerID: id,
+	
+	lambda := &Lambda{
+		id:             id,
+		config:         config,
+		bus:            bus,
+		control:        control,
+		orderSubmitter: orderSubmitter,
+		pools:          pools,
+		logger:         logger,
 	}
+	
+	lambda.lastPrice.Store(float64(0))
+	lambda.bidPrice.Store(float64(0))
+	lambda.askPrice.Store(float64(0))
+	lambda.tradingActive.Store(false)
+	
+	return lambda
 }
 
-// Start subscribes to the requested event types and prints them to stdout.
-func (l *Lambda) Start(ctx context.Context, types []schema.EventType) (<-chan error, error) {
+// Start begins consuming market data and executing trading logic.
+func (l *Lambda) Start(ctx context.Context) (<-chan error, error) {
 	if l.bus == nil {
-		return nil, fmt.Errorf("lambda consumer %s: bus required", l.id)
+		return nil, fmt.Errorf("lambda %s: data bus required", l.id)
+	}
+	if l.control == nil {
+		return nil, fmt.Errorf("lambda %s: control bus required", l.id)
 	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	typeSet := make(map[schema.EventType]struct{}, len(types)+2)
-	subscribeTypes := make([]schema.EventType, 0, len(types)+2)
-	for _, typ := range types {
-		if _, exists := typeSet[typ]; exists {
-			continue
-		}
-		typeSet[typ] = struct{}{}
-		subscribeTypes = append(subscribeTypes, typ)
+	
+	eventTypes := []schema.EventType{
+		schema.EventTypeTrade,
+		schema.EventTypeTicker,
+		schema.EventTypeBookSnapshot,
+		schema.EventTypeBookUpdate,
+		schema.EventTypeExecReport,
 	}
-	for _, typ := range []schema.EventType{schema.EventTypeControlAck, schema.EventTypeControlResult} {
-		if _, exists := typeSet[typ]; exists {
-			continue
-		}
-		typeSet[typ] = struct{}{}
-		subscribeTypes = append(subscribeTypes, typ)
-	}
-	errs := make(chan error, len(subscribeTypes))
-	subs := make([]subscription, 0, len(subscribeTypes))
-	for _, typ := range subscribeTypes {
-		id, ch, err := l.bus.Subscribe(ctx, typ)
+	
+	errs := make(chan error, len(eventTypes))
+	subs := make([]subscription, 0, len(eventTypes))
+	
+	for _, typ := range eventTypes {
+		subID, ch, err := l.bus.Subscribe(ctx, typ)
 		if err != nil {
 			close(errs)
 			for _, sub := range subs {
@@ -79,73 +109,24 @@ func (l *Lambda) Start(ctx context.Context, types []schema.EventType) (<-chan er
 			}
 			return nil, fmt.Errorf("subscribe to %s: %w", typ, err)
 		}
-		subs = append(subs, subscription{id: id, typ: typ, ch: ch})
+		subs = append(subs, subscription{id: subID, typ: typ, ch: ch})
 	}
+	
 	go l.consume(ctx, subs, errs)
+	
+	l.logger.Printf("[%s] started for symbol=%s provider=%s", l.id, l.config.Symbol, l.config.Provider)
 	return errs, nil
 }
 
-// AttachControlBus configures the control bus used for command emission.
-func (l *Lambda) AttachControlBus(bus controlbus.Bus, consumerID string) {
-	l.control = bus
-	if consumerID != "" {
-		l.consumerID = consumerID
-	}
-}
-
-// SendControlMessage sends a control-plane message on behalf of the lambda.
-func (l *Lambda) SendControlMessage(ctx context.Context, typ schema.ControlMessageType, payload any) (schema.ControlAcknowledgement, error) {
-	if l.control == nil {
-		return schema.ControlAcknowledgement{}, fmt.Errorf("lambda %s: control bus unavailable", l.id)
-	}
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return schema.ControlAcknowledgement{}, fmt.Errorf("marshal control message payload: %w", err)
-	}
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	msg := schema.ControlMessage{
-		MessageID:  fmt.Sprintf("%s-%d", l.id, time.Now().UTC().UnixNano()),
-		ConsumerID: l.consumerID,
-		Type:       typ,
-		Payload:    body,
-		Timestamp:  time.Now().UTC(),
-	}
-	ack, err := l.control.Send(ctx, msg)
-	if err != nil {
-		return schema.ControlAcknowledgement{}, fmt.Errorf("send control message: %w", err)
-	}
-	return ack, nil
-}
-
-// Subscribe issues a subscribe command via the control bus.
-func (l *Lambda) Subscribe(ctx context.Context, payload schema.Subscribe) (schema.ControlAcknowledgement, error) {
-	return l.SendControlMessage(ctx, schema.ControlMessageSubscribe, payload)
-}
-
-// Unsubscribe issues an unsubscribe command via the control bus.
-func (l *Lambda) Unsubscribe(ctx context.Context, payload schema.Unsubscribe) (schema.ControlAcknowledgement, error) {
-	return l.SendControlMessage(ctx, schema.ControlMessageUnsubscribe, payload)
-}
-
-// SetTradingMode toggles the trading mode for this consumer via control command.
-func (l *Lambda) SetTradingMode(ctx context.Context, payload schema.TradingModePayload) (schema.ControlAcknowledgement, error) {
-	return l.SendControlMessage(ctx, schema.ControlMessageSetTradingMode, payload)
-}
-
-// SubmitOrder submits an order through the control plane.
-func (l *Lambda) SubmitOrder(ctx context.Context, payload schema.SubmitOrderPayload) (schema.ControlAcknowledgement, error) {
-	return l.SendControlMessage(ctx, schema.ControlMessageSubmitOrder, payload)
-}
-
-// QueryOrder queries order status through the control plane.
-func (l *Lambda) QueryOrder(ctx context.Context, payload schema.QueryOrderPayload) (schema.ControlAcknowledgement, error) {
-	return l.SendControlMessage(ctx, schema.ControlMessageQueryOrder, payload)
+type subscription struct {
+	id  databus.SubscriptionID
+	typ schema.EventType
+	ch  <-chan *schema.Event
 }
 
 func (l *Lambda) consume(ctx context.Context, subs []subscription, errs chan<- error) {
 	defer close(errs)
+	
 	var wg conc.WaitGroup
 	for _, sub := range subs {
 		wg.Go(func() {
@@ -162,7 +143,9 @@ func (l *Lambda) consume(ctx context.Context, subs []subscription, errs chan<- e
 			}
 		})
 	}
+	
 	wg.Wait()
+	
 	for _, sub := range subs {
 		l.bus.Unsubscribe(sub.id)
 	}
@@ -172,234 +155,289 @@ func (l *Lambda) handleEvent(ctx context.Context, typ schema.EventType, evt *sch
 	if evt == nil {
 		return
 	}
-	switch typ {
-	case schema.EventTypeControlAck:
-		l.processControlAck(evt)
-		l.recycleIfNeeded(evt)
+	
+	defer l.recycleEvent(evt)
+	
+	if !l.matchesSymbol(evt) {
 		return
-	case schema.EventTypeControlResult:
-		l.processControlResult(evt)
-		l.recycleIfNeeded(evt)
-		return
-	case schema.EventTypeBookSnapshot, schema.EventTypeBookUpdate, schema.EventTypeTrade, schema.EventTypeTicker, schema.EventTypeExecReport, schema.EventTypeKlineSummary:
-		// Market data and execution reports - handled below
 	}
-	if rv := int64(evt.RoutingVersion); rv > 0 {
-		for {
-			current := l.routingVersion.Load()
-			if rv <= current {
-				break
-			}
+	
+	if !l.matchesProvider(evt) {
+		return
+	}
+	
+	switch typ {
+	case schema.EventTypeTrade:
+		l.handleTrade(ctx, evt)
+	case schema.EventTypeTicker:
+		l.handleTicker(ctx, evt)
+	case schema.EventTypeBookSnapshot:
+		l.handleBookSnapshot(ctx, evt)
+	case schema.EventTypeBookUpdate:
+		l.handleBookUpdate(ctx, evt)
+	case schema.EventTypeExecReport:
+		l.handleExecReport(ctx, evt)
+	}
+}
+
+func (l *Lambda) matchesSymbol(evt *schema.Event) bool {
+	return evt.Symbol == l.config.Symbol
+}
+
+func (l *Lambda) matchesProvider(evt *schema.Event) bool {
+	if l.config.Provider == "" {
+		return true
+	}
+	return evt.Provider == l.config.Provider
+}
+
+func (l *Lambda) handleTrade(ctx context.Context, evt *schema.Event) {
+	payload, ok := evt.Payload.(schema.TradePayload)
+	if !ok {
+		return
+	}
+	
+	price, err := strconv.ParseFloat(payload.Price, 64)
+	if err != nil {
+		return
+	}
+	
+	l.lastPrice.Store(price)
+	
+	l.logger.Printf("[%s] TRADE %s %s@%s side=%s", 
+		l.id, evt.Symbol, payload.Quantity, payload.Price, payload.Side)
+	
+	l.evaluateTradingLogic(ctx, price)
+}
+
+func (l *Lambda) handleTicker(ctx context.Context, evt *schema.Event) {
+	payload, ok := evt.Payload.(schema.TickerPayload)
+	if !ok {
+		return
+	}
+	
+	lastPrice, _ := strconv.ParseFloat(payload.LastPrice, 64)
+	bidPrice, _ := strconv.ParseFloat(payload.BidPrice, 64)
+	askPrice, _ := strconv.ParseFloat(payload.AskPrice, 64)
+	
+	l.lastPrice.Store(lastPrice)
+	l.bidPrice.Store(bidPrice)
+	l.askPrice.Store(askPrice)
+	
+	l.logger.Printf("[%s] TICKER %s last=%s bid=%s ask=%s vol=%s", 
+		l.id, evt.Symbol, payload.LastPrice, payload.BidPrice, payload.AskPrice, payload.Volume24h)
+}
+
+func (l *Lambda) handleBookSnapshot(ctx context.Context, evt *schema.Event) {
+	payload, ok := evt.Payload.(schema.BookSnapshotPayload)
+	if !ok {
+		return
+	}
+	
+	if len(payload.Bids) > 0 {
+		bidPrice, _ := strconv.ParseFloat(payload.Bids[0].Price, 64)
+		l.bidPrice.Store(bidPrice)
+	}
+	
+	if len(payload.Asks) > 0 {
+		askPrice, _ := strconv.ParseFloat(payload.Asks[0].Price, 64)
+		l.askPrice.Store(askPrice)
+	}
+	
+	l.logger.Printf("[%s] BOOK_SNAPSHOT %s bids=%d asks=%d", 
+		l.id, evt.Symbol, len(payload.Bids), len(payload.Asks))
+}
+
+func (l *Lambda) handleBookUpdate(ctx context.Context, evt *schema.Event) {
+	payload, ok := evt.Payload.(schema.BookUpdatePayload)
+	if !ok {
+		return
+	}
+	
+	if len(payload.Bids) > 0 {
+		bidPrice, _ := strconv.ParseFloat(payload.Bids[0].Price, 64)
+		if bidPrice > 0 {
+			l.bidPrice.Store(bidPrice)
 		}
 	}
-	if l.shouldIgnore(typ, evt) {
-		l.recycleIfNeeded(evt)
-		return
+	
+	if len(payload.Asks) > 0 {
+		askPrice, _ := strconv.ParseFloat(payload.Asks[0].Price, 64)
+		if askPrice > 0 {
+			l.askPrice.Store(askPrice)
+		}
 	}
-	l.printEvent(typ, evt)
-	l.recycleIfNeeded(evt)
-	_ = ctx
+	
+	l.logger.Printf("[%s] BOOK_UPDATE %s bids=%d asks=%d", 
+		l.id, evt.Symbol, len(payload.Bids), len(payload.Asks))
 }
 
-func (l *Lambda) printEvent(typ schema.EventType, evt *schema.Event) {
-	if evt == nil {
-		return
-	}
-	payload := fmt.Sprintf("%v", evt.Payload)
-	line := fmt.Sprintf(
-		"[consumer:%s] type=%s provider=%s symbol=%s seq=%d route=%d trace=%s payload=%s",
-		l.id,
-		typ,
-		evt.Provider,
-		evt.Symbol,
-		evt.SeqProvider,
-		evt.RoutingVersion,
-		evt.TraceID,
-		payload,
-	)
-	if l.logger != nil {
-		l.logger.Println(line)
-		return
-	}
-	fmt.Println(line)
-}
-
-func (l *Lambda) processControlAck(evt *schema.Event) {
-	payload, ok := coerceControlAck(evt.Payload)
+func (l *Lambda) handleExecReport(ctx context.Context, evt *schema.Event) {
+	payload, ok := evt.Payload.(schema.ExecReportPayload)
 	if !ok {
-		//nolint:exhaustruct // error case with minimal required fields
-		l.logControlAck(schema.ControlAckPayload{
-			MessageID:    evt.EventID,
-			CommandType:  schema.ControlMessageType(fmt.Sprintf("unknown:%s", evt.Type)),
-			ErrorMessage: "invalid control ack payload",
-			Timestamp:    time.Now().UTC(),
-		})
 		return
 	}
-	if payload.RoutingVersion > 0 {
-		l.routingVersion.Store(int64(payload.RoutingVersion))
+	
+	// Only process ExecReports for orders submitted by this lambda
+	if !l.isMyOrder(payload.ClientOrderID) {
+		return
 	}
-	if payload.CommandType == schema.ControlMessageSetTradingMode {
-		l.tradingEnabled.Store(payload.Success)
-	}
-	if payload.ConsumerID == "" || payload.ConsumerID == l.consumerID {
-		l.logControlAck(payload)
+	
+	l.logger.Printf("[%s] EXEC_REPORT %s order_id=%s state=%s filled=%s avg_price=%s", 
+		l.id, evt.Symbol, payload.ClientOrderID, payload.State, payload.FilledQuantity, payload.AvgFillPrice)
+	
+	switch payload.State {
+	case schema.ExecReportStateFILLED:
+		l.logger.Printf("[%s] ORDER FILLED order_id=%s qty=%s price=%s", 
+			l.id, payload.ClientOrderID, payload.FilledQuantity, payload.AvgFillPrice)
+	case schema.ExecReportStateREJECTED:
+		reason := ""
+		if payload.RejectReason != nil {
+			reason = *payload.RejectReason
+		}
+		l.logger.Printf("[%s] ORDER REJECTED order_id=%s reason=%s", 
+			l.id, payload.ClientOrderID, reason)
 	}
 }
 
-func (l *Lambda) processControlResult(evt *schema.Event) {
-	payload, ok := coerceControlResult(evt.Payload)
-	if !ok {
-		//nolint:exhaustruct // error case with minimal required fields
-		l.logControlResult(schema.ControlResultPayload{
-			MessageID:   evt.EventID,
-			CommandType: schema.ControlMessageType(fmt.Sprintf("unknown:%s", evt.Type)),
-			Timestamp:   time.Now().UTC(),
-			Result:      "invalid control result payload",
-		})
+func (l *Lambda) evaluateTradingLogic(ctx context.Context, currentPrice float64) {
+	if !l.tradingActive.Load() {
 		return
 	}
-	if payload.ConsumerID == "" || payload.ConsumerID == l.consumerID {
-		l.logControlResult(payload)
+	
+	bidPrice := l.bidPrice.Load().(float64)
+	askPrice := l.askPrice.Load().(float64)
+	
+	if bidPrice <= 0 || askPrice <= 0 {
+		return
+	}
+	
+	spread := askPrice - bidPrice
+	spreadPct := (spread / bidPrice) * 100
+	
+	if spreadPct > 0.5 {
+		l.logger.Printf("[%s] STRATEGY spread=%.2f%% (wide spread detected)", l.id, spreadPct)
+	}
+	
+	orderNum := l.orderCount.Add(1)
+	
+	if orderNum%100 == 0 {
+		l.logger.Printf("[%s] STRATEGY price=%.2f bid=%.2f ask=%.2f spread=%.2f%% (sample every 100 trades)", 
+			l.id, currentPrice, bidPrice, askPrice, spreadPct)
 	}
 }
 
-func (l *Lambda) recycleIfNeeded(evt *schema.Event) {
+func (l *Lambda) SubmitOrder(ctx context.Context, side schema.TradeSide, quantity string, price *string) error {
+	if l.orderSubmitter == nil {
+		return fmt.Errorf("order submitter not configured")
+	}
+	if l.pools == nil {
+		return fmt.Errorf("pool manager not configured")
+	}
+	
+	orderID := fmt.Sprintf("%s-%d-%d", l.id, time.Now().UnixNano(), l.orderCount.Load())
+	
+	priceStr := ""
+	if price != nil {
+		priceStr = *price
+	}
+	
+	orderReq, release, err := pool.AcquireOrderRequest(ctx, l.pools)
+	if err != nil {
+		return fmt.Errorf("acquire order request from pool: %w", err)
+	}
+	defer release()
+	
+	orderReq.ClientOrderID = orderID
+	orderReq.ConsumerID = l.id
+	orderReq.Provider = l.config.Provider
+	orderReq.Symbol = l.config.Symbol
+	orderReq.Side = side
+	orderReq.OrderType = schema.OrderTypeLimit
+	orderReq.Price = price
+	orderReq.Quantity = quantity
+	orderReq.TIF = "GTC"
+	orderReq.Timestamp = time.Now().UTC()
+	
+	if err := l.orderSubmitter.SubmitOrder(ctx, *orderReq); err != nil {
+		return fmt.Errorf("submit order: %w", err)
+	}
+	
+	l.logger.Printf("[%s] ORDER SUBMITTED order_id=%s side=%s qty=%s price=%s", 
+		l.id, orderID, side, quantity, priceStr)
+	
+	return nil
+}
+
+func (l *Lambda) sendControlMessage(ctx context.Context, typ schema.ControlMessageType, payload any) (schema.ControlAcknowledgement, error) {
+	if l.control == nil {
+		return schema.ControlAcknowledgement{}, fmt.Errorf("control bus unavailable")
+	}
+	
+	body, err := marshalPayload(payload)
+	if err != nil {
+		return schema.ControlAcknowledgement{}, err
+	}
+	
+	msg := schema.ControlMessage{
+		MessageID:  fmt.Sprintf("%s-%d", l.id, time.Now().UTC().UnixNano()),
+		ConsumerID: l.id,
+		Type:       typ,
+		Payload:    body,
+		Timestamp:  time.Now().UTC(),
+	}
+	
+	return l.control.Send(ctx, msg)
+}
+
+func (l *Lambda) EnableTrading(enabled bool) {
+	l.tradingActive.Store(enabled)
+	status := "DISABLED"
+	if enabled {
+		status = "ENABLED"
+	}
+	l.logger.Printf("[%s] Trading %s", l.id, status)
+}
+
+// isMyOrder checks if the ClientOrderID belongs to this lambda instance.
+// Order IDs are formatted as: "{lambda-id}-{timestamp}-{count}"
+func (l *Lambda) isMyOrder(clientOrderID string) bool {
+	if clientOrderID == "" {
+		return false
+	}
+	// Check if the order ID starts with this lambda's ID
+	prefix := l.id + "-"
+	return len(clientOrderID) > len(prefix) && clientOrderID[:len(prefix)] == prefix
+}
+
+func (l *Lambda) recycleEvent(evt *schema.Event) {
 	if evt == nil {
 		return
 	}
 	if l.pools != nil {
-		l.pools.RecycleCanonicalEvent(evt)
+		l.pools.ReturnEventInst(evt)
 	}
 }
 
-func (l *Lambda) logControlAck(payload schema.ControlAckPayload) {
-	line := fmt.Sprintf(
-		"[consumer:%s] control-ack id=%s cmd=%s success=%t route=%d error=%s",
-		l.id,
-		payload.MessageID,
-		payload.CommandType,
-		payload.Success,
-		payload.RoutingVersion,
-		payload.ErrorMessage,
-	)
-	if l.logger != nil {
-		l.logger.Println(line)
-		return
+func marshalPayload(payload any) ([]byte, error) {
+	if payload == nil {
+		return []byte("{}"), nil
 	}
-	fmt.Println(line)
-}
-
-func (l *Lambda) logControlResult(payload schema.ControlResultPayload) {
-	line := fmt.Sprintf(
-		"[consumer:%s] control-result id=%s cmd=%s route=%d result=%v",
-		l.id,
-		payload.MessageID,
-		payload.CommandType,
-		payload.RoutingVersion,
-		payload.Result,
-	)
-	if l.logger != nil {
-		l.logger.Println(line)
-		return
-	}
-	fmt.Println(line)
-}
-
-func (l *Lambda) shouldIgnore(typ schema.EventType, evt *schema.Event) bool {
-	if evt == nil {
-		return true
-	}
-	if isCritical(typ) {
-		return false
-	}
-	if !isMarketData(typ) {
-		return false
-	}
-	active := l.routingVersion.Load()
-	if active == 0 {
-		return false
-	}
-	return int64(evt.RoutingVersion) < active
-}
-
-func isCritical(typ schema.EventType) bool {
-	switch typ {
-	case schema.EventTypeExecReport,
-		schema.EventTypeControlAck,
-		schema.EventTypeControlResult:
-		return true
-	case schema.EventTypeBookSnapshot,
-		schema.EventTypeBookUpdate,
-		schema.EventTypeTrade,
-		schema.EventTypeTicker,
-		schema.EventTypeKlineSummary:
-		return false
+	
+	switch v := payload.(type) {
+	case []byte:
+		return v, nil
+	case string:
+		return []byte(v), nil
 	default:
-		return false
-	}
-}
-
-func isMarketData(typ schema.EventType) bool {
-	switch typ {
-	case schema.EventTypeBookSnapshot,
-		schema.EventTypeBookUpdate,
-		schema.EventTypeTicker,
-		schema.EventTypeKlineSummary,
-		schema.EventTypeTrade:
-		return true
-	case schema.EventTypeExecReport,
-		schema.EventTypeControlAck,
-		schema.EventTypeControlResult:
-		return false
-	default:
-		return false
-	}
-}
-
-// SetRoutingVersion updates the current routing version for this consumer.
-func (l *Lambda) SetRoutingVersion(version int64) {
-	l.routingVersion.Store(version)
-}
-
-// GetRoutingVersion returns the current routing version for this consumer.
-func (l *Lambda) GetRoutingVersion() int64 {
-	return l.routingVersion.Load()
-}
-
-// TradingEnabled returns the last known trading state acknowledged by the control plane.
-func (l *Lambda) TradingEnabled() bool {
-	return l.tradingEnabled.Load()
-}
-
-func coerceControlAck(value any) (schema.ControlAckPayload, bool) {
-	switch v := value.(type) {
-	case schema.ControlAckPayload:
-		return v, true
-	case *schema.ControlAckPayload:
-		if v == nil {
-			//nolint:exhaustruct // empty struct for error case
-			return schema.ControlAckPayload{}, false
+		b, err := marshalJSON(payload)
+		if err != nil {
+			return nil, fmt.Errorf("marshal payload: %w", err)
 		}
-		return *v, true
-	default:
-		//nolint:exhaustruct // empty struct for error case
-		return schema.ControlAckPayload{}, false
+		return b, nil
 	}
 }
 
-func coerceControlResult(value any) (schema.ControlResultPayload, bool) {
-	switch v := value.(type) {
-	case schema.ControlResultPayload:
-		return v, true
-	case *schema.ControlResultPayload:
-		if v == nil {
-			//nolint:exhaustruct // empty struct for error case
-			return schema.ControlResultPayload{}, false
-		}
-		return *v, true
-	default:
-		//nolint:exhaustruct // empty struct for error case
-		return schema.ControlResultPayload{}, false
-	}
+func marshalJSON(v any) ([]byte, error) {
+	return json.Marshal(v)
 }
