@@ -1,0 +1,59 @@
+@startuml
+title Dispatcher Runtime: Ordering Inside, Route-First, Bulk Allocate & Bulk Deliver
+
+'=== Process Boundary ===
+box "Dispatcher Runtime (process)" #LightGray
+participant "Dispatcher Runtime\n(run loop)" as Runtime
+participant "StreamOrdering" as Ordering
+participant "Dispatcher\n(routing + delivery)" as Disp
+database "Routing Table\n[type -> {subscribers}]" as RT
+end box
+
+participant "PoolManager" as Pools
+participant "Subscribers {S1..Sn}" as Subs
+
+== Subscription ==
+Subs -> Disp : Subscribe(types[])
+activate Disp
+Disp -> Disp : Validate/normalize types[]
+loop for each type in types[]
+  Disp -> RT : Add(type, Subs)
+  RT --> Disp : ack
+end
+Disp --> Subs : Subscribed
+deactivate Disp
+
+== Event Intake ==
+Runtime -> Ordering : OnEvent(evt)
+Ordering --> Runtime : ready batch (if flush/ready)
+
+loop for each event in batch
+  Runtime -> Disp : Publish(ctx, evt)
+
+  ' ROUTE LOOKUP BEFORE ANY BORROW
+  Disp -> RT : CountSubscribers(evt.Type)
+  RT --> Disp : n = |subs|
+
+  alt n == 0
+    Disp -> Disp : no-op (no borrowing, no delivery)
+  else
+    Disp -> RT : GetSubscribers(evt.Type)
+    RT --> Disp : subs = {S1..Sn}
+
+    ' Bulk pre-borrow exactly n instances
+    Disp -> Pools : BorrowCanonicalEvents(ctx, n)
+    Pools --> Disp : clones[1..n]
+
+    ' Bulk deliver; each sub receives its own clone and recycles it after handling
+    Disp -> Subs : deliverWithRecycleBulk(subs, clones[1..n])
+  end
+end
+
+== Unsubscribe ==
+Subs -> Disp : Unsubscribe(types[])
+loop for each type
+  Disp -> RT : Remove(type, Subs)
+  RT --> Disp : ack
+end
+Disp --> Subs : Unsubscribed
+@enduml
