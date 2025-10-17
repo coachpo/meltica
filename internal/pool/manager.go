@@ -27,6 +27,15 @@ var (
 // PoolManager coordinates named bounded pools, providing lifecycle management,
 // active-object tracking, and graceful shutdown semantics for pooled resources.
 //
+// Telemetry Metrics (all include attributes: pool.name, object.type):
+// - pool.objects.borrowed: Counter of total objects borrowed
+// - pool.objects.returned: Counter of total objects returned
+// - pool.objects.active: Gauge of currently borrowed objects across all pools
+// - pool.borrow.duration: Histogram of time to acquire objects
+// - pool.capacity: Observable gauge of each pool's total capacity
+// - pool.available: Observable gauge of available objects per pool
+// - pool.utilization: Observable gauge of pool utilization ratio (0.0-1.0)
+//
 //nolint:revive // PoolManager matches specification terminology.
 type PoolManager struct {
 	mu           sync.RWMutex
@@ -41,6 +50,9 @@ type PoolManager struct {
 	objectsReturnedCounter metric.Int64Counter
 	activeObjectsGauge     metric.Int64UpDownCounter
 	borrowDuration         metric.Float64Histogram
+	poolCapacityGauge      metric.Int64ObservableGauge
+	poolAvailableGauge     metric.Int64ObservableGauge
+	poolUtilizationGauge   metric.Float64ObservableGauge
 }
 
 // NewPoolManager constructs an initialized pool manager ready for pool registration.
@@ -64,6 +76,59 @@ func NewPoolManager() *PoolManager {
 		metric.WithDescription("Time taken to borrow an object from pool"),
 		metric.WithUnit("ms"))
 
+	pm.poolCapacityGauge, _ = meter.Int64ObservableGauge("pool.capacity",
+		metric.WithDescription("Total capacity of each pool"),
+		metric.WithUnit("{object}"),
+		metric.WithInt64Callback(func(_ context.Context, observer metric.Int64Observer) error {
+			pm.mu.RLock()
+			defer pm.mu.RUnlock()
+			for name, pool := range pm.pools {
+				if pool != nil {
+					observer.Observe(int64(pool.getCapacity()), metric.WithAttributes(
+						attribute.String("pool.name", name),
+						attribute.String("object.type", pool.getObjectType())))
+				}
+			}
+			return nil
+		}))
+
+	pm.poolAvailableGauge, _ = meter.Int64ObservableGauge("pool.available",
+		metric.WithDescription("Number of available objects in each pool"),
+		metric.WithUnit("{object}"),
+		metric.WithInt64Callback(func(_ context.Context, observer metric.Int64Observer) error {
+			pm.mu.RLock()
+			defer pm.mu.RUnlock()
+			for name, pool := range pm.pools {
+				if pool != nil {
+					observer.Observe(pool.getAvailable(), metric.WithAttributes(
+						attribute.String("pool.name", name),
+						attribute.String("object.type", pool.getObjectType())))
+				}
+			}
+			return nil
+		}))
+
+	pm.poolUtilizationGauge, _ = meter.Float64ObservableGauge("pool.utilization",
+		metric.WithDescription("Pool utilization ratio (active/capacity)"),
+		metric.WithUnit("1"),
+		metric.WithFloat64Callback(func(_ context.Context, observer metric.Float64Observer) error {
+			pm.mu.RLock()
+			defer pm.mu.RUnlock()
+			for name, pool := range pm.pools {
+				if pool != nil {
+					capacity := float64(pool.getCapacity())
+					if capacity > 0 {
+						active := float64(pool.getActive())
+						utilization := active / capacity
+						observer.Observe(utilization, metric.WithAttributes(
+							attribute.String("pool.name", name),
+							attribute.String("object.type", pool.getObjectType())))
+					}
+				}
+			}
+			return nil
+		}))
+
 	return pm
 }
 
@@ -82,15 +147,23 @@ func (pm *PoolManager) RegisterPool(name string, capacity int, newFunc func() an
 		return fmt.Errorf("pool manager: pool %s already registered", name)
 	}
 
+	var objectType string
 	factory := func() PooledObject {
 		obj := newFunc()
 		po, ok := obj.(PooledObject)
 		if !ok {
 			panic(fmt.Sprintf("pool manager: object does not implement PooledObject: %T", obj))
 		}
+		if objectType == "" {
+			objectType = fmt.Sprintf("%T", po)
+		}
 		return po
 	}
-	pool, err := newObjectPool(name, capacity, factory)
+	
+	sampleObj := factory()
+	sampleObj.Reset()
+	
+	pool, err := newObjectPool(name, objectType, capacity, factory)
 	if err != nil {
 		return err
 	}
@@ -127,18 +200,22 @@ func (pm *PoolManager) Get(ctx context.Context, poolName string) (PooledObject, 
 	pm.inFlight.Add(1)
 	pm.activeCount.Add(1)
 
+	objectType := pool.getObjectType()
 	if pm.objectsBorrowedCounter != nil {
 		pm.objectsBorrowedCounter.Add(ctx, 1, metric.WithAttributes(
-			attribute.String("pool.name", poolName)))
+			attribute.String("pool.name", poolName),
+			attribute.String("object.type", objectType)))
 	}
 	if pm.activeObjectsGauge != nil {
 		pm.activeObjectsGauge.Add(ctx, 1, metric.WithAttributes(
-			attribute.String("pool.name", poolName)))
+			attribute.String("pool.name", poolName),
+			attribute.String("object.type", objectType)))
 	}
 	if pm.borrowDuration != nil {
 		duration := time.Since(start).Milliseconds()
 		pm.borrowDuration.Record(ctx, float64(duration), metric.WithAttributes(
-			attribute.String("pool.name", poolName)))
+			attribute.String("pool.name", poolName),
+			attribute.String("object.type", objectType)))
 	}
 
 	return obj, nil
@@ -222,13 +299,16 @@ func (pm *PoolManager) Put(poolName string, obj PooledObject) {
 		panic(err)
 	}
 
+	objectType := pool.getObjectType()
 	if pm.objectsReturnedCounter != nil {
 		pm.objectsReturnedCounter.Add(ctx, 1, metric.WithAttributes(
-			attribute.String("pool.name", poolName)))
+			attribute.String("pool.name", poolName),
+			attribute.String("object.type", objectType)))
 	}
 	if pm.activeObjectsGauge != nil {
 		pm.activeObjectsGauge.Add(ctx, -1, metric.WithAttributes(
-			attribute.String("pool.name", poolName)))
+			attribute.String("pool.name", poolName),
+			attribute.String("object.type", objectType)))
 	}
 }
 
