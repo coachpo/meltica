@@ -57,7 +57,7 @@
       "pluginVersion": "10.4.3",
       "targets": [
         {
-          "expr": "sum(rate(wsclient_frames_processed_total{environment=\"$environment\",provider=~\"$provider\",message_type=~\"$message_type\"}[1m]))",
+          "expr": "sum(rate(meltica_wsclient_frames_processed{environment=\"$environment\",provider=~\"$provider\",message_type=~\"$message_type\"}[1m]))",
           "legendFormat": "{{provider}}",
           "refId": "A"
         }
@@ -114,7 +114,7 @@
       "pluginVersion": "10.4.3",
       "targets": [
         {
-          "expr": "sum(rate(wsclient_frames_errors_total{environment=\"$environment\",provider=~\"$provider\",operation=~\"$operation\"}[5m])) / clamp_min(sum(rate(wsclient_frames_processed_total{environment=\"$environment\",provider=~\"$provider\"}[5m])), 1e-6)",
+          "expr": "sum(rate(meltica_wsclient_frames_processed{environment=\"$environment\",provider=~\"$provider\",message_type=~\"error|parse_error|unmarshal_error\"}[5m])) / clamp_min(sum(rate(meltica_wsclient_frames_processed{environment=\"$environment\",provider=~\"$provider\"}[5m])), 1e-6)",
           "legendFormat": "error ratio",
           "refId": "A"
         }
@@ -160,12 +160,12 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum(rate(wsclient_frame_processing_duration_bucket{environment=\"$environment\",provider=~\"$provider\",message_type=~\"$message_type\"}[5m])) by (le, provider))",
+          "expr": "histogram_quantile(0.50, sum(rate(meltica_wsclient_frame_processing_duration_bucket{environment=\"$environment\",provider=~\"$provider\",message_type=~\"$message_type\"}[5m])) by (le, provider))",
           "legendFormat": "p50 {{provider}}",
           "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.95, sum(rate(wsclient_frame_processing_duration_bucket{environment=\"$environment\",provider=~\"$provider\",message_type=~\"$message_type\"}[5m])) by (le, provider))",
+          "expr": "histogram_quantile(0.95, sum(rate(meltica_wsclient_frame_processing_duration_bucket{environment=\"$environment\",provider=~\"$provider\",message_type=~\"$message_type\"}[5m])) by (le, provider))",
           "legendFormat": "p95 {{provider}}",
           "refId": "B"
         }
@@ -197,7 +197,7 @@
       },
       "targets": [
         {
-          "expr": "topk(10, avg_over_time(wsclient_frame_processing_duration_sum{environment=\"$environment\",provider=~\"$provider\",message_type=~\"$message_type\"}[10m]) / clamp_min(avg_over_time(wsclient_frame_processing_duration_count{environment=\"$environment\",provider=~\"$provider\",message_type=~\"$message_type\"}[10m]), 1e-6))",
+          "expr": "topk(10, avg_over_time(meltica_wsclient_frame_processing_duration_sum{environment=\"$environment\",provider=~\"$provider\",message_type=~\"$message_type\"}[10m]) / clamp_min(avg_over_time(meltica_wsclient_frame_processing_duration_count{environment=\"$environment\",provider=~\"$provider\",message_type=~\"$message_type\"}[10m]), 1e-6))",
           "format": "table",
           "legendFormat": "",
           "refId": "A"
@@ -254,12 +254,12 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(controlbus_send_duration_sum{environment=\"$environment\",command_type=~\"$command_type\"}[5m])) / clamp_min(sum(rate(controlbus_send_duration_count{environment=\"$environment\",command_type=~\"$command_type\"}[5m])), 1e-6)",
+          "expr": "sum(rate(meltica_dispatcher_processing_duration_sum{environment=\"$environment\",provider=~\"$provider\"}[5m])) / clamp_min(sum(rate(meltica_dispatcher_processing_duration_count{environment=\"$environment\",provider=~\"$provider\"}[5m])), 1e-6)",
           "legendFormat": "ack latency",
           "refId": "A"
         },
         {
-          "expr": "sum(rate(controlbus_send_errors_total{environment=\"$environment\",command_type=~\"$command_type\",status=~\"$status\"}[5m]))",
+          "expr": "sum(rate(meltica_dispatcher_events_dropped{environment=\"$environment\",provider=~\"$provider\"}[5m]))",
           "legendFormat": "{{status}}",
           "refId": "B"
         }
@@ -297,11 +297,11 @@
         "datasource": {
           "uid": "$datasource"
         },
-        "definition": "label_values(wsclient_frames_processed_total, environment)",
+        "definition": "label_values(meltica_wsclient_frames_processed, environment)",
         "hide": 0,
         "label": "Environment",
         "name": "environment",
-        "query": "label_values(wsclient_frames_processed_total, environment)",
+        "query": "label_values(meltica_wsclient_frames_processed, environment)",
         "refresh": 2,
         "regex": "",
         "type": "query"
@@ -314,13 +314,13 @@
         "datasource": {
           "uid": "$datasource"
         },
-        "definition": "label_values(wsclient_frames_processed_total, provider)",
+        "definition": "label_values(meltica_wsclient_frames_processed, provider)",
         "hide": 0,
         "includeAll": true,
         "label": "Provider",
         "multi": true,
         "name": "provider",
-        "query": "label_values(wsclient_frames_processed_total, provider)",
+        "query": "label_values(meltica_wsclient_frames_processed, provider)",
         "refresh": 2,
         "regex": "",
         "type": "query"
@@ -333,13 +333,13 @@
         "datasource": {
           "uid": "$datasource"
         },
-        "definition": "label_values(wsclient_frames_processed_total, message_type)",
+        "definition": "label_values(meltica_wsclient_frames_processed, message_type)",
         "hide": 0,
         "includeAll": true,
         "label": "Message Type",
         "multi": true,
         "name": "message_type",
-        "query": "label_values(wsclient_frames_processed_total, message_type)",
+        "query": "label_values(meltica_wsclient_frames_processed, message_type)",
         "refresh": 2,
         "regex": "",
         "type": "query"
@@ -352,13 +352,13 @@
         "datasource": {
           "uid": "$datasource"
         },
-        "definition": "label_values(wsclient_frames_errors_total, operation)",
+        "definition": "label_values(meltica_wsclient_frames_processed, message_type)",
         "hide": 0,
         "includeAll": true,
         "label": "Operation",
         "multi": true,
         "name": "operation",
-        "query": "label_values(wsclient_frames_errors_total, operation)",
+        "query": "label_values(meltica_wsclient_frames_processed, message_type)",
         "refresh": 2,
         "regex": "",
         "type": "query"
@@ -371,13 +371,13 @@
         "datasource": {
           "uid": "$datasource"
         },
-        "definition": "label_values(controlbus_send_errors_total, command_type)",
+        "definition": "label_values(meltica_dispatcher_processing_duration_sum, event_type)",
         "hide": 0,
         "includeAll": true,
         "label": "Command Type",
         "multi": true,
         "name": "command_type",
-        "query": "label_values(controlbus_send_errors_total, command_type)",
+        "query": "label_values(meltica_dispatcher_processing_duration_sum, event_type)",
         "refresh": 2,
         "regex": "",
         "type": "query"
@@ -390,13 +390,13 @@
         "datasource": {
           "uid": "$datasource"
         },
-        "definition": "label_values(controlbus_send_errors_total, status)",
+        "definition": "label_values(meltica_dispatcher_events_dropped, reason)",
         "hide": 0,
         "includeAll": true,
         "label": "Command Status",
         "multi": true,
         "name": "status",
-        "query": "label_values(controlbus_send_errors_total, status)",
+        "query": "label_values(meltica_dispatcher_events_dropped, reason)",
         "refresh": 2,
         "regex": "",
         "type": "query"

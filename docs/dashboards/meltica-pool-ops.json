@@ -63,7 +63,7 @@
       },
       "targets": [
         {
-          "expr": "sum(pool_objects_active{environment=\"$environment\",pool_name=~\"$pool_name\"}) / clamp_min(sum(pool_capacity{environment=\"$environment\",pool_name=~\"$pool_name\"}), 1e-6)",
+          "expr": "sum(meltica_pool_objects_active{environment=\"$environment\",pool_name=~\"$pool_name\"}) / clamp_min(sum(meltica_pool_capacity{environment=\"$environment\",pool_name=~\"$pool_name\"}), 1e-6)",
           "legendFormat": "util",
           "refId": "A"
         }
@@ -101,7 +101,7 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum(rate(pool_borrow_duration_bucket{environment=\"$environment\",pool_name=~\"$pool_name\"}[5m])) by (le, pool_name))",
+          "expr": "histogram_quantile(0.95, sum(rate(meltica_pool_borrow_duration_bucket{environment=\"$environment\",pool_name=~\"$pool_name\"}[5m])) by (le, pool_name))",
           "legendFormat": "p95 {{pool_name}}",
           "refId": "A"
         }
@@ -135,7 +135,7 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(pool_objects_borrowed_total{environment=\"$environment\",pool_name=~\"$pool_name\"}[5m])) by (pool_name)",
+          "expr": "sum(rate(meltica_pool_objects_borrowed{environment=\"$environment\",pool_name=~\"$pool_name\"}[5m])) by (pool_name)",
           "legendFormat": "borrow {{pool_name}}",
           "refId": "A"
         }
@@ -166,7 +166,7 @@
       },
       "targets": [
         {
-          "expr": "sum(pool_active_callers{environment=\"$environment\",pool_name=~\"$pool_name\"}) by (pool_name, caller)",
+          "expr": "sum(meltica_pool_active_callers{environment=\"$environment\",pool_name=~\"$pool_name\"}) by (pool_name, caller)",
           "format": "table",
           "refId": "A"
         }
@@ -217,12 +217,12 @@
       },
       "targets": [
         {
-          "expr": "sum(pool_available{environment=\"$environment\",pool_name=~\"$pool_name\"}) by (pool_name)",
+          "expr": "sum(meltica_pool_available{environment=\"$environment\",pool_name=~\"$pool_name\"}) by (pool_name)",
           "legendFormat": "available {{pool_name}}",
           "refId": "A"
         },
         {
-          "expr": "sum(pool_objects_active{environment=\"$environment\",pool_name=~\"$pool_name\"}) by (pool_name)",
+          "expr": "sum(meltica_pool_objects_active{environment=\"$environment\",pool_name=~\"$pool_name\"}) by (pool_name)",
           "legendFormat": "active {{pool_name}}",
           "refId": "B"
         }
@@ -251,7 +251,7 @@
         },
         "label": "Environment",
         "name": "environment",
-        "query": "label_values(pool_objects_active, environment)",
+        "query": "label_values(meltica_pool_objects_active, environment)",
         "refresh": 2,
         "type": "query"
       },
@@ -267,7 +267,7 @@
         "label": "Pool",
         "multi": true,
         "name": "pool_name",
-        "query": "label_values(pool_objects_active, pool_name)",
+        "query": "label_values(meltica_pool_objects_active, pool_name)",
         "refresh": 2,
         "type": "query"
       }
