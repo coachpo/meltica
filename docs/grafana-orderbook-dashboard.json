@@ -12,31 +12,19 @@
   "templating": {
     "list": [
       {
-        "name": "datasource",
-        "type": "datasource",
-        "label": "Datasource",
-        "query": "prometheus",
-        "hide": 0,
-        "current": {
-          "selected": false,
-          "text": "Prometheus",
-          "value": "Prometheus"
-        }
-      },
-      {
         "name": "environment",
         "type": "query",
         "label": "Environment",
-        "query": "label_values(meltica_orderbook_gap_detected, environment)",
-        "datasource": null,
+        "query": "label_values(meltica_orderbook_snapshot_applied, environment)",
+        "datasource": {"type": "prometheus", "uid": null},
         "multi": true,
         "includeAll": true,
         "allValue": ".*",
         "refresh": 2,
         "current": {
-          "selected": true,
-          "text": "All",
-          "value": "$__all"
+          "selected": false,
+          "text": "",
+          "value": ""
         },
         "hide": 0,
         "skipUrlSync": false
@@ -45,16 +33,16 @@
         "name": "symbol",
         "type": "query",
         "label": "Symbol",
-        "query": "label_values(meltica_orderbook_gap_detected{environment=~\"$environment\"}, symbol)",
-        "datasource": null,
+        "query": "label_values(meltica_orderbook_snapshot_applied{environment=~\"$environment\"}, symbol)",
+        "datasource": {"type": "prometheus", "uid": null},
         "multi": true,
         "includeAll": true,
         "allValue": ".*",
         "refresh": 2,
         "current": {
-          "selected": true,
-          "text": "All",
-          "value": "$__all"
+          "selected": false,
+          "text": "",
+          "value": ""
         },
         "hide": 0,
         "skipUrlSync": false
@@ -79,15 +67,39 @@
       ],
       "options": {
         "graphMode": "area",
-        "colorMode": "value"
+        "colorMode": "value",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "sparkline": {
+          "show": true,
+          "full": true
+        }
       },
       "fieldConfig": {
         "defaults": {
           "unit": "ops",
           "decimals": 2,
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "green"
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "red"
+              },
+              {
+                "value": 5,
+                "color": "yellow"
+              },
+              {
+                "value": 10,
+                "color": "green"
+              }
+            ]
           }
         }
       }
@@ -109,7 +121,18 @@
       ],
       "options": {
         "graphMode": "area",
-        "colorMode": "value"
+        "colorMode": "value",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "sparkline": {
+          "show": true,
+          "full": true
+        }
       },
       "fieldConfig": {
         "defaults": {
@@ -117,7 +140,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "value": 0,
+                "value": null,
                 "color": "green"
               },
               {
@@ -152,7 +175,18 @@
       ],
       "options": {
         "graphMode": "area",
-        "colorMode": "value"
+        "colorMode": "value",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "sparkline": {
+          "show": true,
+          "full": true
+        }
       },
       "fieldConfig": {
         "defaults": {
@@ -160,7 +194,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "value": 0,
+                "value": null,
                 "color": "green"
               },
               {
@@ -195,7 +229,18 @@
       ],
       "options": {
         "graphMode": "area",
-        "colorMode": "value"
+        "colorMode": "value",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "sparkline": {
+          "show": true,
+          "full": true
+        }
       },
       "fieldConfig": {
         "defaults": {
@@ -203,7 +248,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "value": 0,
+                "value": null,
                 "color": "green"
               },
               {
@@ -241,7 +286,8 @@
           "custom": {
             "drawStyle": "line",
             "lineWidth": 2,
-            "fillOpacity": 10
+            "fillOpacity": 10,
+            "axisLabel": "Snapshots/sec"
           },
           "unit": "ops"
         }
@@ -251,9 +297,13 @@
           "displayMode": "table",
           "placement": "bottom",
           "calcs": [
-            "mean",
+            "lastNotNull",
             "max"
           ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
         }
       }
     },
@@ -278,7 +328,8 @@
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 2,
-            "fillOpacity": 50
+            "fillOpacity": 50,
+            "axisLabel": "Gap detections/sec"
           },
           "unit": "ops",
           "color": {
@@ -292,9 +343,14 @@
           "displayMode": "table",
           "placement": "bottom",
           "calcs": [
+            "lastNotNull",
             "sum",
             "max"
           ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
         }
       }
     },
@@ -309,17 +365,17 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.99, rate(meltica_orderbook_coldstart_duration_bucket{environment=~\"$environment\", symbol=~\"$symbol\"}[5m]))",
+          "expr": "histogram_quantile(0.99, rate(meltica_orderbook_coldstart_duration_milliseconds_bucket{environment=~\"$environment\", symbol=~\"$symbol\"}[5m]))",
           "refId": "A",
           "legendFormat": "{{symbol}} - p99"
         },
         {
-          "expr": "histogram_quantile(0.95, rate(meltica_orderbook_coldstart_duration_bucket{environment=~\"$environment\", symbol=~\"$symbol\"}[5m]))",
+          "expr": "histogram_quantile(0.95, rate(meltica_orderbook_coldstart_duration_milliseconds_bucket{environment=~\"$environment\", symbol=~\"$symbol\"}[5m]))",
           "refId": "B",
           "legendFormat": "{{symbol}} - p95"
         },
         {
-          "expr": "histogram_quantile(0.50, rate(meltica_orderbook_coldstart_duration_bucket{environment=~\"$environment\", symbol=~\"$symbol\"}[5m]))",
+          "expr": "histogram_quantile(0.50, rate(meltica_orderbook_coldstart_duration_milliseconds_bucket{environment=~\"$environment\", symbol=~\"$symbol\"}[5m]))",
           "refId": "C",
           "legendFormat": "{{symbol}} - p50"
         }
@@ -338,9 +394,13 @@
           "displayMode": "table",
           "placement": "bottom",
           "calcs": [
-            "mean",
+            "lastNotNull",
             "max"
           ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
         }
       }
     },
@@ -365,7 +425,8 @@
           "custom": {
             "drawStyle": "line",
             "lineWidth": 2,
-            "fillOpacity": 20
+            "fillOpacity": 20,
+            "axisLabel": "Buffer size"
           },
           "unit": "short",
           "thresholds": {
@@ -392,9 +453,13 @@
           "displayMode": "table",
           "placement": "bottom",
           "calcs": [
-            "last",
+            "lastNotNull",
             "max"
           ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
         }
       }
     },
@@ -429,9 +494,13 @@
           "displayMode": "table",
           "placement": "bottom",
           "calcs": [
-            "mean",
+            "lastNotNull",
             "sum"
           ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
         }
       }
     },
@@ -456,7 +525,8 @@
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 2,
-            "fillOpacity": 50
+            "fillOpacity": 50,
+            "axisLabel": "Stale updates/sec"
           },
           "unit": "ops",
           "color": {
@@ -470,9 +540,14 @@
           "displayMode": "table",
           "placement": "bottom",
           "calcs": [
+            "lastNotNull",
             "sum",
             "max"
           ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
         }
       }
     },
@@ -509,9 +584,46 @@
           "refId": "Buffer",
           "format": "table",
           "instant": true
+        },
+        {
+          "expr": "meltica_orderbook_first_seq{environment=~\"$environment\", symbol=~\"$symbol\"}",
+          "refId": "FirstSeq",
+          "format": "table",
+          "instant": true
+        },
+        {
+          "expr": "meltica_orderbook_final_seq{environment=~\"$environment\", symbol=~\"$symbol\"}",
+          "refId": "FinalSeq",
+          "format": "table",
+          "instant": true
+        },
+        {
+          "expr": "meltica_orderbook_current_seq{environment=~\"$environment\", symbol=~\"$symbol\"}",
+          "refId": "CurrentSeq",
+          "format": "table",
+          "instant": true
+        },
+        {
+          "expr": "meltica_orderbook_sequence{environment=~\"$environment\", symbol=~\"$symbol\"}",
+          "refId": "Sequence",
+          "format": "table",
+          "instant": true
+        },
+        {
+          "refId": "Drift",
+          "expression": "$FinalSeq - $CurrentSeq",
+          "type": "math"
         }
       ],
       "transformations": [
+        {
+          "id": "reduce",
+          "options": {
+            "reducers": [
+              "lastNotNull"
+            ]
+          }
+        },
         {
           "id": "merge",
           "options": {}
@@ -522,16 +634,37 @@
             "excludeByName": {
               "Time": true,
               "__name__": true,
-              "instance": true,
-              "job": true
+              "instance": true
             },
             "renameByName": {
               "symbol": "Symbol",
               "environment": "Environment",
+              "service": "service",
+              "job": "exported_job",
               "Value #Snapshots": "Snapshot Rate (ops/s)",
               "Value #Gaps": "Gap Rate (ops/s)",
               "Value #Stale": "Stale Rate (ops/s)",
-              "Value #Buffer": "Buffer Size"
+              "Value #Buffer": "Buffer Size",
+              "Value #FirstSeq": "first_seq",
+              "Value #FinalSeq": "final_seq",
+              "Value #CurrentSeq": "current_seq",
+              "Value #Sequence": "sequence",
+              "Value #Drift": "sequence_drift"
+            },
+            "indexByName": {
+              "Symbol": 0,
+              "Environment": 1,
+              "service": 2,
+              "exported_job": 3,
+              "Snapshot Rate (ops/s)": 4,
+              "Gap Rate (ops/s)": 5,
+              "Stale Rate (ops/s)": 6,
+              "Buffer Size": 7,
+              "first_seq": 8,
+              "final_seq": 9,
+              "current_seq": 10,
+              "sequence": 11,
+              "sequence_drift": 12
             }
           }
         }
@@ -651,13 +784,117 @@
                 "value": 2
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "first_seq"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "final_seq"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "current_seq"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "sequence"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "sequence_drift"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.displayMode",
+                "value": "color-background"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "value": null,
+                      "color": "green"
+                    },
+                    {
+                      "value": 50,
+                      "color": "yellow"
+                    },
+                    {
+                      "value": 200,
+                      "color": "red"
+                    }
+                  ]
+                }
+              }
+            ]
           }
         ]
       },
       "options": {
         "sortBy": [
           {
-            "displayName": "Gap Rate (ops/s)",
+            "displayName": "sequence_drift",
             "desc": true
           }
         ]
@@ -667,7 +904,7 @@
   "annotations": {
     "list": [
       {
-        "datasource": "$datasource",
+        "datasource": {"type": "prometheus", "uid": null},
         "enable": true,
         "name": "Deployments",
         "iconColor": "blue",

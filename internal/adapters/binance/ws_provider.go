@@ -10,6 +10,11 @@ import (
 
 	"github.com/coder/websocket"
 	json "github.com/goccy/go-json"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
+
+	"github.com/coachpo/meltica/internal/telemetry"
 )
 
 const (
@@ -70,6 +75,9 @@ type WSProvider struct {
 	startedMu      sync.Mutex
 	reconnectCount int
 	lastConnect    time.Time
+
+	// Telemetry
+	reconnectCounter metric.Int64Counter
 }
 
 // NewBinanceWSProvider creates a production-ready WebSocket provider.
@@ -91,13 +99,19 @@ func NewBinanceWSProvider(cfg WSProviderConfig) *WSProvider {
 		cfg.MaxReconnects = 10
 	}
 
+	meter := otel.Meter("provider")
+	reconnectCounter, _ := meter.Int64Counter("provider.reconnections",
+		metric.WithDescription("Number of provider reconnection attempts"),
+		metric.WithUnit("{reconnection}"))
+
 	//nolint:exhaustruct // other fields initialized on Subscribe()
 	return &WSProvider{
-		cfg:         cfg,
-		streams:     make(map[string]bool),
-		rateLimiter: cfg.RateLimiter,
-		logger:      cfg.Logger,
-		reconnectC:  make(chan struct{}, 1),
+		cfg:              cfg,
+		streams:          make(map[string]bool),
+		rateLimiter:      cfg.RateLimiter,
+		logger:           cfg.Logger,
+		reconnectC:       make(chan struct{}, 1),
+		reconnectCounter: reconnectCounter,
 	}
 }
 
@@ -365,6 +379,14 @@ func (p *WSProvider) reconnectLoop(topics []string) {
 				continue
 			}
 
+			// Record reconnection attempt
+			if p.reconnectCounter != nil {
+				p.reconnectCounter.Add(p.ctx, 1, metric.WithAttributes(
+					attribute.String("environment", telemetry.Environment()),
+					attribute.String("provider", "binance"),
+					attribute.String("reason", "connection_lost")))
+			}
+
 			p.logger.Printf("binance ws: reconnecting (attempt %d/%d) after %v", 
 				p.reconnectCount, p.cfg.MaxReconnects, backoff)
 
@@ -412,6 +434,13 @@ func (p *WSProvider) connectionTTLMonitor() {
 
 			if age >= connectionTTL {
 				p.logger.Println("binance ws: connection TTL reached, reconnecting")
+				// Record TTL-based reconnection
+				if p.reconnectCounter != nil {
+					p.reconnectCounter.Add(p.ctx, 1, metric.WithAttributes(
+						attribute.String("environment", telemetry.Environment()),
+						attribute.String("provider", "binance"),
+						attribute.String("reason", "ttl_expired")))
+				}
 				p.triggerReconnect()
 			}
 		}

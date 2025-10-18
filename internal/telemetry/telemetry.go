@@ -5,9 +5,11 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/metric"
@@ -24,6 +26,11 @@ const (
 	serviceVersion = "1.0.0"
 )
 
+var (
+	// globalEnvironment stores the environment name for use in metric labels
+	globalEnvironment string
+)
+
 // Config defines OpenTelemetry configuration parameters.
 type Config struct {
 	Enabled          bool
@@ -36,6 +43,7 @@ type Config struct {
 	ServiceName      string
 	ServiceVersion   string
 	ServiceNamespace string
+	Environment      string
 }
 
 // DefaultConfig returns the default telemetry configuration based on environment variables.
@@ -48,6 +56,13 @@ func DefaultConfig() Config {
 	if svcName == "" {
 		svcName = serviceName
 	}
+	env := strings.TrimSpace(os.Getenv("OTEL_RESOURCE_ENVIRONMENT"))
+	if env == "" {
+		env = strings.TrimSpace(os.Getenv("MELTICA_ENV"))
+	}
+	if env == "" {
+		env = "development"
+	}
 	return Config{
 		Enabled:          os.Getenv("OTEL_ENABLED") != "false",
 		OTLPEndpoint:     endpoint,
@@ -59,6 +74,7 @@ func DefaultConfig() Config {
 		ServiceName:      svcName,
 		ServiceVersion:   serviceVersion,
 		ServiceNamespace: os.Getenv("OTEL_SERVICE_NAMESPACE"),
+		Environment:      env,
 	}
 }
 
@@ -71,6 +87,9 @@ type Provider struct {
 
 // NewProvider initializes a new telemetry provider with the given configuration.
 func NewProvider(ctx context.Context, cfg Config) (*Provider, error) {
+	// Set global environment for metric labels
+	globalEnvironment = strings.ToLower(cfg.Environment)
+	
 	if !cfg.Enabled {
 		//nolint:exhaustruct // zero values for tracerProvider and meterProvider when disabled
 		return &Provider{config: cfg}, nil
@@ -159,6 +178,11 @@ func newResource(ctx context.Context, cfg Config) (*resource.Resource, error) {
 			semconv.ServiceNamespaceKey.String(cfg.ServiceNamespace),
 		))
 	}
+	if cfg.Environment != "" {
+		attrs = append(attrs, resource.WithAttributes(
+			attribute.String("environment", strings.ToLower(cfg.Environment)),
+		))
+	}
 	attrs = append(attrs, resource.WithProcessRuntimeName())
 	attrs = append(attrs, resource.WithProcessRuntimeVersion())
 	attrs = append(attrs, resource.WithHost())
@@ -203,4 +227,12 @@ func newMeterProvider(ctx context.Context, res *resource.Resource, cfg Config) (
 		)),
 	)
 	return mp, nil
+}
+
+// Environment returns the configured environment name for use in metric labels.
+func Environment() string {
+	if globalEnvironment == "" {
+		return "development"
+	}
+	return globalEnvironment
 }

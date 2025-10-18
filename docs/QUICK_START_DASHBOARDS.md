@@ -154,14 +154,10 @@ After import, the dashboard opens but might show "No data".
 
 1. Click **gear icon (⚙️)** top right → **Dashboard settings**
 2. Click **"Variables"** in left sidebar
-3. Click **"environment"** variable
-4. In **"Data source"** field, change from `${datasource}` to your actual Prometheus instance name
-5. Click **"Update"** (bottom of page)
-6. Repeat steps 3-5 for **"pool_name"** and **"object_type"** variables
-7. Click **"Save dashboard"** (floppy disk icon)
-8. Click **"Back to dashboard"**
-9. Now the dropdowns should populate with values
-10. Select **"All"** for each dropdown
+3. Click **"datasource"** variable
+4. Set the **Data source** to your Prometheus instance and click **Update**
+5. Repeat for **"environment"** and **"symbol"** variables (orderbook dashboard)
+6. Click **"Save dashboard"** (floppy disk icon) and return
 
 ---
 

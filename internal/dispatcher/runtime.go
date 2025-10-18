@@ -13,6 +13,7 @@ import (
 	"github.com/coachpo/meltica/internal/config"
 	"github.com/coachpo/meltica/internal/pool"
 	"github.com/coachpo/meltica/internal/schema"
+	"github.com/coachpo/meltica/internal/telemetry"
 )
 
 // Runtime coordinates dispatcher ingestion and delivery.
@@ -27,12 +28,13 @@ type Runtime struct {
 	dedupeWindow   time.Duration
 	dedupeCapacity int
 
-	tracer                trace.Tracer
-	eventsIngestedCounter metric.Int64Counter
-	eventsDroppedCounter  metric.Int64Counter
-	eventsDuplicateCounter metric.Int64Counter
-	eventsBufferedGauge   metric.Int64UpDownCounter
-	processingDuration    metric.Float64Histogram
+	tracer                  trace.Tracer
+	eventsIngestedCounter   metric.Int64Counter
+	eventsDroppedCounter    metric.Int64Counter
+	eventsDuplicateCounter  metric.Int64Counter
+	eventsBufferedGauge     metric.Int64UpDownCounter
+	processingDuration      metric.Float64Histogram
+	routingVersionGauge     metric.Int64ObservableGauge
 }
 
 // NewRuntime constructs a dispatcher runtime instance.
@@ -67,6 +69,15 @@ func NewRuntime(bus databus.Bus, table *Table, pools *pool.PoolManager, cfg conf
 	runtime.processingDuration, _ = meter.Float64Histogram("dispatcher.processing.duration",
 		metric.WithDescription("Event processing duration"),
 		metric.WithUnit("ms"))
+	runtime.routingVersionGauge, _ = meter.Int64ObservableGauge("dispatcher.routing.version",
+		metric.WithDescription("Current routing table version"),
+		metric.WithUnit("{version}"),
+		metric.WithInt64Callback(func(_ context.Context, observer metric.Int64Observer) error {
+			if runtime.table != nil {
+				observer.Observe(runtime.table.Version())
+			}
+			return nil
+		}))
 
 	return runtime
 }
@@ -134,13 +145,16 @@ func (r *Runtime) run(ctx context.Context, events <-chan *schema.Event, errCh ch
 				trace.WithAttributes(
 					attribute.String("event.type", string(evt.Type)),
 					attribute.String("event.provider", evt.Provider),
+					attribute.String("event.symbol", evt.Symbol),
 					attribute.String("event.id", evt.EventID),
 				))
 
 			if r.eventsIngestedCounter != nil {
 				r.eventsIngestedCounter.Add(ctx, 1, metric.WithAttributes(
-					attribute.String("event.type", string(evt.Type)),
-					attribute.String("provider", evt.Provider)))
+					attribute.String("environment", telemetry.Environment()),
+					attribute.String("event_type", string(evt.Type)),
+					attribute.String("provider", evt.Provider),
+					attribute.String("symbol", evt.Symbol)))
 			}
 
 			if rv := r.currentRoutingVersion(); rv > 0 {
@@ -152,7 +166,10 @@ func (r *Runtime) run(ctx context.Context, events <-chan *schema.Event, errCh ch
 			if !r.markSeen(evt.EventID) {
 				if r.eventsDuplicateCounter != nil {
 					r.eventsDuplicateCounter.Add(ctx, 1, metric.WithAttributes(
-						attribute.String("event.type", string(evt.Type))))
+						attribute.String("environment", telemetry.Environment()),
+						attribute.String("event_type", string(evt.Type)),
+						attribute.String("provider", evt.Provider),
+						attribute.String("symbol", evt.Symbol)))
 				}
 				span.AddEvent("duplicate_event_dropped")
 				r.releaseEvent(evt)
@@ -163,34 +180,60 @@ func (r *Runtime) run(ctx context.Context, events <-chan *schema.Event, errCh ch
 			if !buffered {
 				if r.eventsDroppedCounter != nil {
 					r.eventsDroppedCounter.Add(ctx, 1, metric.WithAttributes(
-						attribute.String("event.type", string(evt.Type)),
-						attribute.String("reason", "not_buffered")))
+						attribute.String("environment", telemetry.Environment()),
+						attribute.String("event_type", string(evt.Type)),
+						attribute.String("reason", "not_buffered"),
+						attribute.String("provider", evt.Provider),
+						attribute.String("symbol", evt.Symbol)))
 				}
 				r.releaseEvent(evt)
 			} else {
 				if r.eventsBufferedGauge != nil {
-					r.eventsBufferedGauge.Add(ctx, 1, metric.WithAttributes(
-						attribute.String("event.type", string(evt.Type))))
+			r.eventsBufferedGauge.Add(ctx, 1, metric.WithAttributes(
+				attribute.String("environment", telemetry.Environment()),
+				attribute.String("event_type", string(evt.Type)),
+				attribute.String("provider", evt.Provider),
+				attribute.String("symbol", evt.Symbol)))
 				}
 			}
 
 			duration := r.clock().Sub(start).Milliseconds()
 			if r.processingDuration != nil {
 				r.processingDuration.Record(ctx, float64(duration), metric.WithAttributes(
-					attribute.String("event.type", string(evt.Type))))
+					attribute.String("environment", telemetry.Environment()),
+					attribute.String("event_type", string(evt.Type)),
+					attribute.String("provider", evt.Provider),
+					attribute.String("symbol", evt.Symbol)))
 			}
 
 			span.End()
 			publish(ready)
 
-			if len(ready) > 0 && r.eventsBufferedGauge != nil {
-				r.eventsBufferedGauge.Add(ctx, -int64(len(ready)), metric.WithAttributes(
-					attribute.String("event.type", string(evt.Type))))
+		if len(ready) > 0 && r.eventsBufferedGauge != nil {
+			for _, readyEvt := range ready {
+				if readyEvt == nil {
+					continue
+				}
+				r.eventsBufferedGauge.Add(ctx, -1, metric.WithAttributes(
+					attribute.String("environment", telemetry.Environment()),
+					attribute.String("event_type", string(readyEvt.Type)),
+					attribute.String("provider", readyEvt.Provider),
+					attribute.String("symbol", readyEvt.Symbol)))
+			}
 			}
 		case <-ticker.C:
 			flushed := r.ordering.Flush(r.clock())
-			if len(flushed) > 0 && r.eventsBufferedGauge != nil {
-				r.eventsBufferedGauge.Add(ctx, -int64(len(flushed)))
+		if len(flushed) > 0 && r.eventsBufferedGauge != nil {
+			for _, flushedEvt := range flushed {
+				if flushedEvt == nil {
+					continue
+				}
+				r.eventsBufferedGauge.Add(ctx, -1, metric.WithAttributes(
+					attribute.String("environment", telemetry.Environment()),
+					attribute.String("event_type", string(flushedEvt.Type)),
+					attribute.String("provider", flushedEvt.Provider),
+					attribute.String("symbol", flushedEvt.Symbol)))
+			}
 			}
 			publish(flushed)
 		}

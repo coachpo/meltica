@@ -12,23 +12,11 @@
   "templating": {
     "list": [
       {
-        "name": "datasource",
-        "type": "datasource",
-        "label": "Datasource",
-        "query": "prometheus",
-        "hide": 0,
-        "current": {
-          "selected": false,
-          "text": "Prometheus",
-          "value": "Prometheus"
-        }
-      },
-      {
         "name": "environment",
         "type": "query",
         "label": "Environment",
         "query": "label_values(meltica_dispatcher_events_ingested, environment)",
-        "datasource": null,
+        "datasource": {"type": "prometheus", "uid": null},
         "multi": true,
         "includeAll": true,
         "allValue": ".*",
@@ -46,7 +34,7 @@
         "type": "query",
         "label": "Event Type",
         "query": "label_values(meltica_dispatcher_events_ingested{environment=~\"$environment\"}, event_type)",
-        "datasource": null,
+        "datasource": {"type": "prometheus", "uid": null},
         "multi": true,
         "includeAll": true,
         "allValue": ".*",
@@ -64,7 +52,25 @@
         "type": "query",
         "label": "Provider",
         "query": "label_values(meltica_dispatcher_events_ingested{environment=~\"$environment\"}, provider)",
-        "datasource": null,
+        "datasource": {"type": "prometheus", "uid": null},
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "refresh": 2,
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "hide": 0,
+        "skipUrlSync": false
+      },
+      {
+        "name": "symbol",
+        "type": "query",
+        "label": "Symbol",
+        "query": "label_values(meltica_dispatcher_events_ingested{environment=~\"$environment\", event_type=~\"$event_type\", provider=~\"$provider\"}, symbol)",
+        "datasource": {"type": "prometheus", "uid": null},
         "multi": true,
         "includeAll": true,
         "allValue": ".*",
@@ -81,7 +87,7 @@
   },
   "panels": [
     {
-      "title": "Events Ingested Rate",
+      "title": "Ingestion Rate (R)",
       "type": "stat",
       "gridPos": {
         "x": 0,
@@ -91,7 +97,7 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(meltica_dispatcher_events_ingested{environment=~\"$environment\", event_type=~\"$event_type\", provider=~\"$provider\"}[1m]))",
+          "expr": "sum(rate(meltica_dispatcher_events_ingested{environment=~\"$environment\", event_type=~\"$event_type\", provider=~\"$provider\", symbol=~\"$symbol\"}[5m]))",
           "refId": "A"
         }
       ],
@@ -103,15 +109,32 @@
         "defaults": {
           "unit": "ops",
           "decimals": 2,
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "green"
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": 0,
+                "color": "blue"
+              },
+              {
+                "value": 100,
+                "color": "green"
+              },
+              {
+                "value": 500,
+                "color": "yellow"
+              },
+              {
+                "value": 1000,
+                "color": "red"
+              }
+            ]
           }
         }
       }
     },
     {
-      "title": "Events Published Rate",
+      "title": "Error Rate (E)",
       "type": "stat",
       "gridPos": {
         "x": 6,
@@ -121,37 +144,7 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(meltica_databus_events_published{environment=~\"$environment\", event_type=~\"$event_type\", event_provider=~\"$provider\"}[1m]))",
-          "refId": "A"
-        }
-      ],
-      "options": {
-        "graphMode": "area",
-        "colorMode": "value"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "ops",
-          "decimals": 2,
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "blue"
-          }
-        }
-      }
-    },
-    {
-      "title": "Events Dropped Rate",
-      "type": "stat",
-      "gridPos": {
-        "x": 12,
-        "y": 0,
-        "w": 6,
-        "h": 4
-      },
-      "targets": [
-        {
-          "expr": "sum(rate(meltica_dispatcher_events_dropped{environment=~\"$environment\", event_type=~\"$event_type\"}[1m]))",
+          "expr": "sum(rate(meltica_dispatcher_events_dropped{environment=~\"$environment\", event_type=~\"$event_type\", provider=~\"$provider\", symbol=~\"$symbol\"}[5m])) + sum(rate(meltica_databus_delivery_errors{environment=~\"$environment\", event_type=~\"$event_type\", provider=~\"$provider\", symbol=~\"$symbol\"}[5m]))",
           "refId": "A"
         }
       ],
@@ -184,6 +177,49 @@
       }
     },
     {
+      "title": "Processing Latency p99 (D)",
+      "type": "stat",
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, event_type) (rate(meltica_dispatcher_processing_duration_milliseconds_bucket{environment=~\"$environment\", event_type=~\"$event_type\", provider=~\"$provider\", symbol=~\"$symbol\"}[5m])))",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "graphMode": "none",
+        "colorMode": "value"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": 0,
+                "color": "green"
+              },
+              {
+                "value": 400,
+                "color": "yellow"
+              },
+              {
+                "value": 800,
+                "color": "red"
+              }
+            ]
+          },
+          "unit": "ms",
+          "decimals": 1
+        }
+      }
+    },
+    {
       "title": "Active Subscribers",
       "type": "stat",
       "gridPos": {
@@ -194,12 +230,12 @@
       },
       "targets": [
         {
-          "expr": "sum(meltica_databus_subscribers{environment=~\"$environment\", event_type=~\"$event_type\"})",
+          "expr": "sum(meltica_databus_subscribers{environment=~\"$environment\", event_type=~\"$event_type\", provider=~\"$provider\"})",
           "refId": "A"
         }
       ],
       "options": {
-        "graphMode": "area",
+        "graphMode": "none",
         "colorMode": "value"
       },
       "fieldConfig": {
@@ -213,29 +249,45 @@
       }
     },
     {
+      "title": "Operational KPIs",
+      "type": "row",
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false
+    },
+    {
       "title": "Event Flow: Ingestion \u2192 Publishing",
       "type": "timeseries",
       "gridPos": {
         "x": 0,
-        "y": 4,
+        "y": 5,
         "w": 24,
         "h": 8
       },
       "targets": [
         {
-          "expr": "sum by (event_type) (rate(meltica_dispatcher_events_ingested{environment=~\"$environment\", event_type=~\"$event_type\", provider=~\"$provider\"}[1m]))",
+          "expr": "sum by (event_type) (rate(meltica_dispatcher_events_ingested{environment=~\"$environment\", event_type=~\"$event_type\", provider=~\"$provider\", symbol=~\"$symbol\"}[1m]))",
           "refId": "A",
           "legendFormat": "Ingested - {{event_type}}"
         },
         {
-          "expr": "sum by (event_type) (rate(meltica_databus_events_published{environment=~\"$environment\", event_type=~\"$event_type\", event_provider=~\"$provider\"}[1m]))",
+          "expr": "sum by (event_type) (rate(meltica_databus_events_published{environment=~\"$environment\", event_type=~\"$event_type\", event_provider=~\"$provider\", symbol=~\"$symbol\"}[1m]))",
           "refId": "B",
           "legendFormat": "Published - {{event_type}}"
         },
         {
-          "expr": "sum by (event_type) (rate(meltica_dispatcher_events_dropped{environment=~\"$environment\", event_type=~\"$event_type\"}[1m]))",
+          "expr": "sum by (event_type) (rate(meltica_dispatcher_events_dropped{environment=~\"$environment\", event_type=~\"$event_type\", provider=~\"$provider\", symbol=~\"$symbol\"}[1m]))",
           "refId": "C",
           "legendFormat": "Dropped - {{event_type}}"
+        },
+        {
+          "expr": "sum by (event_type) (rate(meltica_databus_delivery_errors{environment=~\"$environment\", event_type=~\"$event_type\", provider=~\"$provider\", symbol=~\"$symbol\"}[1m]))",
+          "refId": "D",
+          "legendFormat": "Delivery Errors - {{event_type}}"
         }
       ],
       "fieldConfig": {
@@ -281,13 +333,13 @@
       "type": "timeseries",
       "gridPos": {
         "x": 0,
-        "y": 12,
+        "y": 13,
         "w": 12,
         "h": 8
       },
       "targets": [
         {
-          "expr": "sum by (provider) (rate(meltica_dispatcher_events_ingested{environment=~\"$environment\", event_type=~\"$event_type\", provider=~\"$provider\"}[1m]))",
+          "expr": "sum by (provider) (rate(meltica_dispatcher_events_ingested{environment=~\"$environment\", event_type=~\"$event_type\", provider=~\"$provider\", symbol=~\"$symbol\"}[1m]))",
           "refId": "A",
           "legendFormat": "{{provider}}"
         }
@@ -321,13 +373,13 @@
       "type": "timeseries",
       "gridPos": {
         "x": 12,
-        "y": 12,
+        "y": 13,
         "w": 12,
         "h": 8
       },
       "targets": [
         {
-          "expr": "sum by (event_type) (rate(meltica_dispatcher_events_ingested{environment=~\"$environment\", event_type=~\"$event_type\", provider=~\"$provider\"}[1m]))",
+          "expr": "sum by (event_type) (rate(meltica_dispatcher_events_ingested{environment=~\"$environment\", event_type=~\"$event_type\", provider=~\"$provider\", symbol=~\"$symbol\"}[1m]))",
           "refId": "A",
           "legendFormat": "{{event_type}}"
         }
@@ -361,23 +413,23 @@
       "type": "timeseries",
       "gridPos": {
         "x": 0,
-        "y": 20,
+        "y": 21,
         "w": 12,
         "h": 8
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.99, sum by (le, event_type) (rate(meltica_dispatcher_processing_duration_bucket{environment=~\"$environment\", event_type=~\"$event_type\"}[5m])))",
+          "expr": "histogram_quantile(0.99, sum by (le, event_type) (rate(meltica_dispatcher_processing_duration_milliseconds_bucket{environment=~\"$environment\", event_type=~\"$event_type\", provider=~\"$provider\", symbol=~\"$symbol\"}[5m])))",
           "refId": "A",
           "legendFormat": "{{event_type}} - p99"
         },
         {
-          "expr": "histogram_quantile(0.95, sum by (le, event_type) (rate(meltica_dispatcher_processing_duration_bucket{environment=~\"$environment\", event_type=~\"$event_type\"}[5m])))",
+          "expr": "histogram_quantile(0.95, sum by (le, event_type) (rate(meltica_dispatcher_processing_duration_milliseconds_bucket{environment=~\"$environment\", event_type=~\"$event_type\", provider=~\"$provider\", symbol=~\"$symbol\"}[5m])))",
           "refId": "B",
           "legendFormat": "{{event_type}} - p95"
         },
         {
-          "expr": "histogram_quantile(0.50, sum by (le, event_type) (rate(meltica_dispatcher_processing_duration_bucket{environment=~\"$environment\", event_type=~\"$event_type\"}[5m])))",
+          "expr": "histogram_quantile(0.50, sum by (le, event_type) (rate(meltica_dispatcher_processing_duration_milliseconds_bucket{environment=~\"$environment\", event_type=~\"$event_type\", provider=~\"$provider\", symbol=~\"$symbol\"}[5m])))",
           "refId": "C",
           "legendFormat": "{{event_type}} - p50"
         }
@@ -407,13 +459,13 @@
       "type": "timeseries",
       "gridPos": {
         "x": 12,
-        "y": 20,
+        "y": 21,
         "w": 12,
         "h": 8
       },
       "targets": [
         {
-          "expr": "meltica_dispatcher_events_buffered{environment=~\"$environment\"}",
+          "expr": "meltica_dispatcher_events_buffered{environment=~\"$environment\", event_type=~\"$event_type\", provider=~\"$provider\", symbol=~\"$symbol\"}",
           "refId": "A",
           "legendFormat": "Buffered Events"
         }
@@ -461,13 +513,13 @@
       "type": "timeseries",
       "gridPos": {
         "x": 0,
-        "y": 28,
+        "y": 29,
         "w": 12,
         "h": 8
       },
       "targets": [
         {
-          "expr": "meltica_databus_subscribers{environment=~\"$environment\", event_type=~\"$event_type\"}",
+          "expr": "meltica_databus_subscribers{environment=~\"$environment\", event_type=~\"$event_type\", provider=~\"$provider\"}",
           "refId": "A",
           "legendFormat": "{{event_type}}"
         }
@@ -501,13 +553,13 @@
       "type": "timeseries",
       "gridPos": {
         "x": 12,
-        "y": 28,
+        "y": 29,
         "w": 12,
         "h": 8
       },
       "targets": [
         {
-          "expr": "sum by (error, event_type) (rate(meltica_databus_delivery_errors{environment=~\"$environment\", event_type=~\"$event_type\"}[1m]))",
+          "expr": "sum by (error, event_type) (rate(meltica_databus_delivery_errors{environment=~\"$environment\", event_type=~\"$event_type\", provider=~\"$provider\", symbol=~\"$symbol\"}[1m]))",
           "refId": "A",
           "legendFormat": "{{event_type}} - {{error}}"
         }
@@ -542,13 +594,13 @@
       "type": "timeseries",
       "gridPos": {
         "x": 0,
-        "y": 36,
+        "y": 37,
         "w": 12,
         "h": 8
       },
       "targets": [
         {
-          "expr": "sum by (event_type) (rate(meltica_dispatcher_events_duplicate{environment=~\"$environment\", event_type=~\"$event_type\"}[1m]))",
+          "expr": "sum by (event_type) (rate(meltica_dispatcher_events_duplicate{environment=~\"$environment\", event_type=~\"$event_type\", provider=~\"$provider\", symbol=~\"$symbol\"}[1m]))",
           "refId": "A",
           "legendFormat": "{{event_type}}"
         }
@@ -583,13 +635,13 @@
       "type": "timeseries",
       "gridPos": {
         "x": 12,
-        "y": 36,
+        "y": 37,
         "w": 12,
         "h": 8
       },
       "targets": [
         {
-          "expr": "sum by (reason, event_type) (rate(meltica_dispatcher_events_dropped{environment=~\"$environment\", event_type=~\"$event_type\"}[1m]))",
+          "expr": "sum by (reason, event_type) (rate(meltica_dispatcher_events_dropped{environment=~\"$environment\", event_type=~\"$event_type\", provider=~\"$provider\", symbol=~\"$symbol\"}[1m]))",
           "refId": "A",
           "legendFormat": "{{event_type}} - {{reason}}"
         }
@@ -620,31 +672,31 @@
       "type": "table",
       "gridPos": {
         "x": 0,
-        "y": 44,
+        "y": 45,
         "w": 24,
         "h": 8
       },
       "targets": [
         {
-          "expr": "sum by (event_type, provider) (rate(meltica_dispatcher_events_ingested{environment=~\"$environment\", event_type=~\"$event_type\", provider=~\"$provider\"}[5m]))",
+          "expr": "sum by (event_type, provider, symbol) (rate(meltica_dispatcher_events_ingested{environment=~\"$environment\", event_type=~\"$event_type\", provider=~\"$provider\", symbol=~\"$symbol\"}[5m]))",
           "refId": "Ingested",
           "format": "table",
           "instant": true
         },
         {
-          "expr": "sum by (event_type) (rate(meltica_databus_events_published{environment=~\"$environment\", event_type=~\"$event_type\"}[5m]))",
+          "expr": "sum by (event_type) (rate(meltica_databus_events_published{environment=~\"$environment\", event_type=~\"$event_type\", event_provider=~\"$provider\", symbol=~\"$symbol\"}[5m]))",
           "refId": "Published",
           "format": "table",
           "instant": true
         },
         {
-          "expr": "sum by (event_type) (rate(meltica_dispatcher_events_dropped{environment=~\"$environment\", event_type=~\"$event_type\"}[5m]))",
+          "expr": "sum by (event_type) (rate(meltica_dispatcher_events_dropped{environment=~\"$environment\", event_type=~\"$event_type\", provider=~\"$provider\", symbol=~\"$symbol\"}[5m]))",
           "refId": "Dropped",
           "format": "table",
           "instant": true
         },
         {
-          "expr": "sum by (event_type) (rate(meltica_dispatcher_events_duplicate{environment=~\"$environment\", event_type=~\"$event_type\"}[5m]))",
+          "expr": "sum by (event_type) (rate(meltica_dispatcher_events_duplicate{environment=~\"$environment\", event_type=~\"$event_type\", provider=~\"$provider\", symbol=~\"$symbol\"}[5m]))",
           "refId": "Duplicate",
           "format": "table",
           "instant": true
@@ -805,7 +857,7 @@
   "annotations": {
     "list": [
       {
-        "datasource": "$datasource",
+        "datasource": {"type": "prometheus", "uid": null},
         "enable": true,
         "name": "Deployments",
         "iconColor": "blue",

@@ -15,6 +15,7 @@ import (
 	"github.com/coachpo/meltica/internal/errs"
 	"github.com/coachpo/meltica/internal/pool"
 	"github.com/coachpo/meltica/internal/schema"
+	"github.com/coachpo/meltica/internal/telemetry"
 )
 
 // MemoryBus is an in-memory implementation of the data bus.
@@ -108,7 +109,10 @@ func (b *MemoryBus) Publish(ctx context.Context, evt *schema.Event) error {
 	span.SetAttributes(attribute.Int("subscribers.count", n))
 	if b.fanoutHistogram != nil {
 		b.fanoutHistogram.Record(ctx, int64(n), metric.WithAttributes(
-			attribute.String("event.type", string(evt.Type))))
+			attribute.String("environment", telemetry.Environment()),
+			attribute.String("event_type", string(evt.Type)),
+			attribute.String("provider", evt.Provider),
+			attribute.String("symbol", evt.Symbol)))
 	}
 
 	// SHORT-CIRCUIT: no subscribers means no pool work, no delivery.
@@ -125,8 +129,11 @@ func (b *MemoryBus) Publish(ctx context.Context, evt *schema.Event) error {
 		span.RecordError(err)
 		if b.deliveryErrorCounter != nil {
 			b.deliveryErrorCounter.Add(ctx, 1, metric.WithAttributes(
+				attribute.String("environment", telemetry.Environment()),
 				attribute.String("error", "clone_batch_failed"),
-				attribute.String("event.type", string(evt.Type))))
+				attribute.String("event_type", string(evt.Type)),
+				attribute.String("provider", evt.Provider),
+				attribute.String("symbol", evt.Symbol)))
 		}
 		return err
 	}
@@ -140,16 +147,21 @@ func (b *MemoryBus) Publish(ctx context.Context, evt *schema.Event) error {
 		span.RecordError(err)
 		if b.deliveryErrorCounter != nil {
 			b.deliveryErrorCounter.Add(ctx, 1, metric.WithAttributes(
+				attribute.String("environment", telemetry.Environment()),
 				attribute.String("error", "dispatch_failed"),
-				attribute.String("event.type", string(evt.Type))))
+				attribute.String("event_type", string(evt.Type)),
+				attribute.String("provider", evt.Provider),
+				attribute.String("symbol", evt.Symbol)))
 		}
 		return err
 	}
 
 	if b.eventsPublishedCounter != nil {
 		b.eventsPublishedCounter.Add(ctx, 1, metric.WithAttributes(
-			attribute.String("event.type", string(evt.Type)),
-			attribute.String("event.provider", evt.Provider)))
+			attribute.String("environment", telemetry.Environment()),
+			attribute.String("event_type", string(evt.Type)),
+			attribute.String("provider", evt.Provider),
+			attribute.String("symbol", evt.Symbol)))
 	}
 
 	// Source event is no longer needed; recycle it.
@@ -183,7 +195,8 @@ func (b *MemoryBus) Subscribe(ctx context.Context, typ schema.EventType) (Subscr
 
 	if b.subscriberGauge != nil {
 		b.subscriberGauge.Add(ctx, 1, metric.WithAttributes(
-			attribute.String("event.type", string(typ))))
+			attribute.String("environment", telemetry.Environment()),
+			attribute.String("event_type", string(typ))))
 	}
 
 	go b.observe(typ, id, sub)
@@ -205,7 +218,8 @@ func (b *MemoryBus) Unsubscribe(id SubscriptionID) {
 			b.mu.Unlock()
 			if b.subscriberGauge != nil {
 				b.subscriberGauge.Add(context.Background(), -1, metric.WithAttributes(
-					attribute.String("event.type", string(typ))))
+					attribute.String("environment", telemetry.Environment()),
+					attribute.String("event_type", string(typ))))
 			}
 			sub.close()
 			return

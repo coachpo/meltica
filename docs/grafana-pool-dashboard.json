@@ -69,7 +69,7 @@
     },
     "panels": [
       {
-        "title": "Total Active Objects",
+        "title": "In Use Objects (R)",
         "type": "stat",
         "gridPos": {
           "x": 0,
@@ -111,7 +111,7 @@
         }
       },
       {
-        "title": "Total Capacity",
+        "title": "Capacity",
         "type": "stat",
         "gridPos": {
           "x": 6,
@@ -140,7 +140,7 @@
         }
       },
       {
-        "title": "Average Utilization",
+        "title": "Utilization % (E)",
         "type": "stat",
         "gridPos": {
           "x": 12,
@@ -150,7 +150,7 @@
         },
         "targets": [
           {
-            "expr": "avg(meltica_pool_utilization_ratio{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"})",
+            "expr": "avg(meltica_pool_objects_active{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"} / meltica_pool_capacity{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"})",
             "refId": "A"
           }
         ],
@@ -184,7 +184,7 @@
         }
       },
       {
-        "title": "Total Borrow Rate",
+        "title": "Borrow Rate (D)",
         "type": "stat",
         "gridPos": {
           "x": 18,
@@ -224,7 +224,7 @@
         },
         "targets": [
           {
-            "expr": "meltica_pool_utilization_ratio{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"}",
+            "expr": "meltica_pool_objects_active{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"} / meltica_pool_capacity{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"}",
             "refId": "A",
             "legendFormat": "{{pool_name}} ({{object_type}})"
           }
@@ -528,7 +528,7 @@
             "instant": true
           },
           {
-            "expr": "meltica_pool_utilization_ratio{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"}",
+            "expr": "meltica_pool_objects_active{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"} / meltica_pool_capacity{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"}",
             "refId": "Utilization",
             "format": "table",
             "instant": true

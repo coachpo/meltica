@@ -15,6 +15,7 @@ import (
 	"go.opentelemetry.io/otel/metric"
 
 	"github.com/coachpo/meltica/internal/schema"
+	"github.com/coachpo/meltica/internal/telemetry"
 )
 
 const (
@@ -123,7 +124,10 @@ func (a *BookAssembler) ApplySnapshot(snapshot schema.BookSnapshotPayload, seq u
 
 	ctx := context.Background()
 	attrs := []attribute.KeyValue{
+		attribute.String("environment", telemetry.Environment()),
+		attribute.String("provider", "binance"),
 		attribute.String("symbol", a.symbol),
+		attribute.String("event_type", "book_snapshot"),
 		attribute.Int64("sequence", safeUint64ToInt64(seq)),
 	}
 
@@ -228,7 +232,10 @@ func (a *BookAssembler) ApplyUpdate(bids, asks []schema.PriceLevel, firstUpdateI
 
 	ctx := context.Background()
 	attrs := []attribute.KeyValue{
+		attribute.String("environment", telemetry.Environment()),
+		attribute.String("provider", "binance"),
 		attribute.String("symbol", a.symbol),
+		attribute.String("event_type", "book_snapshot"),
 		attribute.Int64("first_seq", safeUint64ToInt64(firstUpdateID)),
 		attribute.Int64("final_seq", safeUint64ToInt64(finalUpdateID)),
 		attribute.Int64("current_seq", safeUint64ToInt64(a.seq)),
