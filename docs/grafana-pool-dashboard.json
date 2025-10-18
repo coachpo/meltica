@@ -206,7 +206,7 @@
       }
     },
     {
-      "title": "Pool Exhaustion Risk",
+      "title": "Pool Usage",
       "type": "stat",
       "id": 17,
       "datasource": {
@@ -221,39 +221,81 @@
       },
       "targets": [
         {
-          "expr": "sum by (pool_name) (meltica_pool_objects_active{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"}) / sum by (pool_name) (meltica_pool_capacity{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"})",
-          "refId": "A",
-          "legendFormat": "{{pool_name}}"
+          "expr": "sum by (pool_name) (meltica_pool_objects_active{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"})",
+          "refId": "Active",
+          "legendFormat": "{{pool_name}} Active"
+        },
+        {
+          "expr": "sum by (pool_name) (meltica_pool_capacity{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"})",
+          "refId": "Capacity",
+          "legendFormat": "{{pool_name}} Capacity"
+        },
+        {
+          "expr": "sum by (pool_name) (meltica_pool_available{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"})",
+          "refId": "Available",
+          "legendFormat": "{{pool_name}} Available"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "percentunit",
-          "decimals": 1,
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
+          "unit": "short",
+          "decimals": 0,
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*Active"
+            },
+            "properties": [
               {
-                "value": 0,
-                "color": "green"
-              },
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*Capacity"
+            },
+            "properties": [
               {
-                "value": 0.8,
-                "color": "yellow"
-              },
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*Available"
+            },
+            "properties": [
               {
-                "value": 0.95,
-                "color": "red"
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
               }
             ]
           }
-        },
-        "overrides": []
+        ]
       },
       "options": {
-        "colorMode": "background",
+        "colorMode": "value",
         "graphMode": "none",
-        "justifyMode": "center",
+        "justifyMode": "auto",
         "orientation": "horizontal",
         "reduceOptions": {
           "calcs": [
