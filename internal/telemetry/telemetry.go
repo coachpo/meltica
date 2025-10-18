@@ -15,6 +15,7 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/propagation"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	instrumentationsdk "go.opentelemetry.io/otel/sdk/instrumentation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.32.0"
@@ -238,38 +239,106 @@ func createHistogramViews() []sdkmetric.View {
 	return []sdkmetric.View{
 		// Dispatcher processing duration: 0.1ms - 500ms (event processing latency)
 		sdkmetric.NewView(
-			sdkmetric.Instrument{Name: "dispatcher.processing.duration"},
+			sdkmetric.Instrument{
+				Name:        "dispatcher.processing.duration",
+				Description: "Dispatcher processing duration",
+				Kind:        sdkmetric.InstrumentKindHistogram,
+				Unit:        "ms",
+				Scope: instrumentationsdk.Scope{
+					Name:       "",
+					Version:    "",
+					SchemaURL:  "",
+					Attributes: attribute.Set{},
+				},
+			},
 			sdkmetric.Stream{
+				Name:        "",
+				Description: "",
+				Unit:        "",
 				Aggregation: sdkmetric.AggregationExplicitBucketHistogram{
 					Boundaries: []float64{0.1, 0.5, 1, 2, 5, 10, 25, 50, 100, 250, 500},
+					NoMinMax:   false,
 				},
+				AttributeFilter:                   nil,
+				ExemplarReservoirProviderSelector: nil,
 			},
 		),
 		// Pool borrow duration: 0.01ms - 50ms (memory pool operations)
 		sdkmetric.NewView(
-			sdkmetric.Instrument{Name: "pool.borrow.duration"},
+			sdkmetric.Instrument{
+				Name:        "pool.borrow.duration",
+				Description: "Pool borrow operation duration",
+				Kind:        sdkmetric.InstrumentKindHistogram,
+				Unit:        "ms",
+				Scope: instrumentationsdk.Scope{
+					Name:       "",
+					Version:    "",
+					SchemaURL:  "",
+					Attributes: attribute.Set{},
+				},
+			},
 			sdkmetric.Stream{
+				Name:        "",
+				Description: "",
+				Unit:        "",
 				Aggregation: sdkmetric.AggregationExplicitBucketHistogram{
 					Boundaries: []float64{0.01, 0.05, 0.1, 0.5, 1, 2, 5, 10, 25, 50},
+					NoMinMax:   false,
 				},
+				AttributeFilter:                   nil,
+				ExemplarReservoirProviderSelector: nil,
 			},
 		),
 		// Orderbook cold start duration: 100ms - 30s (initial snapshot loading)
 		sdkmetric.NewView(
-			sdkmetric.Instrument{Name: "orderbook.coldstart.duration"},
+			sdkmetric.Instrument{
+				Name:        "orderbook.coldstart.duration",
+				Description: "Orderbook cold start duration",
+				Kind:        sdkmetric.InstrumentKindHistogram,
+				Unit:        "ms",
+				Scope: instrumentationsdk.Scope{
+					Name:       "",
+					Version:    "",
+					SchemaURL:  "",
+					Attributes: attribute.Set{},
+				},
+			},
 			sdkmetric.Stream{
+				Name:        "",
+				Description: "",
+				Unit:        "",
 				Aggregation: sdkmetric.AggregationExplicitBucketHistogram{
 					Boundaries: []float64{100, 250, 500, 1000, 2000, 5000, 10000, 30000},
+					NoMinMax:   false,
 				},
+				AttributeFilter:                   nil,
+				ExemplarReservoirProviderSelector: nil,
 			},
 		),
 		// Databus fanout size: 1 - 100 subscribers
 		sdkmetric.NewView(
-			sdkmetric.Instrument{Name: "databus.fanout.size"},
+			sdkmetric.Instrument{
+				Name:        "databus.fanout.size",
+				Description: "Databus fanout subscriber count",
+				Kind:        sdkmetric.InstrumentKindHistogram,
+				Unit:        "1",
+				Scope: instrumentationsdk.Scope{
+					Name:       "",
+					Version:    "",
+					SchemaURL:  "",
+					Attributes: attribute.Set{},
+				},
+			},
 			sdkmetric.Stream{
+				Name:        "",
+				Description: "",
+				Unit:        "",
 				Aggregation: sdkmetric.AggregationExplicitBucketHistogram{
 					Boundaries: []float64{1, 2, 5, 10, 20, 50, 100},
+					NoMinMax:   false,
 				},
+				AttributeFilter:                   nil,
+				ExemplarReservoirProviderSelector: nil,
 			},
 		),
 	}

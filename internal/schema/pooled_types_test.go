@@ -28,9 +28,9 @@ func TestWsFrameReset(t *testing.T) {
 	if frame.MessageType != 0 {
 		t.Error("expected MessageType to be reset")
 	}
-	if frame.Data != nil {
-		t.Error("expected Data to be reset")
-	}
+    if len(frame.Data) != 0 {
+        t.Error("expected Data to be reset")
+    }
 }
 
 func TestWsFrameSetReturned(t *testing.T) {

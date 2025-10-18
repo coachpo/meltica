@@ -292,10 +292,6 @@ func (op *objectPool) getCapacity() int {
 	return op.capacity
 }
 
-func (op *objectPool) getActive() int64 {
-	return op.activeLeases.Load()
-}
-
 func (op *objectPool) getAvailable() int64 {
 	active := op.activeLeases.Load()
 	available := int64(op.capacity) - active
