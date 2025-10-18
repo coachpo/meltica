@@ -31,7 +31,7 @@ import (
 
 func main() {
 	cfgPath := flag.String("config", "", "Path to streaming configuration file (default: streaming.yml or streaming.yaml alongside binary)")
-	providers := flag.String("providers", "binance", "Comma-separated provider types: fake,binance (runs all simultaneously)")
+	providers := flag.String("providers", "binance,fake", "Comma-separated provider types: fake,binance (runs all simultaneously)")
 	flag.Parse()
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -383,8 +383,8 @@ func createProvider(ctx context.Context, providerType string, poolMgr *pool.Pool
 		//nolint:exhaustruct // optional fields use zero values
 		provider := fake.NewProvider(fake.Options{
 			Name:           "fake",
-			TickerInterval: 500 * time.Millisecond,
-			TradeInterval:  500 * time.Millisecond,
+			TickerInterval: 1000 * time.Millisecond,
+			TradeInterval:  1000 * time.Millisecond,
 			Pools:          poolMgr,
 		})
 		if err := provider.Start(ctx); err != nil {
