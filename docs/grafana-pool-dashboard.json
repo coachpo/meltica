@@ -588,19 +588,19 @@
       },
       "targets": [
         {
-          "expr": "meltica_pool_objects_active{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"}",
+          "expr": "sum by (pool_name, object_type) (meltica_pool_objects_active{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"})",
           "refId": "Active",
           "format": "table",
           "instant": true
         },
         {
-          "expr": "meltica_pool_capacity{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"}",
+          "expr": "sum by (pool_name, object_type) (meltica_pool_capacity{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"})",
           "refId": "Capacity",
           "format": "table",
           "instant": true
         },
         {
-          "expr": "meltica_pool_available{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"}",
+          "expr": "sum by (pool_name, object_type) (meltica_pool_available{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"})",
           "refId": "Available",
           "format": "table",
           "instant": true
@@ -630,7 +630,17 @@
               "Time": true,
               "__name__": true,
               "instance": true,
-              "job": true
+              "job": true,
+              "cluster": true,
+              "deployment_environment": true,
+              "environment": true,
+              "exported_job": true,
+              "host_name": true,
+              "os_type": true,
+              "process_runtime_name": true,
+              "process_runtime_version": true,
+              "service": true,
+              "service_name": true
             },
             "indexByName": {
               "pool_name": 0,
