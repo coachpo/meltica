@@ -1,790 +1,815 @@
-  {
-    "title": "Meltica Pool Metrics",
-    "uid": "meltica-pool-metrics",
-    "timezone": "browser",
-    "editable": true,
-    "graphTooltip": 1,
-    "time": {
-      "from": "now-1h",
-      "to": "now"
+{
+  "title": "Meltica Pool Usage",
+  "uid": "meltica-pool-usage",
+  "timezone": "browser",
+  "editable": true,
+  "graphTooltip": 1,
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "refresh": "30s",
+  "panels": [
+    {
+      "title": "Overview",
+      "type": "row",
+      "id": 1,
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 1
+      }
     },
-    "refresh": "30s",
-    "templating": {
-      "list": [
+    {
+      "title": "Active Objects",
+      "type": "stat",
+      "id": 2,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
         {
-          "name": "environment",
-          "type": "query",
-          "label": "Environment",
-          "query": "label_values(meltica_pool_objects_active, environment)",
-          "datasource": {"type": "prometheus", "uid": null},
-          "multi": true,
-          "includeAll": true,
-          "allValue": ".*",
-          "refresh": 2,
-          "current": {
-            "selected": true,
-            "text": "All",
-            "value": "$__all"
-          },
-          "hide": 0,
-          "skipUrlSync": false
-        },
-        {
-          "name": "pool_name",
-          "type": "query",
-          "label": "Pool Name",
-          "query": "label_values(meltica_pool_objects_active{environment=~\"$environment\"}, pool_name)",
-          "datasource": {"type": "prometheus", "uid": null},
-          "multi": true,
-          "includeAll": true,
-          "allValue": ".*",
-          "refresh": 2,
-          "current": {
-            "selected": true,
-            "text": "All",
-            "value": "$__all"
-          },
-          "hide": 0,
-          "skipUrlSync": false
-        },
-        {
-          "name": "object_type",
-          "type": "query",
-          "label": "Object Type",
-          "query": "label_values(meltica_pool_objects_active{environment=~\"$environment\"}, object_type)",
-          "datasource": {"type": "prometheus", "uid": null},
-          "multi": true,
-          "includeAll": true,
-          "allValue": ".*",
-          "refresh": 2,
-          "current": {
-            "selected": true,
-            "text": "All",
-            "value": "$__all"
-          },
-          "hide": 0,
-          "skipUrlSync": false
+          "expr": "sum(meltica_pool_objects_active{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"})",
+          "refId": "A"
         }
-      ]
-    },
-    "panels": [
-      {
-        "title": "In Use Objects (R)",
-        "type": "stat",
-        "gridPos": {
-          "x": 0,
-          "y": 0,
-          "w": 6,
-          "h": 4
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none"
         },
-        "targets": [
-          {
-            "expr": "sum(meltica_pool_objects_active{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"})",
-            "refId": "A"
-          }
-        ],
-        "options": {
-          "graphMode": "area",
-          "colorMode": "value"
-        },
-        "fieldConfig": {
-          "defaults": {
-            "thresholds": {
-              "mode": "absolute",
-              "steps": [
-                {
-                  "value": 0,
-                  "color": "green"
-                },
-                {
-                  "value": 500,
-                  "color": "yellow"
-                },
-                {
-                  "value": 1000,
-                  "color": "red"
-                }
-              ]
-            },
-            "unit": "short"
-          }
-        }
+        "overrides": []
       },
-      {
-        "title": "Capacity",
-        "type": "stat",
-        "gridPos": {
-          "x": 6,
-          "y": 0,
-          "w": 6,
-          "h": 4
-        },
-        "targets": [
-          {
-            "expr": "sum(meltica_pool_capacity{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"})",
-            "refId": "A"
-          }
-        ],
-        "options": {
-          "graphMode": "none",
-          "colorMode": "value"
-        },
-        "fieldConfig": {
-          "defaults": {
-            "unit": "short",
-            "color": {
-              "mode": "fixed",
-              "fixedColor": "blue"
-            }
-          }
-        }
-      },
-      {
-        "title": "Utilization % (E)",
-        "type": "stat",
-        "gridPos": {
-          "x": 12,
-          "y": 0,
-          "w": 6,
-          "h": 4
-        },
-        "targets": [
-          {
-            "expr": "avg(meltica_pool_objects_active{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"} / meltica_pool_capacity{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"})",
-            "refId": "A"
-          }
-        ],
-        "options": {
-          "graphMode": "area",
-          "colorMode": "value"
-        },
-        "fieldConfig": {
-          "defaults": {
-            "thresholds": {
-              "mode": "absolute",
-              "steps": [
-                {
-                  "value": 0,
-                  "color": "green"
-                },
-                {
-                  "value": 0.7,
-                  "color": "yellow"
-                },
-                {
-                  "value": 0.9,
-                  "color": "red"
-                }
-              ]
-            },
-            "unit": "percentunit",
-            "max": 1,
-            "min": 0
-          }
-        }
-      },
-      {
-        "title": "Borrow Rate (D)",
-        "type": "stat",
-        "gridPos": {
-          "x": 18,
-          "y": 0,
-          "w": 6,
-          "h": 4
-        },
-        "targets": [
-          {
-            "expr": "sum(rate(meltica_pool_objects_borrowed_total{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"}[1m]))",
-            "refId": "A"
-          }
-        ],
-        "options": {
-          "graphMode": "area",
-          "colorMode": "value"
-        },
-        "fieldConfig": {
-          "defaults": {
-            "unit": "ops",
-            "decimals": 2,
-            "color": {
-              "mode": "fixed",
-              "fixedColor": "purple"
-            }
-          }
-        }
-      },
-      {
-        "title": "Pool Utilization by Type",
-        "type": "bargauge",
-        "gridPos": {
-          "x": 0,
-          "y": 4,
-          "w": 24,
-          "h": 6
-        },
-        "targets": [
-          {
-            "expr": "meltica_pool_objects_active{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"} / meltica_pool_capacity{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"}",
-            "refId": "A",
-            "legendFormat": "{{pool_name}} ({{object_type}})"
-          }
-        ],
-        "options": {
-          "orientation": "horizontal",
-          "displayMode": "gradient",
-          "showUnfilled": true
-        },
-        "fieldConfig": {
-          "defaults": {
-            "thresholds": {
-              "mode": "absolute",
-              "steps": [
-                {
-                  "value": 0,
-                  "color": "green"
-                },
-                {
-                  "value": 0.7,
-                  "color": "yellow"
-                },
-                {
-                  "value": 0.9,
-                  "color": "red"
-                }
-              ]
-            },
-            "unit": "percentunit",
-            "max": 1,
-            "min": 0
-          }
-        }
-      },
-      {
-        "title": "Active Objects Over Time",
-        "type": "timeseries",
-        "gridPos": {
-          "x": 0,
-          "y": 10,
-          "w": 12,
-          "h": 8
-        },
-        "targets": [
-          {
-            "expr": "meltica_pool_objects_active{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"}",
-            "refId": "A",
-            "legendFormat": "{{pool_name}}"
-          },
-          {
-            "expr": "meltica_pool_capacity{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"}",
-            "refId": "B",
-            "legendFormat": "{{pool_name}} capacity"
-          }
-        ],
-        "fieldConfig": {
-          "defaults": {
-            "custom": {
-              "drawStyle": "line",
-              "lineWidth": 2,
-              "fillOpacity": 10,
-              "lineInterpolation": "smooth"
-            },
-            "unit": "short"
-          },
-          "overrides": [
-            {
-              "matcher": {
-                "id": "byFrameRefID",
-                "options": "B"
-              },
-              "properties": [
-                {
-                  "id": "custom.lineStyle",
-                  "value": {
-                    "dash": [
-                      10,
-                      10
-                    ],
-                    "fill": "dash"
-                  }
-                },
-                {
-                  "id": "custom.fillOpacity",
-                  "value": 0
-                }
-              ]
-            }
-          ]
-        },
-        "options": {
-          "legend": {
-            "displayMode": "table",
-            "placement": "bottom",
-            "calcs": [
-              "last",
-              "max"
-            ]
-          }
-        }
-      },
-      {
-        "title": "Borrow & Return Rates",
-        "type": "timeseries",
-        "gridPos": {
-          "x": 12,
-          "y": 10,
-          "w": 12,
-          "h": 8
-        },
-        "targets": [
-          {
-            "expr": "rate(meltica_pool_objects_borrowed_total{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"}[1m])",
-            "refId": "A",
-            "legendFormat": "{{pool_name}} - borrowed"
-          },
-          {
-            "expr": "rate(meltica_pool_objects_returned_total{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"}[1m])",
-            "refId": "B",
-            "legendFormat": "{{pool_name}} - returned"
-          }
-        ],
-        "fieldConfig": {
-          "defaults": {
-            "custom": {
-              "drawStyle": "line",
-              "lineWidth": 2,
-              "fillOpacity": 10
-            },
-            "unit": "ops"
-          }
-        },
-        "options": {
-          "legend": {
-            "displayMode": "table",
-            "placement": "bottom",
-            "calcs": [
-              "mean",
-              "max"
-            ]
-          }
-        }
-      },
-      {
-        "title": "Borrow Latency (p50, p95, p99)",
-        "type": "timeseries",
-        "gridPos": {
-          "x": 0,
-          "y": 18,
-          "w": 12,
-          "h": 8
-        },
-        "targets": [
-          {
-            "expr": "histogram_quantile(0.99, rate(meltica_pool_borrow_duration_milliseconds_bucket{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"}[5m]))",
-            "refId": "A",
-            "legendFormat": "{{pool_name}} - p99"
-          },
-          {
-            "expr": "histogram_quantile(0.95, rate(meltica_pool_borrow_duration_milliseconds_bucket{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"}[5m]))",
-            "refId": "B",
-            "legendFormat": "{{pool_name}} - p95"
-          },
-          {
-            "expr": "histogram_quantile(0.50, rate(meltica_pool_borrow_duration_milliseconds_bucket{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"}[5m]))",
-            "refId": "C",
-            "legendFormat": "{{pool_name}} - p50"
-          }
-        ],
-        "fieldConfig": {
-          "defaults": {
-            "custom": {
-              "drawStyle": "line",
-              "lineWidth": 2
-            },
-            "unit": "ms"
-          }
-        },
-        "options": {
-          "legend": {
-            "displayMode": "table",
-            "placement": "bottom",
-            "calcs": [
-              "mean",
-              "max"
-            ]
-          }
-        }
-      },
-      {
-        "title": "Available Objects",
-        "type": "timeseries",
-        "gridPos": {
-          "x": 12,
-          "y": 18,
-          "w": 12,
-          "h": 8
-        },
-        "targets": [
-          {
-            "expr": "meltica_pool_available{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"}",
-            "refId": "A",
-            "legendFormat": "{{pool_name}}"
-          }
-        ],
-        "fieldConfig": {
-          "defaults": {
-            "custom": {
-              "drawStyle": "line",
-              "lineWidth": 2,
-              "fillOpacity": 20
-            },
-            "unit": "short",
-            "thresholds": {
-              "mode": "absolute",
-              "steps": [
-                {
-                  "value": 0,
-                  "color": "red"
-                },
-                {
-                  "value": 10,
-                  "color": "yellow"
-                },
-                {
-                  "value": 50,
-                  "color": "green"
-                }
-              ]
-            }
-          }
-        },
-        "options": {
-          "legend": {
-            "displayMode": "table",
-            "placement": "bottom",
-            "calcs": [
-              "last",
-              "min"
-            ]
-          }
-        },
-        "alert": {
-          "conditions": [
-            {
-              "evaluator": {
-                "type": "lt",
-                "params": [
-                  1
-                ]
-              },
-              "operator": {
-                "type": "and"
-              },
-              "query": {
-                "params": [
-                  "A",
-                  "5m",
-                  "now"
-                ]
-              },
-              "reducer": {
-                "type": "avg"
-              }
-            }
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
           ],
-          "executionErrorState": "alerting",
-          "frequency": "1m",
-          "handler": 1,
-          "name": "Pool Exhaustion Alert",
-          "noDataState": "no_data",
-          "notifications": []
-        }
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      }
+    },
+    {
+      "title": "Capacity",
+      "type": "stat",
+      "id": 3,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
       },
-      {
-        "title": "Pool Details",
-        "type": "table",
-        "gridPos": {
-          "x": 0,
-          "y": 26,
-          "w": 24,
-          "h": 8
+      "gridPos": {
+        "x": 6,
+        "y": 1,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "expr": "sum(meltica_pool_capacity{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"})",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none"
         },
-        "targets": [
-          {
-            "expr": "meltica_pool_objects_active{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"}",
-            "refId": "Active",
-            "format": "table",
-            "instant": true
-          },
-          {
-            "expr": "meltica_pool_capacity{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"}",
-            "refId": "Capacity",
-            "format": "table",
-            "instant": true
-          },
-          {
-            "expr": "meltica_pool_available{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"}",
-            "refId": "Available",
-            "format": "table",
-            "instant": true
-          },
-          {
-            "expr": "meltica_pool_objects_active{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"} / meltica_pool_capacity{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"}",
-            "refId": "Utilization",
-            "format": "table",
-            "instant": true
-          },
-          {
-            "expr": "rate(meltica_pool_objects_borrowed_total{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"}[5m])",
-            "refId": "BorrowRate",
-            "format": "table",
-            "instant": true
-          }
-        ],
-        "transformations": [
-          {
-            "id": "merge",
-            "options": {}
-          },
-          {
-            "id": "organize",
-            "options": {
-              "excludeByName": {
-                "Time": true,
-                "__name__": true,
-                "instance": true,
-                "job": true,
-                "exported_job": true,
-                "service": true
-              },
-              "indexByName": {
-                "pool_name": 0,
-                "object_type": 1,
-                "environment": 2,
-                "Value #Active": 3,
-                "Value #Capacity": 4,
-                "Value #Available": 5,
-                "Value #Utilization": 6,
-                "Value #BorrowRate": 7
-              },
-              "renameByName": {
-                "pool_name": "Pool Name",
-                "object_type": "Object Type",
-                "Value #Active": "Active",
-                "Value #Capacity": "Capacity",
-                "Value #Available": "Available",
-                "Value #Utilization": "Utilization",
-                "Value #BorrowRate": "Borrow Rate"
-              }
-            }
-          },
-          {
-            "id": "groupBy",
-            "options": {
-              "fields": {
-                "Pool Name": {
-                  "aggregations": ["lastNotNull"],
-                  "operation": "groupby"
-                },
-                "Object Type": {
-                  "aggregations": ["lastNotNull"],
-                  "operation": "groupby"
-                },
-                "Active": {
-                  "aggregations": ["lastNotNull"],
-                  "operation": "aggregate"
-                },
-                "Capacity": {
-                  "aggregations": ["lastNotNull"],
-                  "operation": "aggregate"
-                },
-                "Available": {
-                  "aggregations": ["lastNotNull"],
-                  "operation": "aggregate"
-                },
-                "Utilization": {
-                  "aggregations": ["lastNotNull"],
-                  "operation": "aggregate"
-                },
-                "Borrow Rate": {
-                  "aggregations": ["lastNotNull"],
-                  "operation": "aggregate"
-                }
-              }
-            }
-          },
-          {
-            "id": "organize",
-            "options": {
-              "renameByName": {
-                "Active (lastNotNull)": "Active",
-                "Capacity (lastNotNull)": "Capacity",
-                "Available (lastNotNull)": "Available",
-                "Utilization (lastNotNull)": "Utilization",
-                "Borrow Rate (lastNotNull)": "Borrow Rate"
-              },
-              "indexByName": {
-                "Pool Name": 0,
-                "Object Type": 1,
-                "Active (lastNotNull)": 2,
-                "Capacity (lastNotNull)": 3,
-                "Available (lastNotNull)": 4,
-                "Utilization (lastNotNull)": 5,
-                "Borrow Rate (lastNotNull)": 6
-              }
-            }
-          }
-        ],
-        "fieldConfig": {
-          "defaults": {
-            "custom": {
-              "align": "auto",
-              "displayMode": "auto"
-            }
-          },
-          "overrides": [
-            {
-              "matcher": {
-                "id": "byName",
-                "options": "Active"
-              },
-              "properties": [
-                {
-                  "id": "unit",
-                  "value": "short"
-                }
-              ]
-            },
-            {
-              "matcher": {
-                "id": "byName",
-                "options": "Capacity"
-              },
-              "properties": [
-                {
-                  "id": "unit",
-                  "value": "short"
-                }
-              ]
-            },
-            {
-              "matcher": {
-                "id": "byName",
-                "options": "Available"
-              },
-              "properties": [
-                {
-                  "id": "unit",
-                  "value": "short"
-                },
-                {
-                  "id": "custom.displayMode",
-                  "value": "color-background"
-                },
-                {
-                  "id": "thresholds",
-                  "value": {
-                    "mode": "absolute",
-                    "steps": [
-                      {
-                        "value": 0,
-                        "color": "red"
-                      },
-                      {
-                        "value": 10,
-                        "color": "yellow"
-                      },
-                      {
-                        "value": 50,
-                        "color": "green"
-                      }
-                    ]
-                  }
-                }
-              ]
-            },
-            {
-              "matcher": {
-                "id": "byName",
-                "options": "Utilization"
-              },
-              "properties": [
-                {
-                  "id": "unit",
-                  "value": "percentunit"
-                },
-                {
-                  "id": "custom.displayMode",
-                  "value": "gradient-gauge"
-                },
-                {
-                  "id": "thresholds",
-                  "value": {
-                    "mode": "absolute",
-                    "steps": [
-                      {
-                        "value": 0,
-                        "color": "green"
-                      },
-                      {
-                        "value": 0.7,
-                        "color": "yellow"
-                      },
-                      {
-                        "value": 0.9,
-                        "color": "red"
-                      }
-                    ]
-                  }
-                },
-                {
-                  "id": "max",
-                  "value": 1
-                },
-                {
-                  "id": "min",
-                  "value": 0
-                }
-              ]
-            },
-            {
-              "matcher": {
-                "id": "byName",
-                "options": "Borrow Rate"
-              },
-              "properties": [
-                {
-                  "id": "unit",
-                  "value": "ops"
-                },
-                {
-                  "id": "decimals",
-                  "value": 2
-                }
-              ]
-            }
-          ]
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
         },
-        "options": {
-          "sortBy": [
-            {
-              "displayName": "Utilization",
-              "desc": true
-            }
+        "textMode": "auto"
+      }
+    },
+    {
+      "title": "Utilization",
+      "type": "stat",
+      "id": 4,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 1,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "expr": "sum(meltica_pool_objects_active{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"}) / sum(meltica_pool_capacity{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"})",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": 0,
+                "color": "green"
+              },
+              {
+                "value": 0.7,
+                "color": "yellow"
+              },
+              {
+                "value": 0.9,
+                "color": "red"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      }
+    },
+    {
+      "title": "Borrow Rate (1m)",
+      "type": "stat",
+      "id": 5,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 1,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(meltica_pool_objects_borrowed{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"}[1m]))",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      }
+    },
+    {
+      "title": "Utilization",
+      "type": "row",
+      "id": 6,
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "title": "Active vs Capacity",
+      "type": "timeseries",
+      "id": 7,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 6,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "meltica_pool_objects_active{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"}",
+          "refId": "A",
+          "legendFormat": "{{pool_name}} active"
+        },
+        {
+          "expr": "meltica_pool_capacity{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"}",
+          "refId": "B",
+          "legendFormat": "{{pool_name}} capacity"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 15
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "B"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [
+                    6,
+                    4
+                  ],
+                  "fill": "dash"
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "last",
+            "max"
           ]
         }
       }
-    ],
-    "annotations": {
-      "list": [
+    },
+    {
+      "title": "Borrow Rate by Pool",
+      "type": "timeseries",
+      "id": 8,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 6,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
         {
-          "datasource": {"type": "prometheus", "uid": null},
-          "enable": true,
-          "name": "Deployments",
-          "iconColor": "blue",
-          "tags": [
-            "deployment"
+          "expr": "sum by (pool_name) (rate(meltica_pool_objects_borrowed{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"}[1m]))",
+          "refId": "A",
+          "legendFormat": "{{pool_name}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max"
           ]
         }
-      ]
+      }
+    },
+    {
+      "title": "Availability",
+      "type": "row",
+      "id": 9,
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 14,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "title": "Available Objects",
+      "type": "timeseries",
+      "id": 10,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 15,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "meltica_pool_available{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"}",
+          "refId": "A",
+          "legendFormat": "{{pool_name}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": 0,
+                "color": "red"
+              },
+              {
+                "value": 10,
+                "color": "yellow"
+              },
+              {
+                "value": 100,
+                "color": "green"
+              }
+            ]
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 20
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "last",
+            "min"
+          ]
+        }
+      }
+    },
+    {
+      "title": "Borrow vs Return",
+      "type": "timeseries",
+      "id": 11,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 15,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "rate(meltica_pool_objects_borrowed{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"}[1m])",
+          "refId": "A",
+          "legendFormat": "Borrowed {{pool_name}}"
+        },
+        {
+          "expr": "rate(meltica_pool_objects_active{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"}[1m])",
+          "refId": "B",
+          "legendFormat": "Active \u0394 {{pool_name}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        }
+      }
+    },
+    {
+      "title": "Borrow Latency",
+      "type": "row",
+      "id": 12,
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 23,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "title": "Borrow Duration Quantiles",
+      "type": "timeseries",
+      "id": 13,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le, pool_name, object_type) (rate(meltica_pool_borrow_duration_bucket{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"}[5m])))",
+          "refId": "P50",
+          "legendFormat": "p50 {{pool_name}}"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, pool_name, object_type) (rate(meltica_pool_borrow_duration_bucket{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"}[5m])))",
+          "refId": "P95",
+          "legendFormat": "p95 {{pool_name}}"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, pool_name, object_type) (rate(meltica_pool_borrow_duration_bucket{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"}[5m])))",
+          "refId": "P99",
+          "legendFormat": "p99 {{pool_name}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 0
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "max"
+          ]
+        }
+      }
+    },
+    {
+      "title": "Borrow Duration Histogram",
+      "type": "timeseries",
+      "id": 14,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "sum by (le) (rate(meltica_pool_borrow_duration_bucket{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"}[5m]))",
+          "refId": "A",
+          "format": "heatmap",
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "title": "Summary",
+      "type": "row",
+      "id": 15,
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 32,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "title": "Pool Summary",
+      "type": "table",
+      "id": 16,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 33,
+        "w": 24,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "meltica_pool_objects_active{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"}",
+          "refId": "Active",
+          "format": "table",
+          "instant": true
+        },
+        {
+          "expr": "meltica_pool_capacity{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"}",
+          "refId": "Capacity",
+          "format": "table",
+          "instant": true
+        },
+        {
+          "expr": "meltica_pool_available{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"}",
+          "refId": "Available",
+          "format": "table",
+          "instant": true
+        },
+        {
+          "expr": "sum by (pool_name, object_type) (rate(meltica_pool_objects_borrowed{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"}[5m]))",
+          "refId": "BorrowRate",
+          "format": "table",
+          "instant": true
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, pool_name, object_type) (rate(meltica_pool_borrow_duration_bucket{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"}[5m])))",
+          "refId": "Latency99",
+          "format": "table",
+          "instant": true
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "instance": true,
+              "job": true
+            },
+            "indexByName": {
+              "pool_name": 0,
+              "object_type": 1,
+              "Value #Active": 2,
+              "Value #Capacity": 3,
+              "Value #Available": 4,
+              "Value #BorrowRate": 5,
+              "Value #Latency99": 6
+            },
+            "renameByName": {
+              "pool_name": "Pool",
+              "object_type": "Object",
+              "Value #Active": "Active",
+              "Value #Capacity": "Capacity",
+              "Value #Available": "Available",
+              "Value #BorrowRate": "Borrow Rate",
+              "Value #Latency99": "Borrow p99"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "displayMode": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Borrow Rate"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "ops"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Borrow p99"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "ms"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Active"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Capacity"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Available"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true
+      }
     }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "DS_PROMETHEUS",
+        "type": "datasource",
+        "label": "Datasource",
+        "query": "prometheus",
+        "hide": 0,
+        "includeAll": false,
+        "multi": false,
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "current": {}
+      },
+      {
+        "name": "environment",
+        "type": "query",
+        "label": "Environment",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "query": "label_values(meltica_pool_objects_active, environment)",
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "refresh": 2,
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "pool_name",
+        "type": "query",
+        "label": "Pool",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "query": "label_values(meltica_pool_objects_active{environment=~\"$environment\"}, pool_name)",
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "refresh": 2,
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "object_type",
+        "type": "query",
+        "label": "Object Type",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "query": "label_values(meltica_pool_objects_active{environment=~\"$environment\", pool_name=~\"$pool_name\"}, object_type)",
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "refresh": 2,
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        }
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
   }
+}

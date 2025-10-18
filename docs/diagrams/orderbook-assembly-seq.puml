@@ -17,6 +17,16 @@ Provider-Agnostic Pattern:
 - Sequence validation: first_seq, final_seq
 end note
 
+note over WS, Disp
+Telemetry instrumentation:
+- meltica_orderbook_gap_detected
+- meltica_orderbook_update_stale
+- meltica_orderbook_snapshot_applied
+- meltica_orderbook_buffer_size
+- meltica_orderbook_updates_replayed
+- meltica_orderbook_coldstart_duration_seconds
+end note
+
 == Phase 1: Cold Start (Initial Snapshot) ==
 
 note over BA
@@ -27,6 +37,9 @@ end note
 WS -> Parser : WebSocket update
 Parser -> BA : BookUpdate{symbol=BTC-USDT, first_seq=1001, final_seq=1003}
 BA -> BA : Buffer [1001,1003] (no snapshot yet)
+note right of BA
+  Telemetry: meltica_orderbook_buffer_size gauge reflects buffered delta count
+end note
 
 WS -> Parser : WebSocket update
 Parser -> BA : BookUpdate{symbol=BTC-USDT, first_seq=1004, final_seq=1006}
@@ -41,6 +54,12 @@ BA -> BA : Replay buffered [1001,1003] -> seq=1003
 BA -> BA : Replay buffered [1004,1006] -> seq=1006
 BA -> BA : Clear buffer, set ready=true
 BA -> Disp : BookSnapshot{lastSequence=1006}
+note over BA
+  Telemetry updates:
+  - meltica_orderbook_snapshot_applied += 1
+  - meltica_orderbook_updates_replayed increments during buffer replay
+  - meltica_orderbook_coldstart_duration_seconds observes cold start latency
+end note
 
 == Phase 2: Normal Operation ==
 
@@ -53,6 +72,9 @@ WS -> Parser : WebSocket update
 Parser -> BA : BookUpdate{symbol=BTC-USDT, first_seq=1007, final_seq=1007}
 alt final_seq <= current seq (stale)
   BA -> BA : Ignore stale event
+  note right
+    Telemetry: meltica_orderbook_update_stale += 1
+  end note
 else first_seq == seq+1 (contiguous)
   BA -> BA : Apply update -> seq=1007
   BA -> Disp : BookSnapshot{lastSequence=1007}
@@ -70,6 +92,11 @@ end note
 BA -> BA : Gap detected! Buffer this update first
 BA -> BA : Append [1009,1009] to buffer
 BA -> BA : Clear book, set ready=false
+note over BA
+  Telemetry updates:
+  - meltica_orderbook_gap_detected += 1
+  - meltica_orderbook_buffer_size gauge tracks queued updates during recovery
+end note
 note over BA
   CRITICAL: Update 1009 is preserved in buffer,
   will be replayed when new snapshot arrives
@@ -100,6 +127,9 @@ loop Every N seconds (e.g., 30s - configurable per provider)
     note right
       Gap recovery: Fresh snapshot + replay
       ensures continuity after disruption
+    end note
+    note over BA
+      Telemetry: meltica_orderbook_updates_replayed & meltica_orderbook_buffer_size reflect recovery work
     end note
   end
 end

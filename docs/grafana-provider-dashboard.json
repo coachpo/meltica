@@ -1,0 +1,1572 @@
+{
+  "title": "Meltica Telemetry Overview",
+  "uid": "meltica-provider-health",
+  "timezone": "browser",
+  "editable": true,
+  "graphTooltip": 1,
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "refresh": "30s",
+  "templating": {
+    "list": [
+      {
+        "name": "DS_PROMETHEUS",
+        "type": "datasource",
+        "label": "Datasource",
+        "query": "prometheus",
+        "hide": 0,
+        "includeAll": false,
+        "multi": false,
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "current": {}
+      },
+      {
+        "name": "environment",
+        "type": "query",
+        "label": "Environment",
+        "query": "label_values(meltica_dispatcher_events_ingested, environment)",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "refresh": 2,
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "hide": 0,
+        "skipUrlSync": false
+      },
+      {
+        "name": "provider",
+        "type": "query",
+        "label": "Provider",
+        "query": "label_values(meltica_dispatcher_events_ingested{environment=~\"$environment\"}, provider)",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "refresh": 2,
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "hide": 0,
+        "skipUrlSync": false
+      },
+      {
+        "name": "event_type",
+        "type": "query",
+        "label": "Event Type",
+        "query": "label_values(meltica_dispatcher_events_ingested{environment=~\"$environment\", provider=~\"$provider\"}, event_type)",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "refresh": 2,
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "hide": 0,
+        "skipUrlSync": false
+      },
+      {
+        "name": "symbol",
+        "type": "query",
+        "label": "Symbol",
+        "query": "label_values(meltica_dispatcher_events_ingested{environment=~\"$environment\", provider=~\"$provider\", event_type=~\"$event_type\"}, symbol)",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "refresh": 2,
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "hide": 0,
+        "skipUrlSync": false
+      },
+      {
+        "name": "pool_name",
+        "type": "query",
+        "label": "Pool",
+        "query": "label_values(meltica_pool_capacity{environment=~\"$environment\"}, pool_name)",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "refresh": 2,
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "hide": 0,
+        "skipUrlSync": false
+      }
+    ]
+  },
+  "panels": [
+    {
+      "title": "Overview",
+      "type": "row",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false
+    },
+    {
+      "title": "Ingestion Rate (1m)",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(meltica_dispatcher_events_ingested{environment=~\"$environment\", provider=~\"$provider\", event_type=~\"$event_type\", symbol=~\"$symbol\"}[$__rate_interval]))",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "decimals": 2
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Drop Rate (1m)",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 1,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(meltica_dispatcher_events_dropped{environment=~\"$environment\", provider=~\"$provider\", event_type=~\"$event_type\", symbol=~\"$symbol\"}[$__rate_interval]))",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": 0,
+                "color": "green"
+              },
+              {
+                "value": 0.1,
+                "color": "yellow"
+              },
+              {
+                "value": 1,
+                "color": "red"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Duplicate Rate (1m)",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 1,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(meltica_dispatcher_events_duplicate{environment=~\"$environment\", provider=~\"$provider\", event_type=~\"$event_type\", symbol=~\"$symbol\"}[$__rate_interval]))",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": 0,
+                "color": "green"
+              },
+              {
+                "value": 0.05,
+                "color": "yellow"
+              },
+              {
+                "value": 0.5,
+                "color": "red"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Published Rate (1m)",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 1,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(meltica_databus_events_published{environment=~\"$environment\", provider=~\"$provider\", event_type=~\"$event_type\", symbol=~\"$symbol\"}[$__rate_interval]))",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "decimals": 2
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Orderbook Signals",
+      "type": "row",
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false
+    },
+    {
+      "title": "Gap Rate (1m)",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 6,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(meltica_orderbook_gap_detected{environment=~\"$environment\", provider=~\"$provider\", event_type=~\"$event_type\", symbol=~\"$symbol\"}[$__rate_interval]))",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": 0,
+                "color": "green"
+              },
+              {
+                "value": 0.01,
+                "color": "yellow"
+              },
+              {
+                "value": 0.1,
+                "color": "red"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Stale Update Rate (1m)",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 6,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(meltica_orderbook_update_stale{environment=~\"$environment\", provider=~\"$provider\", event_type=~\"$event_type\", symbol=~\"$symbol\"}[$__rate_interval]))",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": 0,
+                "color": "green"
+              },
+              {
+                "value": 0.01,
+                "color": "yellow"
+              },
+              {
+                "value": 0.1,
+                "color": "red"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Snapshots Applied (1m)",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 6,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(meltica_orderbook_snapshot_applied{environment=~\"$environment\", provider=~\"$provider\", event_type=~\"$event_type\", symbol=~\"$symbol\"}[$__rate_interval]))",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "decimals": 2
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Buffered Events Avg",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 6,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "expr": "avg(avg_over_time(meltica_dispatcher_events_buffered{environment=~\"$environment\", provider=~\"$provider\", event_type=~\"$event_type\", symbol=~\"$symbol\"}[$__rate_interval]))",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": 0,
+                "color": "green"
+              },
+              {
+                "value": 100,
+                "color": "yellow"
+              },
+              {
+                "value": 500,
+                "color": "red"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Dispatcher Flow",
+      "type": "row",
+      "gridPos": {
+        "x": 0,
+        "y": 10,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false
+    },
+    {
+      "title": "Ingested vs Dropped by Provider",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 11,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "sum by (provider) (rate(meltica_dispatcher_events_ingested{environment=~\"$environment\", provider=~\"$provider\", event_type=~\"$event_type\", symbol=~\"$symbol\"}[$__rate_interval]))",
+          "refId": "A",
+          "legendFormat": "Ingested - {{provider}}"
+        },
+        {
+          "expr": "sum by (provider) (rate(meltica_dispatcher_events_dropped{environment=~\"$environment\", provider=~\"$provider\", event_type=~\"$event_type\", symbol=~\"$symbol\"}[$__rate_interval]))",
+          "refId": "B",
+          "legendFormat": "Dropped - {{provider}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 15
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "B"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        }
+      }
+    },
+    {
+      "title": "Drop Rate by Reason",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 11,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "sum by (reason) (rate(meltica_dispatcher_events_dropped{environment=~\"$environment\", provider=~\"$provider\", event_type=~\"$event_type\", symbol=~\"$symbol\"}[$__rate_interval]))",
+          "refId": "A",
+          "legendFormat": "{{reason}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 70
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "sum",
+            "max"
+          ]
+        }
+      }
+    },
+    {
+      "title": "Latency & Buffering",
+      "type": "row",
+      "gridPos": {
+        "x": 0,
+        "y": 19,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false
+    },
+    {
+      "title": "Processing Latency Quantiles",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 20,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(meltica_dispatcher_processing_duration_bucket{environment=~\"$environment\"}[$__rate_interval])))",
+          "refId": "P50",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(meltica_dispatcher_processing_duration_bucket{environment=~\"$environment\"}[$__rate_interval])))",
+          "refId": "P95",
+          "legendFormat": "p95"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(meltica_dispatcher_processing_duration_bucket{environment=~\"$environment\"}[$__rate_interval])))",
+          "refId": "P99",
+          "legendFormat": "p99"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "max"
+          ]
+        }
+      }
+    },
+    {
+      "title": "Buffered Events by Stream",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 20,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "avg_over_time(meltica_dispatcher_events_buffered{environment=~\"$environment\", provider=~\"$provider\", event_type=~\"$event_type\", symbol=~\"$symbol\"}[$__rate_interval])",
+          "refId": "A",
+          "legendFormat": "{{provider}} - {{event_type}} - {{symbol}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 20
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "last",
+            "max"
+          ]
+        }
+      }
+    },
+    {
+      "title": "Duplicate Events by Stream",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 20,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "sum by (provider, event_type, symbol) (rate(meltica_dispatcher_events_duplicate{environment=~\"$environment\", provider=~\"$provider\", event_type=~\"$event_type\", symbol=~\"$symbol\"}[$__rate_interval]))",
+          "refId": "A",
+          "legendFormat": "{{provider}} - {{event_type}} - {{symbol}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        }
+      }
+    },
+    {
+      "title": "Databus",
+      "type": "row",
+      "gridPos": {
+        "x": 0,
+        "y": 28,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false
+    },
+    {
+      "title": "Events Published by Provider",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 29,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "sum by (provider) (rate(meltica_databus_events_published{environment=~\"$environment\", provider=~\"$provider\", event_type=~\"$event_type\", symbol=~\"$symbol\"}[$__rate_interval]))",
+          "refId": "A",
+          "legendFormat": "{{provider}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        }
+      }
+    },
+    {
+      "title": "Active Subscribers by Event Type",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 29,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "avg by (event_type) (meltica_databus_subscribers{environment=~\"$environment\", event_type=~\"$event_type\"})",
+          "refId": "A",
+          "legendFormat": "{{event_type}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "last",
+            "max"
+          ]
+        }
+      }
+    },
+    {
+      "title": "Fanout Size Quantiles",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 29,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum by (le, event_type) (rate(meltica_databus_fanout_size_bucket{environment=~\"$environment\", event_type=~\"$event_type\"}[$__rate_interval])))",
+          "refId": "P50",
+          "legendFormat": "p50 {{event_type}}"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, event_type) (rate(meltica_databus_fanout_size_bucket{environment=~\"$environment\", event_type=~\"$event_type\"}[$__rate_interval])))",
+          "refId": "P95",
+          "legendFormat": "p95 {{event_type}}"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, event_type) (rate(meltica_databus_fanout_size_bucket{environment=~\"$environment\", event_type=~\"$event_type\"}[$__rate_interval])))",
+          "refId": "P99",
+          "legendFormat": "p99 {{event_type}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "max"
+          ]
+        }
+      }
+    },
+    {
+      "title": "Orderbook Depth",
+      "type": "row",
+      "gridPos": {
+        "x": 0,
+        "y": 37,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false
+    },
+    {
+      "title": "Orderbook Buffer Size by Symbol",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 38,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "avg by (provider, symbol) (meltica_orderbook_buffer_size{environment=~\"$environment\", provider=~\"$provider\", event_type=~\"$event_type\", symbol=~\"$symbol\"})",
+          "refId": "A",
+          "legendFormat": "{{provider}} - {{symbol}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 20
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "last",
+            "max"
+          ]
+        }
+      }
+    },
+    {
+      "title": "Orderbook Cold Start Duration",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 38,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, provider, symbol) (rate(meltica_orderbook_coldstart_duration_bucket{environment=~\"$environment\", provider=~\"$provider\", event_type=~\"$event_type\", symbol=~\"$symbol\"}[$__rate_interval])))",
+          "refId": "P95",
+          "legendFormat": "p95 {{provider}} - {{symbol}}"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, provider, symbol) (rate(meltica_orderbook_coldstart_duration_bucket{environment=~\"$environment\", provider=~\"$provider\", event_type=~\"$event_type\", symbol=~\"$symbol\"}[$__rate_interval])))",
+          "refId": "P99",
+          "legendFormat": "p99 {{provider}} - {{symbol}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "max"
+          ]
+        }
+      }
+    },
+    {
+      "title": "Orderbook Quality",
+      "type": "row",
+      "gridPos": {
+        "x": 0,
+        "y": 46,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false
+    },
+    {
+      "title": "Gap Events by Symbol",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 47,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "sum by (provider, symbol) (rate(meltica_orderbook_gap_detected{environment=~\"$environment\", provider=~\"$provider\", event_type=~\"$event_type\", symbol=~\"$symbol\"}[$__rate_interval]))",
+          "refId": "A",
+          "legendFormat": "{{provider}} - {{symbol}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "sum",
+            "max"
+          ]
+        }
+      }
+    },
+    {
+      "title": "Stale Updates by Symbol",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 47,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "sum by (provider, symbol) (rate(meltica_orderbook_update_stale{environment=~\"$environment\", provider=~\"$provider\", event_type=~\"$event_type\", symbol=~\"$symbol\"}[$__rate_interval]))",
+          "refId": "A",
+          "legendFormat": "{{provider}} - {{symbol}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "sum",
+            "max"
+          ]
+        }
+      }
+    },
+    {
+      "title": "Pools",
+      "type": "row",
+      "gridPos": {
+        "x": 0,
+        "y": 55,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false
+    },
+    {
+      "title": "Pool Utilization",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 56,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "100 * sum by (pool_name) (meltica_pool_objects_active{environment=~\"$environment\", pool_name=~\"$pool_name\"}) / sum by (pool_name) (meltica_pool_capacity{environment=~\"$environment\", pool_name=~\"$pool_name\"})",
+          "refId": "A",
+          "legendFormat": "{{pool_name}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          },
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "last",
+            "max"
+          ]
+        }
+      }
+    },
+    {
+      "title": "Pool Borrow Duration",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 56,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum by (le, pool_name) (rate(meltica_pool_borrow_duration_bucket{environment=~\"$environment\", pool_name=~\"$pool_name\"}[$__rate_interval])))",
+          "refId": "P50",
+          "legendFormat": "p50 {{pool_name}}"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, pool_name) (rate(meltica_pool_borrow_duration_bucket{environment=~\"$environment\", pool_name=~\"$pool_name\"}[$__rate_interval])))",
+          "refId": "P95",
+          "legendFormat": "p95 {{pool_name}}"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, pool_name) (rate(meltica_pool_borrow_duration_bucket{environment=~\"$environment\", pool_name=~\"$pool_name\"}[$__rate_interval])))",
+          "refId": "P99",
+          "legendFormat": "p99 {{pool_name}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "max"
+          ]
+        }
+      }
+    },
+    {
+      "title": "Summary",
+      "type": "row",
+      "gridPos": {
+        "x": 0,
+        "y": 64,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false
+    },
+    {
+      "title": "Provider Health Summary",
+      "type": "table",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 65,
+        "w": 24,
+        "h": 10
+      },
+      "targets": [
+        {
+          "expr": "sum by (provider, event_type, symbol) (rate(meltica_dispatcher_events_ingested{environment=~\"$environment\", provider=~\"$provider\", event_type=~\"$event_type\", symbol=~\"$symbol\"}[5m]))",
+          "refId": "Ingested",
+          "format": "table",
+          "instant": true
+        },
+        {
+          "expr": "sum by (provider, event_type, symbol) (rate(meltica_dispatcher_events_dropped{environment=~\"$environment\", provider=~\"$provider\", event_type=~\"$event_type\", symbol=~\"$symbol\"}[5m]))",
+          "refId": "Dropped",
+          "format": "table",
+          "instant": true
+        },
+        {
+          "expr": "sum by (provider, event_type, symbol) (rate(meltica_dispatcher_events_duplicate{environment=~\"$environment\", provider=~\"$provider\", event_type=~\"$event_type\", symbol=~\"$symbol\"}[5m]))",
+          "refId": "Duplicate",
+          "format": "table",
+          "instant": true
+        },
+        {
+          "expr": "avg by (provider, event_type, symbol) (meltica_dispatcher_events_buffered{environment=~\"$environment\", provider=~\"$provider\", event_type=~\"$event_type\", symbol=~\"$symbol\"})",
+          "refId": "Buffered",
+          "format": "table",
+          "instant": true
+        },
+        {
+          "expr": "sum by (provider, event_type, symbol) (rate(meltica_databus_events_published{environment=~\"$environment\", provider=~\"$provider\", event_type=~\"$event_type\", symbol=~\"$symbol\"}[5m]))",
+          "refId": "Published",
+          "format": "table",
+          "instant": true
+        },
+        {
+          "expr": "sum by (provider, event_type, symbol) (rate(meltica_orderbook_gap_detected{environment=~\"$environment\", provider=~\"$provider\", event_type=~\"$event_type\", symbol=~\"$symbol\"}[5m]))",
+          "refId": "Gaps",
+          "format": "table",
+          "instant": true
+        },
+        {
+          "expr": "sum by (provider, event_type, symbol) (rate(meltica_orderbook_update_stale{environment=~\"$environment\", provider=~\"$provider\", event_type=~\"$event_type\", symbol=~\"$symbol\"}[5m]))",
+          "refId": "Stale",
+          "format": "table",
+          "instant": true
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "instance": true,
+              "job": true,
+              "service": true,
+              "exported_job": true
+            },
+            "renameByName": {
+              "provider": "Provider",
+              "event_type": "Event Type",
+              "symbol": "Symbol",
+              "Value #Ingested": "Ingestion Rate",
+              "Value #Dropped": "Drop Rate",
+              "Value #Duplicate": "Duplicate Rate",
+              "Value #Buffered": "Buffered Avg",
+              "Value #Published": "Published Rate",
+              "Value #Gaps": "Gap Rate",
+              "Value #Stale": "Stale Rate"
+            },
+            "indexByName": {
+              "Provider": 0,
+              "Event Type": 1,
+              "Symbol": 2,
+              "Ingestion Rate": 3,
+              "Drop Rate": 4,
+              "Duplicate Rate": 5,
+              "Buffered Avg": 6,
+              "Published Rate": 7,
+              "Gap Rate": 8,
+              "Stale Rate": 9
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Ingestion Rate"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "ops"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Drop Rate"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "ops"
+              },
+              {
+                "id": "decimals",
+                "value": 3
+              },
+              {
+                "id": "custom.displayMode",
+                "value": "color-background"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "value": 0,
+                      "color": "green"
+                    },
+                    {
+                      "value": 0.1,
+                      "color": "yellow"
+                    },
+                    {
+                      "value": 1,
+                      "color": "red"
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Duplicate Rate"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "ops"
+              },
+              {
+                "id": "decimals",
+                "value": 3
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Buffered Avg"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Published Rate"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "ops"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Gap Rate"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "ops"
+              },
+              {
+                "id": "decimals",
+                "value": 3
+              },
+              {
+                "id": "custom.displayMode",
+                "value": "color-background"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "value": 0,
+                      "color": "green"
+                    },
+                    {
+                      "value": 0.01,
+                      "color": "yellow"
+                    },
+                    {
+                      "value": 0.1,
+                      "color": "red"
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Stale Rate"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "ops"
+              },
+              {
+                "id": "decimals",
+                "value": 3
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "annotations": {
+    "list": [
+      {
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "enable": true,
+        "name": "Deployments",
+        "iconColor": "blue",
+        "tags": [
+          "deployment"
+        ]
+      }
+    ]
+  }
+}

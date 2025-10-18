@@ -323,7 +323,9 @@ services:
 ### Grafana Dashboards (Recommended)
 
 **Pre-configured dashboards** in `docs/`:
-- `grafana-pool-dashboard.json` - Pool metrics and utilization
+- `grafana-telemetry-overview-dashboard.json` - End-to-end provider health, dispatcher flow, databus throughput, orderbook integrity, and pool utilization
+- `grafana-pool-dashboard.json` - Pool capacity, utilization, borrow/return rates, and latency distribution
+- `grafana-orderbook-dashboard.json` - Orderbook assembly health with gap detection, buffering, cold-start recovery, and provider WebSocket metrics
 
 **Access Grafana**:
 1. Open http://localhost:3000
@@ -335,7 +337,8 @@ services:
 **Features** (Grafana 11.2+):
 - Exemplar visualization - click histogram → see trace
 - Trace correlation - link from metric to Jaeger
-- Advanced variables - environment, symbol, provider filters
+- Advanced variables - environment, symbol, provider, and pool filters
+- Provider health summary table with selectable event types and symbols
 
 ### Traces in Jaeger
 
