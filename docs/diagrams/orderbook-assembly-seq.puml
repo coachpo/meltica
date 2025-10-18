@@ -1,5 +1,5 @@
 @startuml
-title Provider-side Orderbook Assembly with Checksum Verification
+title Provider-side Orderbook Assembly (Binance-aligned)
 
 box "Combination (Provider-side components)" #LightBlue
   participant "WS (coder/websocket)" as WS
@@ -11,24 +11,33 @@ end box
 participant "Dispatcher" as Disp
 
 WS -> Parser : Raw frame
-Parser -> BA : BookUpdatePayload{symbol=BTC-USDT, seq=1001, checksum}
-BA -> BA : Apply update; verify checksum
-
-WS -> Parser : Raw frame
-Parser -> BA : BookUpdatePayload{symbol=BTC-USDT, seq=1003, checksum}
-BA -> BA : Buffer seq=1003
+Parser -> BA : BookUpdate{symbol=BNBBTC, U=1001, u=1003}
+BA -> BA : Buffer [1001,1003]
 
 REST -> Parser : Snapshot response
-Parser -> BA : BookSnapshotPayload{symbol=BTC-USDT, seq=1000, checksum}
-BA -> BA : Apply snapshot; verify checksum
-BA -> BA : Apply buffered seq=1003; verify final checksum
+Parser -> BA : BookSnapshot{symbol=BNBBTC, lastUpdateId=1000}
+BA -> BA : Discard buffered events with u <= 1000
+BA -> BA : Ensure first buffered has U <= 1001 <= u
+BA -> BA : Set book to snapshot (updateId=1000)
+BA -> BA : Apply buffered [1001,1003] -> updateId=1003
+BA -> BA : (optional) Verify checksum; if fail -> restart
 
 WS -> Parser : Raw frame
-Parser -> BA : BookUpdatePayload{symbol=BTC-USDT, seq=1002, checksum}
-BA -> BA : Apply seq=1002; verify checksum
+Parser -> BA : BookUpdate{symbol=BNBBTC, U=1002, u=1002}
+alt u < current updateId (1002 < 1003)
+  BA -> BA : Ignore event (late/out-of-order)
+end alt
 
-alt Checksum verification fails
-  BA -> BA : Reject event; emit error
+WS -> Parser : Raw frame
+Parser -> BA : BookUpdate{symbol=BNBBTC, U=1004, u=1006}
+alt U > updateId+1 (1004 > 1003+1)
+  BA -> BA : Restart (snapshot + rebuffer)
+else
+  BA -> BA : Apply -> updateId=1006
+end
+
+alt (optional) Checksum verification fails
+  BA -> BA : Discard local book; restart from snapshot
 end
 
 BA -> Disp : Canonical BookUpdate/BookSnapshot events
