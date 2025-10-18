@@ -2,6 +2,21 @@
 
 This guide shows how to visualize the pool metrics in Grafana with example queries and panel configurations.
 
+## Metric Labels
+
+All pool metrics include these labels for filtering:
+- `environment`: e.g., "development", "production"
+- `service`: "meltica"
+- `pool_name`: e.g., "Event", "OrderRequest", "ParseFrame", "WsFrame"
+- `object_type`: e.g., "*schema.Event", "*schema.OrderRequest", etc.
+- `instance`: OpenTelemetry collector instance
+- `job`: Prometheus job name
+
+Example metric:
+```
+{__name__="pool_available", environment="development", exported_job="meltica", instance="otel-collector:8889", job="otel-collector", object_type="*schema.Event", pool_name="Event", service="meltica"}
+```
+
 ## Prerequisites
 
 - Grafana with Prometheus data source configured
@@ -37,7 +52,7 @@ Recommended dashboard structure:
 
 **Query:**
 ```promql
-sum(pool_objects_active)
+sum(pool_objects_active{environment=~"$environment"})
 ```
 
 **Configuration:**
@@ -55,7 +70,7 @@ sum(pool_objects_active)
 
 **Query:**
 ```promql
-pool_utilization
+pool_utilization{environment=~"$environment"}
 ```
 
 **Configuration:**
@@ -71,7 +86,7 @@ pool_utilization
 
 **Alternative - Bar Gauge (Better for Multiple Pools):**
 ```promql
-pool_utilization
+pool_utilization{environment=~"$environment"}
 ```
 - Visualization: Bar gauge
 - Display mode: LCD
@@ -83,7 +98,7 @@ pool_utilization
 
 **Query:**
 ```promql
-pool_objects_active
+pool_objects_active{environment=~"$environment"}
 ```
 
 **Configuration:**
@@ -97,7 +112,7 @@ pool_objects_active
 
 **Add reference line for capacity:**
 ```promql
-pool_capacity
+pool_capacity{environment=~"$environment"}
 ```
 - Display: Points
 - Line style: Dashed
@@ -108,7 +123,7 @@ pool_capacity
 
 **Query (rate per second):**
 ```promql
-rate(pool_objects_borrowed[1m])
+rate(pool_objects_borrowed{environment=~"$environment"}[1m])
 ```
 
 **Configuration:**
@@ -138,10 +153,10 @@ histogram_quantile(0.99,
 **Add p95 and p50 for comparison:**
 ```promql
 # p95
-histogram_quantile(0.95, rate(pool_borrow_duration_bucket[5m]))
+histogram_quantile(0.95, rate(pool_borrow_duration_bucket{environment=~"$environment"}[5m]))
 
 # p50 (median)
-histogram_quantile(0.50, rate(pool_borrow_duration_bucket[5m]))
+histogram_quantile(0.50, rate(pool_borrow_duration_bucket{environment=~"$environment"}[5m]))
 ```
 
 ---
@@ -150,7 +165,7 @@ histogram_quantile(0.50, rate(pool_borrow_duration_bucket[5m]))
 
 **Query:**
 ```promql
-pool_available
+pool_available{environment=~"$environment"}
 ```
 
 **Configuration:**
@@ -168,27 +183,27 @@ pool_available
 
 A. Current state:
 ```promql
-pool_objects_active
+pool_objects_active{environment=~"$environment"}
 ```
 
 B. Capacity:
 ```promql
-pool_capacity
+pool_capacity{environment=~"$environment"}
 ```
 
 C. Available:
 ```promql
-pool_available
+pool_available{environment=~"$environment"}
 ```
 
 D. Utilization:
 ```promql
-pool_utilization
+pool_utilization{environment=~"$environment"}
 ```
 
 E. Borrow rate:
 ```promql
-rate(pool_objects_borrowed[5m])
+rate(pool_objects_borrowed{environment=~"$environment"}[5m])
 ```
 
 **Configuration:**
@@ -212,35 +227,35 @@ rate(pool_objects_borrowed[5m])
 ### Pool Exhaustion Detection
 ```promql
 # Pools with no available objects
-pool_available == 0
+pool_available{environment=~"$environment"} == 0
 ```
 
 ### Type-Level Aggregation
 ```promql
 # Total active objects by type across all pools
-sum by (object_type) (pool_objects_active)
+sum by (object_type) (pool_objects_active{environment=~"$environment"})
 ```
 
 ### Return Rate vs Borrow Rate
 ```promql
 # Borrow rate
-rate(pool_objects_borrowed[1m])
+rate(pool_objects_borrowed{environment=~"$environment"}[1m])
 
 # Return rate
-rate(pool_objects_returned[1m])
+rate(pool_objects_returned{environment=~"$environment"}[1m])
 ```
 
 ### Pool Health Score
 ```promql
 # Healthy if utilization < 0.8 AND available > 10
-(pool_utilization < 0.8) * (pool_available > 10)
+(pool_utilization{environment=~"$environment"} < 0.8) * (pool_available{environment=~"$environment"} > 10)
 ```
 
 ### Borrow Wait Time Estimation
 ```promql
 # Average borrow duration in last 5 minutes
-rate(pool_borrow_duration_sum[5m]) / 
-rate(pool_borrow_duration_count[5m])
+rate(pool_borrow_duration_sum{environment=~"$environment"}[5m]) / 
+rate(pool_borrow_duration_count{environment=~"$environment"}[5m])
 ```
 
 ---
@@ -271,7 +286,7 @@ Available: {{pool_available}}
 
 **Query:**
 ```promql
-pool_available == 0
+pool_available{environment=~"$environment"} == 0
 ```
 
 **Alert Condition:**
@@ -315,7 +330,7 @@ This may indicate pool contention or capacity issues.
 **Query:**
 ```promql
 # Active objects not decreasing for 10 minutes
-delta(pool_objects_active[10m]) > 0
+delta(pool_objects_active{environment=~"$environment"}[10m]) > 0
 ```
 
 **Alert Condition:**
@@ -336,11 +351,20 @@ Current active: {{pool_objects_active}}
 
 Add these variables to your dashboard for interactive filtering:
 
+### Environment Variable
+```
+Name: environment
+Type: Query
+Query: label_values(pool_utilization, environment)
+Multi-value: true
+Include All option: true
+```
+
 ### Pool Name Variable
 ```
 Name: pool_name
 Type: Query
-Query: label_values(pool_utilization, pool_name)
+Query: label_values(pool_utilization{environment=~"$environment"}, pool_name)
 Multi-value: true
 Include All option: true
 ```
@@ -349,14 +373,14 @@ Include All option: true
 ```
 Name: object_type
 Type: Query
-Query: label_values(pool_utilization, object_type)
+Query: label_values(pool_utilization{environment=~"$environment"}, object_type)
 Multi-value: true
 Include All option: true
 ```
 
 **Use in queries:**
 ```promql
-pool_utilization{pool_name=~"$pool_name", object_type=~"$object_type"}
+pool_utilization{environment=~"$environment", pool_name=~"$pool_name", object_type=~"$object_type"}
 ```
 
 ---
@@ -366,19 +390,19 @@ pool_utilization{pool_name=~"$pool_name", object_type=~"$object_type"}
 ### Row 1: Key Metrics
 ```promql
 # Stat panels side by side
-1. sum(pool_objects_active)           # Total Active
-2. sum(pool_capacity)                  # Total Capacity
-3. avg(pool_utilization)               # Avg Utilization
-4. sum(rate(pool_objects_borrowed[1m])) # Borrow Rate
+1. sum(pool_objects_active{environment=~"$environment"})           # Total Active
+2. sum(pool_capacity{environment=~"$environment"})                  # Total Capacity
+3. avg(pool_utilization{environment=~"$environment"})               # Avg Utilization
+4. sum(rate(pool_objects_borrowed{environment=~"$environment"}[1m])) # Borrow Rate
 ```
 
-### Row 2: CanonicalEvent Specific (Most Critical)
+### Row 2: Event Specific (Most Critical)
 ```promql
 # Focus on the largest pool
-pool_objects_active{pool_name="CanonicalEvent"}
-pool_available{pool_name="CanonicalEvent"}
-pool_utilization{pool_name="CanonicalEvent"}
-rate(pool_objects_borrowed{pool_name="CanonicalEvent"}[1m])
+pool_objects_active{environment=~"$environment", pool_name="Event"}
+pool_available{environment=~"$environment", pool_name="Event"}
+pool_utilization{environment=~"$environment", pool_name="Event"}
+rate(pool_objects_borrowed{environment=~"$environment", pool_name="Event"}[1m])
 ```
 
 ---
@@ -389,7 +413,7 @@ Copy this query into a new panel to get started:
 
 ```promql
 # All pools utilization with labels
-pool_utilization
+pool_utilization{environment=~"$environment"}
 ```
 
 Then configure:
@@ -402,7 +426,7 @@ Then configure:
 
 ## Pro Tips
 
-1. **Use Variables**: Make dashboard reusable with `$pool_name` and `$object_type` variables
+1. **Use Variables**: Make dashboard reusable with `$environment`, `$pool_name` and `$object_type` variables
 2. **Group Panels**: Use rows to organize by concern (Performance, Capacity, Errors)
 3. **Link Panels**: Click on a utilization gauge → jump to detailed time series
 4. **Time Range**: Default to "Last 1 hour" for real-time monitoring
@@ -419,7 +443,8 @@ Check:
 1. **Gateway telemetry enabled**: `OTEL_EXPORTER_OTLP_ENDPOINT` set?
 2. **Prometheus scraping**: Check `/metrics` endpoint
 3. **Metric names**: OpenTelemetry might convert to `pool_objects_active` (underscores)
-4. **Label matchers**: Use `{pool_name="CanonicalEvent"}` not `{pool.name="..."}`
+4. **Label matchers**: Use `{environment="development", pool_name="Event"}` not `{pool.name="..."}`
+5. **Service name**: Metrics should have `service="meltica"` label
 
 ### Empty Graphs?
 
