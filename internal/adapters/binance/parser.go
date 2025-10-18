@@ -448,7 +448,7 @@ type aggTrade struct {
 	EventType    string `json:"e"`
 	EventTime    int64  `json:"E"`
 	Symbol       string `json:"s"`
-	TradeID      uint64 `json:"t"`
+	TradeID      uint64 `json:"a"` // "a" is aggregate trade ID in Binance WebSocket
 	Price        string `json:"p"`
 	Quantity     string `json:"q"`
 	IsBuyerMaker bool   `json:"m"`
