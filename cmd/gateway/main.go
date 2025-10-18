@@ -64,23 +64,26 @@ func main() {
 	}
 	// Object pools for memory efficiency - avoid allocations on hot paths:
 	//
-	// WsFrame (5000 capacity):
+	// WsFrame (10000 capacity):
 	//   - Used by WebSocket parsers to receive raw frames from transport
 	//   - Shared across all exchanges (Binance, Coinbase, Kraken, etc.)
 	//   - Hot path: Every WebSocket message allocates/returns one frame
+	//   - Increased to 10K for Binance high-frequency streams (900+ msgs/sec)
 	//
-	// Event (10000 capacity):
+	// Event (20000 capacity):
 	//   - The canonical event objects sent through the system
 	//   - Highest capacity: Main message type flowing through all components
 	//   - Data flow: WsFrame → Parser → Event (direct conversion, no intermediate frames)
+	//   - Bus fanout clones events for each subscriber, requiring more pool capacity
+	//   - Increased to 20K for high fanout scenarios (multiple lambdas per symbol)
 	//
-	// OrderRequest (20 capacity):
+	// OrderRequest (5000 capacity):
 	//   - Order request objects for trading operations
 	//   - Lower capacity: Orders are less frequent than market data
 	//
-	// Increased pool sizes for high-frequency Binance streams (9 streams × 100+ msgs/sec = 900+ msgs/sec)
-	registerPool("WsFrame", 5000, func() interface{} { return new(schema.WsFrame) })
-	registerPool("Event", 10000, func() interface{} { return new(schema.Event) })
+	// Pool sizing accounts for: Binance 9 streams × 100+ msgs/sec + bus fanout cloning + buffering
+	registerPool("WsFrame", 10000, func() interface{} { return new(schema.WsFrame) })
+	registerPool("Event", 20000, func() interface{} { return new(schema.Event) })
 	registerPool("OrderRequest", 5000, func() interface{} { return new(schema.OrderRequest) })
 
 	var lifecycle conc.WaitGroup
@@ -529,20 +532,29 @@ func createMultipleProviders(ctx context.Context, providerTypes []string, poolMg
 	}
 
 	// Merge all event channels into one
-	mergedEvents := make(chan *schema.Event, 512)
+	// Large buffer to prevent backpressure: Binance sends 900+ msgs/sec (9 streams × 100+ msgs/sec)
+	// Must match or exceed provider event channel buffers (2048) to avoid blocking fan-in goroutines
+	mergedEvents := make(chan *schema.Event, 4096)
 	mergedErrors := make(chan error, 64)
 
 	var fanInWg conc.WaitGroup
 
 	// Fan-in events from all providers
-	for _, evtChan := range eventChannels {
+	for i, evtChan := range eventChannels {
 		evtChan := evtChan
+		provName := instances[i].name
 		fanInWg.Go(func() {
 			for evt := range evtChan {
 				select {
 				case mergedEvents <- evt:
 				case <-ctx.Done():
 					return
+				default:
+					// Emergency drop if buffer full (should be rare with 4096 buffer)
+					logger.Printf("fan-in %s: mergedEvents full, dropping event %s", provName, evt.EventID)
+					if poolMgr != nil {
+						poolMgr.ReturnEventInst(evt)
+					}
 				}
 			}
 		})
