@@ -1,44 +1,118 @@
 @startuml
-title Provider-side Orderbook Assembly (Binance-aligned)
+title Provider-side Orderbook Assembly (Generic Pattern with Buffering & Periodic Refresh)
 
-box "Combination (Provider-side components)" #LightBlue
-  participant "WS (coder/websocket)" as WS
-  participant "REST (snapshot)" as REST
+box "Provider Components" #LightBlue
+  participant "WebSocket Stream" as WS
+  participant "REST Snapshot API" as REST
   participant "Book Assembler" as BA
   participant "Parser" as Parser
 end box
 
 participant "Dispatcher" as Disp
 
-WS -> Parser : Raw frame
-Parser -> BA : BookUpdate{symbol=BNBBTC, U=1001, u=1003}
-BA -> BA : Buffer [1001,1003]
+note over WS, REST
+Provider-Agnostic Pattern:
+- WebSocket: Incremental updates with sequence numbers
+- REST: Periodic full snapshots
+- Sequence validation: first_seq, final_seq
+end note
 
-REST -> Parser : Snapshot response
-Parser -> BA : BookSnapshot{symbol=BNBBTC, lastUpdateId=1000}
-BA -> BA : Discard buffered events with u <= 1000
-BA -> BA : Ensure first buffered has U <= 1001 <= u
-BA -> BA : Set book to snapshot (updateId=1000)
-BA -> BA : Apply buffered [1001,1003] -> updateId=1003
-BA -> BA : (optional) Verify checksum; if fail -> restart
+== Phase 1: Cold Start (Initial Snapshot) ==
 
-WS -> Parser : Raw frame
-Parser -> BA : BookUpdate{symbol=BNBBTC, U=1002, u=1002}
-alt u < current updateId (1002 < 1003)
-  BA -> BA : Ignore event (late/out-of-order)
-end alt
+note over BA
+Cold Start: No snapshot received yet.
+All updates are buffered until snapshot arrives.
+end note
 
-WS -> Parser : Raw frame
-Parser -> BA : BookUpdate{symbol=BNBBTC, U=1004, u=1006}
-alt U > updateId+1 (1004 > 1003+1)
-  BA -> BA : Restart (snapshot + rebuffer)
-else
-  BA -> BA : Apply -> updateId=1006
+WS -> Parser : WebSocket update
+Parser -> BA : BookUpdate{symbol=BTC-USDT, first_seq=1001, final_seq=1003}
+BA -> BA : Buffer [1001,1003] (no snapshot yet)
+
+WS -> Parser : WebSocket update
+Parser -> BA : BookUpdate{symbol=BTC-USDT, first_seq=1004, final_seq=1006}
+BA -> BA : Buffer [1001,1003], [1004,1006]
+
+REST -> Parser : Initial snapshot fetch
+Parser -> BA : BookSnapshot{symbol=BTC-USDT, lastSequence=1000}
+BA -> BA : Set book to snapshot (seq=1000)
+BA -> BA : Discard buffered events with final_seq <= 1000
+BA -> BA : Sort remaining buffered updates by first_seq
+BA -> BA : Replay buffered [1001,1003] -> seq=1003
+BA -> BA : Replay buffered [1004,1006] -> seq=1006
+BA -> BA : Clear buffer, set ready=true
+BA -> Disp : BookSnapshot{lastSequence=1006}
+
+== Phase 2: Normal Operation ==
+
+note over BA
+Normal Operation: Snapshot received.
+Updates applied immediately, no buffering.
+end note
+
+WS -> Parser : WebSocket update
+Parser -> BA : BookUpdate{symbol=BTC-USDT, first_seq=1007, final_seq=1007}
+alt final_seq <= current seq (stale)
+  BA -> BA : Ignore stale event
+else first_seq == seq+1 (contiguous)
+  BA -> BA : Apply update -> seq=1007
+  BA -> Disp : BookSnapshot{lastSequence=1007}
 end
 
-alt (optional) Checksum verification fails
-  BA -> BA : Discard local book; restart from snapshot
+== Phase 3: Gap Detection & Recovery ==
+
+WS -> Parser : WebSocket update
+Parser -> BA : BookUpdate{symbol=BTC-USDT, first_seq=1009, final_seq=1009}
+note right
+  Gap detected: first_seq=1009 > seq+1=1008
+  Updates 1008 never arrived (network loss, etc.)
+end note
+
+BA -> BA : Gap detected! Buffer this update first
+BA -> BA : Append [1009,1009] to buffer
+BA -> BA : Clear book, set ready=false
+note over BA
+  CRITICAL: Update 1009 is preserved in buffer,
+  will be replayed when new snapshot arrives
+end note
+
+== Phase 4: Periodic Refresh (Provider-Configured Interval) ==
+
+loop Every N seconds (e.g., 30s - configurable per provider)
+  REST -> Parser : Scheduled snapshot fetch
+  Parser -> BA : BookSnapshot{symbol=BTC-USDT, lastSequence=1010}
+  
+  alt Book is in ready state (normal refresh)
+    BA -> BA : Reset book to fresh snapshot (seq=1010)
+    BA -> BA : No buffered updates (normal operation)
+    BA -> Disp : BookSnapshot{lastSequence=1010}
+    note right
+      Periodic refresh prevents:
+      - Memory growth from accumulated deltas
+      - Silent corruption accumulation
+      - Drift from rounding errors
+    end note
+  else Book is in cold start (recovering from gap)
+    BA -> BA : Set book to snapshot (seq=1010)
+    BA -> BA : Filter buffered updates (final_seq > 1010)
+    BA -> BA : Replay valid buffered updates
+    BA -> BA : Clear buffer, set ready=true
+    BA -> Disp : BookSnapshot{lastSequence=final}
+    note right
+      Gap recovery: Fresh snapshot + replay
+      ensures continuity after disruption
+    end note
+  end
 end
 
-BA -> Disp : Canonical BookUpdate/BookSnapshot events
+== Phase 5: Optional - Checksum Verification ==
+
+alt (Provider supports checksums)
+  BA -> BA : Verify orderbook checksum
+  alt Checksum mismatch
+    BA -> BA : Corruption detected!
+    BA -> BA : Clear book, set ready=false
+    BA -> BA : Wait for next periodic snapshot
+  end
+end
+
 @enduml
