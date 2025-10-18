@@ -179,7 +179,7 @@ func main() {
 			continue // Provider not active
 		}
 
-		lam := lambda.NewBaseLambda("", cfg, bus, controlBus, lambdaProvider, poolMgr, &strategies.Logging{Logger: logger})
+		lam := lambda.NewBaseLambda("", cfg, bus, controlBus, lambdaProvider, poolMgr, &strategies.NoOp{})
 
 		if lambdaErrs, err := lam.Start(ctx); err != nil {
 			logger.Fatalf("start lambda %s/%s: %v", cfg.Provider, cfg.Symbol, err)

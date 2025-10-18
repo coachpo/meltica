@@ -59,18 +59,20 @@ type WSProviderConfig struct {
 
 // WSProvider implements real WebSocket connection to Binance.
 type WSProvider struct {
-	cfg        WSProviderConfig
-	conn       *websocket.Conn
-	connMu     sync.RWMutex
-	streams    map[string]bool
-	streamsMu  sync.RWMutex
+	cfg         WSProviderConfig
+	conn        *websocket.Conn
+	connMu      sync.RWMutex
+	streams     map[string]bool
+	streamsMu   sync.RWMutex
 	rateLimiter *RateLimiter
-	logger     *log.Logger
+	logger      *log.Logger
+	pongMu      sync.Mutex
+	pongTimer   *time.Timer
 
 	ctx        context.Context
 	cancel     context.CancelFunc
 	reconnectC chan struct{}
-	
+
 	started        bool
 	startedMu      sync.Mutex
 	reconnectCount int
@@ -167,14 +169,18 @@ func (p *WSProvider) connect() error {
 
 	// Build combined stream URL
 	url := fmt.Sprintf("%s/stream", p.cfg.BaseURL)
-	
+
 	// Create context with timeout for dial
 	dialCtx, dialCancel := context.WithTimeout(p.ctx, 10*time.Second)
 	defer dialCancel()
 
 	// Dial with coder/websocket (first-class context support)
 	// Note: Binance doesn't use WebSocket compression, data comes uncompressed
-	conn, _, err := websocket.Dial(dialCtx, url, nil)
+	conn, _, err := websocket.Dial(dialCtx, url, &websocket.DialOptions{
+		OnPongReceived: func(ctx context.Context, payload []byte) {
+			p.resetPongTimer()
+		},
+	})
 	if err != nil {
 		return fmt.Errorf("dial failed: %w", err)
 	}
@@ -186,6 +192,7 @@ func (p *WSProvider) connect() error {
 	p.conn = conn
 	p.lastConnect = time.Now()
 	p.reconnectCount = 0
+	p.resetPongTimer()
 	p.logger.Printf("binance ws: connected to %s (10MB read limit)", url)
 
 	return nil
@@ -202,6 +209,7 @@ func (p *WSProvider) disconnect() {
 		p.conn = nil
 		p.logger.Println("binance ws: disconnected")
 	}
+	p.stopPongTimer()
 }
 
 // subscribeTo sends subscribe messages for the given topics.
@@ -288,6 +296,7 @@ func (p *WSProvider) pingLoop() {
 					p.triggerReconnect()
 				} else {
 					cancel()
+					p.resetPongTimer()
 				}
 			}
 		}
@@ -327,7 +336,7 @@ func (p *WSProvider) readLoop(frames chan<- []byte, errs chan<- error) {
 				p.logger.Println("binance ws: connection closed normally")
 				return
 			}
-			
+
 			// Check for context errors
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				select {
@@ -359,9 +368,47 @@ func (p *WSProvider) readLoop(frames chan<- []byte, errs chan<- error) {
 			default:
 				p.logger.Println("binance ws: frame channel full, dropping message")
 			}
+			p.resetPongTimer()
 		}
 		// Binary messages are ignored (we use JSON streams)
 	}
+}
+
+func (p *WSProvider) resetPongTimer() {
+	p.pongMu.Lock()
+	defer p.pongMu.Unlock()
+
+	if p.pongTimer == nil {
+		p.pongTimer = time.AfterFunc(pongTimeout, p.handlePongTimeout)
+		return
+	}
+	if !p.pongTimer.Stop() {
+		select {
+		case <-p.pongTimer.C:
+		default:
+		}
+	}
+	p.pongTimer.Reset(pongTimeout)
+}
+
+func (p *WSProvider) stopPongTimer() {
+	p.pongMu.Lock()
+	defer p.pongMu.Unlock()
+
+	if p.pongTimer != nil {
+		if !p.pongTimer.Stop() {
+			select {
+			case <-p.pongTimer.C:
+			default:
+			}
+		}
+		p.pongTimer = nil
+	}
+}
+
+func (p *WSProvider) handlePongTimeout() {
+	p.logger.Printf("binance ws: pong timeout after %v", pongTimeout)
+	p.triggerReconnect()
 }
 
 // reconnectLoop handles automatic reconnection.
@@ -387,7 +434,7 @@ func (p *WSProvider) reconnectLoop(topics []string) {
 					attribute.String("reason", "connection_lost")))
 			}
 
-			p.logger.Printf("binance ws: reconnecting (attempt %d/%d) after %v", 
+			p.logger.Printf("binance ws: reconnecting (attempt %d/%d) after %v",
 				p.reconnectCount, p.cfg.MaxReconnects, backoff)
 
 			time.Sleep(backoff)
