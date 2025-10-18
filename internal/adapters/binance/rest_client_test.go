@@ -3,6 +3,7 @@ package binance
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -10,21 +11,40 @@ import (
 )
 
 type mockFetcher struct {
+	mu   sync.Mutex
 	data []byte
 	err  error
 }
 
 func (m *mockFetcher) Fetch(_ context.Context, _ string) ([]byte, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	return m.data, m.err
 }
 
 type mockParser struct {
+	mu     sync.Mutex
 	events []*schema.Event
 	err    error
 }
 
 func (m *mockParser) ParseSnapshot(_ context.Context, _ string, _ []byte, _ time.Time) ([]*schema.Event, error) {
-	return m.events, m.err
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.err != nil {
+		return nil, m.err
+	}
+	// Return a deep copy to avoid race conditions when modifying returned events
+	result := make([]*schema.Event, len(m.events))
+	for i, evt := range m.events {
+		if evt == nil {
+			result[i] = nil
+			continue
+		}
+		evtCopy := *evt
+		result[i] = &evtCopy
+	}
+	return result, nil
 }
 
 func TestRESTClient_Poll_EmptyPollers(t *testing.T) {
