@@ -18,9 +18,6 @@ func (s *NoOp) OnTicker(_ context.Context, _ *schema.Event, _ schema.TickerPaylo
 // OnBookSnapshot does nothing.
 func (s *NoOp) OnBookSnapshot(_ context.Context, _ *schema.Event, _ schema.BookSnapshotPayload) {}
 
-// OnBookUpdate does nothing.
-func (s *NoOp) OnBookUpdate(_ context.Context, _ *schema.Event, _ schema.BookUpdatePayload) {}
-
 // OnOrderFilled does nothing.
 func (s *NoOp) OnOrderFilled(_ context.Context, _ *schema.Event, _ schema.ExecReportPayload) {}
 
@@ -32,3 +29,18 @@ func (s *NoOp) OnOrderPartialFill(_ context.Context, _ *schema.Event, _ schema.E
 
 // OnOrderCancelled does nothing.
 func (s *NoOp) OnOrderCancelled(_ context.Context, _ *schema.Event, _ schema.ExecReportPayload) {}
+
+// OnOrderAcknowledged does nothing.
+func (s *NoOp) OnOrderAcknowledged(_ context.Context, _ *schema.Event, _ schema.ExecReportPayload) {}
+
+// OnOrderExpired does nothing.
+func (s *NoOp) OnOrderExpired(_ context.Context, _ *schema.Event, _ schema.ExecReportPayload) {}
+
+// OnKlineSummary does nothing.
+func (s *NoOp) OnKlineSummary(_ context.Context, _ *schema.Event, _ schema.KlineSummaryPayload) {}
+
+// OnControlAck does nothing.
+func (s *NoOp) OnControlAck(_ context.Context, _ *schema.Event, _ schema.ControlAckPayload) {}
+
+// OnControlResult does nothing.
+func (s *NoOp) OnControlResult(_ context.Context, _ *schema.Event, _ schema.ControlResultPayload) {}

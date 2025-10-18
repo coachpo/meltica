@@ -2,8 +2,11 @@ package schema
 
 import json "github.com/goccy/go-json"
 
-// ProviderRaw captures provider-specific payloads prior to normalization.
-type ProviderRaw struct {
+// ParseFrame captures provider-specific payloads prior to normalization.
+// This is an intermediate structure used during parsing - raw exchange data
+// before conversion to canonical events. Supports all exchange types.
+// Complements WsFrame: WsFrame → Parser → ParseFrame → Event
+type ParseFrame struct {
 	returned   bool
 	Provider   string
 	StreamName string
@@ -11,8 +14,8 @@ type ProviderRaw struct {
 	Payload    json.RawMessage
 }
 
-// Reset zeroes the provider payload for pooling reuse.
-func (p *ProviderRaw) Reset() {
+// Reset zeroes the parse frame for pooling reuse.
+func (p *ParseFrame) Reset() {
 	if p == nil {
 		return
 	}
@@ -24,15 +27,15 @@ func (p *ProviderRaw) Reset() {
 }
 
 // SetReturned updates the pooled ownership flag.
-func (p *ProviderRaw) SetReturned(flag bool) {
+func (p *ParseFrame) SetReturned(flag bool) {
 	if p == nil {
 		return
 	}
 	p.returned = flag
 }
 
-// IsReturned reports whether the payload is currently pooled.
-func (p *ProviderRaw) IsReturned() bool {
+// IsReturned reports whether the frame is currently pooled.
+func (p *ParseFrame) IsReturned() bool {
 	if p == nil {
 		return false
 	}

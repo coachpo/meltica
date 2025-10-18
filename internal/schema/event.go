@@ -144,9 +144,9 @@ type EventType string
 
 const (
 	// EventTypeBookSnapshot identifies full depth snapshots.
+	// NOTE: Adapters MUST always emit full orderbooks, never deltas.
+	// Exchange-specific delta handling should be done within the adapter.
 	EventTypeBookSnapshot EventType = "BookSnapshot"
-	// EventTypeBookUpdate identifies incremental depth updates.
-	EventTypeBookUpdate EventType = "BookUpdate"
 	// EventTypeTrade identifies trade executions.
 	EventTypeTrade EventType = "Trade"
 	// EventTypeTicker identifies ticker summary events.
@@ -164,7 +164,7 @@ const (
 // Coalescable reports whether an event type can be coalesced under backpressure.
 func (et EventType) Coalescable() bool {
 	switch et {
-	case EventTypeTicker, EventTypeBookUpdate, EventTypeKlineSummary:
+	case EventTypeTicker, EventTypeKlineSummary:
 		return true
 	case EventTypeBookSnapshot,
 		EventTypeTrade,
@@ -205,29 +205,13 @@ type PriceLevel struct {
 }
 
 // BookSnapshotPayload conveys a full snapshot of order book depth.
+// Adapters MUST always send the complete orderbook state, not deltas.
+// Any delta-based exchanges should maintain the full book state within the adapter.
 type BookSnapshotPayload struct {
 	Bids       []PriceLevel `json:"bids"`
 	Asks       []PriceLevel `json:"asks"`
 	Checksum   string       `json:"checksum"`
 	LastUpdate time.Time    `json:"last_update"`
-}
-
-// BookUpdateType differentiates delta vs full-book updates.
-type BookUpdateType string
-
-const (
-	// BookUpdateTypeDelta represents delta updates.
-	BookUpdateTypeDelta BookUpdateType = "Delta"
-	// BookUpdateTypeFull represents full book refreshes.
-	BookUpdateTypeFull BookUpdateType = "Full"
-)
-
-// BookUpdatePayload carries incremental or full updates to the order book.
-type BookUpdatePayload struct {
-	UpdateType BookUpdateType `json:"update_type"`
-	Bids       []PriceLevel   `json:"bids"`
-	Asks       []PriceLevel   `json:"asks"`
-	Checksum   string         `json:"checksum"`
 }
 
 // TradeSide captures the direction of a trade.

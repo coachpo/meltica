@@ -59,8 +59,6 @@ func (s *Grid) OnTicker(_ context.Context, _ *schema.Event, _ schema.TickerPaylo
 // OnBookSnapshot does nothing.
 func (s *Grid) OnBookSnapshot(_ context.Context, _ *schema.Event, _ schema.BookSnapshotPayload) {}
 
-// OnBookUpdate does nothing.
-func (s *Grid) OnBookUpdate(_ context.Context, _ *schema.Event, _ schema.BookUpdatePayload) {}
 
 // OnOrderFilled replaces the filled order with a new one on the opposite side.
 func (s *Grid) OnOrderFilled(ctx context.Context, _ *schema.Event, payload schema.ExecReportPayload) {
@@ -131,3 +129,18 @@ func (s *Grid) placeGridOrders(ctx context.Context) {
 		}
 	}
 }
+
+// OnOrderAcknowledged tracks acknowledged orders (no-op for this strategy).
+func (s *Grid) OnOrderAcknowledged(_ context.Context, _ *schema.Event, _ schema.ExecReportPayload) {}
+
+// OnOrderExpired tracks expired orders (no-op for this strategy).
+func (s *Grid) OnOrderExpired(_ context.Context, _ *schema.Event, _ schema.ExecReportPayload) {}
+
+// OnKlineSummary tracks kline data (no-op for this strategy).
+func (s *Grid) OnKlineSummary(_ context.Context, _ *schema.Event, _ schema.KlineSummaryPayload) {}
+
+// OnControlAck tracks control acknowledgments (no-op for this strategy).
+func (s *Grid) OnControlAck(_ context.Context, _ *schema.Event, _ schema.ControlAckPayload) {}
+
+// OnControlResult tracks control results (no-op for this strategy).
+func (s *Grid) OnControlResult(_ context.Context, _ *schema.Event, _ schema.ControlResultPayload) {}

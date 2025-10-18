@@ -20,29 +20,25 @@ import (
 // TradingStrategy defines the interface for custom trading logic that can be plugged into a Lambda.
 // Implement this interface to create custom trading strategies.
 type TradingStrategy interface {
-	// OnTrade is called when a trade event is received
+	// Market data callbacks
 	OnTrade(ctx context.Context, evt *schema.Event, payload schema.TradePayload, price float64)
-	
-	// OnTicker is called when a ticker update is received
 	OnTicker(ctx context.Context, evt *schema.Event, payload schema.TickerPayload)
-	
-	// OnBookSnapshot is called when a full orderbook snapshot is received
 	OnBookSnapshot(ctx context.Context, evt *schema.Event, payload schema.BookSnapshotPayload)
+	OnKlineSummary(ctx context.Context, evt *schema.Event, payload schema.KlineSummaryPayload)
 	
-	// OnBookUpdate is called when an orderbook update is received
-	OnBookUpdate(ctx context.Context, evt *schema.Event, payload schema.BookUpdatePayload)
-	
-	// OnOrderFilled is called when an order submitted by this lambda is filled
+	// Order lifecycle callbacks (trading decisions)
 	OnOrderFilled(ctx context.Context, evt *schema.Event, payload schema.ExecReportPayload)
-	
-	// OnOrderRejected is called when an order submitted by this lambda is rejected
 	OnOrderRejected(ctx context.Context, evt *schema.Event, payload schema.ExecReportPayload, reason string)
-	
-	// OnOrderPartialFill is called when an order is partially filled
 	OnOrderPartialFill(ctx context.Context, evt *schema.Event, payload schema.ExecReportPayload)
-	
-	// OnOrderCancelled is called when an order is cancelled
 	OnOrderCancelled(ctx context.Context, evt *schema.Event, payload schema.ExecReportPayload)
+	
+	// Order tracking callbacks (for persistence, auditing, metrics)
+	OnOrderAcknowledged(ctx context.Context, evt *schema.Event, payload schema.ExecReportPayload)
+	OnOrderExpired(ctx context.Context, evt *schema.Event, payload schema.ExecReportPayload)
+	
+	// Control plane callbacks (for monitoring, metrics, operational decisions)
+	OnControlAck(ctx context.Context, evt *schema.Event, payload schema.ControlAckPayload)
+	OnControlResult(ctx context.Context, evt *schema.Event, payload schema.ControlResultPayload)
 }
 
 // MarketState represents the current market state for a symbol.
@@ -134,7 +130,6 @@ func (l *BaseLambda) Start(ctx context.Context) (<-chan error, error) {
 		schema.EventTypeTrade,
 		schema.EventTypeTicker,
 		schema.EventTypeBookSnapshot,
-		schema.EventTypeBookUpdate,
 		schema.EventTypeExecReport,
 	}
 	
@@ -211,12 +206,14 @@ func (l *BaseLambda) handleEvent(ctx context.Context, typ schema.EventType, evt 
 		l.handleTicker(ctx, evt)
 	case schema.EventTypeBookSnapshot:
 		l.handleBookSnapshot(ctx, evt)
-	case schema.EventTypeBookUpdate:
-		l.handleBookUpdate(ctx, evt)
 	case schema.EventTypeExecReport:
 		l.handleExecReport(ctx, evt)
-	case schema.EventTypeKlineSummary, schema.EventTypeControlAck, schema.EventTypeControlResult:
-		// Not handled by base lambda
+	case schema.EventTypeKlineSummary:
+		l.handleKlineSummary(ctx, evt)
+	case schema.EventTypeControlAck:
+		l.handleControlAck(ctx, evt)
+	case schema.EventTypeControlResult:
+		l.handleControlResult(ctx, evt)
 	}
 }
 
@@ -232,10 +229,7 @@ func (l *BaseLambda) handleTrade(ctx context.Context, evt *schema.Event) {
 	}
 	
 	l.lastPrice.Store(price)
-	l.logger.Printf("[%s] TRADE %s %s@%s side=%s", 
-		l.id, evt.Symbol, payload.Quantity, payload.Price, payload.Side)
 	
-	// Delegate to strategy
 	if l.strategy != nil {
 		l.strategy.OnTrade(ctx, evt, payload, price)
 	}
@@ -255,10 +249,6 @@ func (l *BaseLambda) handleTicker(ctx context.Context, evt *schema.Event) {
 	l.bidPrice.Store(bidPrice)
 	l.askPrice.Store(askPrice)
 	
-	l.logger.Printf("[%s] TICKER %s last=%s bid=%s ask=%s vol=%s", 
-		l.id, evt.Symbol, payload.LastPrice, payload.BidPrice, payload.AskPrice, payload.Volume24h)
-	
-	// Delegate to strategy
 	if l.strategy != nil {
 		l.strategy.OnTicker(ctx, evt, payload)
 	}
@@ -280,41 +270,8 @@ func (l *BaseLambda) handleBookSnapshot(ctx context.Context, evt *schema.Event) 
 		l.askPrice.Store(askPrice)
 	}
 	
-	l.logger.Printf("[%s] BOOK_SNAPSHOT %s bids=%d asks=%d", 
-		l.id, evt.Symbol, len(payload.Bids), len(payload.Asks))
-	
-	// Delegate to strategy
 	if l.strategy != nil {
 		l.strategy.OnBookSnapshot(ctx, evt, payload)
-	}
-}
-
-func (l *BaseLambda) handleBookUpdate(ctx context.Context, evt *schema.Event) {
-	payload, ok := evt.Payload.(schema.BookUpdatePayload)
-	if !ok {
-		return
-	}
-	
-	if len(payload.Bids) > 0 {
-		bidPrice, _ := strconv.ParseFloat(payload.Bids[0].Price, 64)
-		if bidPrice > 0 {
-			l.bidPrice.Store(bidPrice)
-		}
-	}
-	
-	if len(payload.Asks) > 0 {
-		askPrice, _ := strconv.ParseFloat(payload.Asks[0].Price, 64)
-		if askPrice > 0 {
-			l.askPrice.Store(askPrice)
-		}
-	}
-	
-	l.logger.Printf("[%s] BOOK_UPDATE %s bids=%d asks=%d", 
-		l.id, evt.Symbol, len(payload.Bids), len(payload.Asks))
-	
-	// Delegate to strategy
-	if l.strategy != nil {
-		l.strategy.OnBookUpdate(ctx, evt, payload)
 	}
 }
 
@@ -329,35 +286,82 @@ func (l *BaseLambda) handleExecReport(ctx context.Context, evt *schema.Event) {
 		return
 	}
 	
-	l.logger.Printf("[%s] EXEC_REPORT %s order_id=%s state=%s filled=%s avg_price=%s", 
-		l.id, evt.Symbol, payload.ClientOrderID, payload.State, payload.FilledQuantity, payload.AvgFillPrice)
-	
 	// Delegate to strategy based on state
-	if l.strategy != nil {
-		switch payload.State {
-		case schema.ExecReportStateFILLED:
-			l.logger.Printf("[%s] ORDER FILLED order_id=%s qty=%s price=%s", 
-				l.id, payload.ClientOrderID, payload.FilledQuantity, payload.AvgFillPrice)
-			l.strategy.OnOrderFilled(ctx, evt, payload)
-			
-		case schema.ExecReportStateREJECTED:
-			reason := ""
-			if payload.RejectReason != nil {
-				reason = *payload.RejectReason
-			}
-			l.logger.Printf("[%s] ORDER REJECTED order_id=%s reason=%s", 
-				l.id, payload.ClientOrderID, reason)
-			l.strategy.OnOrderRejected(ctx, evt, payload, reason)
-			
-		case schema.ExecReportStatePARTIAL:
-			l.strategy.OnOrderPartialFill(ctx, evt, payload)
-			
-		case schema.ExecReportStateCANCELLED:
-			l.strategy.OnOrderCancelled(ctx, evt, payload)
-			
-		case schema.ExecReportStateACK, schema.ExecReportStateEXPIRED:
-			// Logged above, no strategy callback
+	if l.strategy == nil {
+		return
+	}
+	
+	switch payload.State {
+	case schema.ExecReportStateFILLED:
+		l.strategy.OnOrderFilled(ctx, evt, payload)
+		
+	case schema.ExecReportStateREJECTED:
+		reason := ""
+		if payload.RejectReason != nil {
+			reason = *payload.RejectReason
 		}
+		l.strategy.OnOrderRejected(ctx, evt, payload, reason)
+		
+	case schema.ExecReportStatePARTIAL:
+		l.strategy.OnOrderPartialFill(ctx, evt, payload)
+		
+	case schema.ExecReportStateCANCELLED:
+		l.strategy.OnOrderCancelled(ctx, evt, payload)
+		
+	case schema.ExecReportStateACK:
+		// Order acknowledged by exchange - useful for persistence, auditing, reconciliation
+		l.strategy.OnOrderAcknowledged(ctx, evt, payload)
+		
+	case schema.ExecReportStateEXPIRED:
+		// Order expired (e.g., GTD orders that reached time limit)
+		// Useful for tracking order lifecycle, metrics, compliance
+		l.strategy.OnOrderExpired(ctx, evt, payload)
+	}
+}
+
+func (l *BaseLambda) handleKlineSummary(ctx context.Context, evt *schema.Event) {
+	payload, ok := evt.Payload.(schema.KlineSummaryPayload)
+	if !ok {
+		return
+	}
+	
+	if l.strategy != nil {
+		l.strategy.OnKlineSummary(ctx, evt, payload)
+	}
+}
+
+func (l *BaseLambda) handleControlAck(ctx context.Context, evt *schema.Event) {
+	payload, ok := evt.Payload.(schema.ControlAckPayload)
+	if !ok {
+		return
+	}
+	
+	// Log at base level for infrastructure monitoring
+	if payload.Success {
+		l.logger.Printf("[%s] Control ACK: command=%s consumer=%s", l.id, payload.CommandType, payload.ConsumerID)
+	} else {
+		l.logger.Printf("[%s] Control ACK FAILED: command=%s consumer=%s error=%s", 
+			l.id, payload.CommandType, payload.ConsumerID, payload.ErrorMessage)
+	}
+	
+	// Delegate to strategy for operational decisions
+	if l.strategy != nil {
+		l.strategy.OnControlAck(ctx, evt, payload)
+	}
+}
+
+func (l *BaseLambda) handleControlResult(ctx context.Context, evt *schema.Event) {
+	payload, ok := evt.Payload.(schema.ControlResultPayload)
+	if !ok {
+		return
+	}
+	
+	// Log at base level for infrastructure monitoring
+	l.logger.Printf("[%s] Control RESULT: command=%s consumer=%s", l.id, payload.CommandType, payload.ConsumerID)
+	
+	// Delegate to strategy for operational decisions
+	if l.strategy != nil {
+		l.strategy.OnControlResult(ctx, evt, payload)
 	}
 }
 
@@ -371,11 +375,6 @@ func (l *BaseLambda) SubmitOrder(ctx context.Context, side schema.TradeSide, qua
 	}
 	
 	orderID := fmt.Sprintf("%s-%d-%d", l.id, time.Now().UnixNano(), l.orderCount.Load())
-	
-	priceStr := ""
-	if price != nil {
-		priceStr = *price
-	}
 	
 	orderReq, release, err := pool.AcquireOrderRequest(ctx, l.pools)
 	if err != nil {
@@ -398,9 +397,7 @@ func (l *BaseLambda) SubmitOrder(ctx context.Context, side schema.TradeSide, qua
 		return fmt.Errorf("submit order: %w", err)
 	}
 	
-	l.logger.Printf("[%s] ORDER SUBMITTED order_id=%s side=%s qty=%s price=%s", 
-		l.id, orderID, side, quantity, priceStr)
-	
+	l.orderCount.Add(1)
 	return nil
 }
 
@@ -434,9 +431,6 @@ func (l *BaseLambda) SubmitMarketOrder(ctx context.Context, side schema.TradeSid
 	if err := l.orderSubmitter.SubmitOrder(ctx, *orderReq); err != nil {
 		return fmt.Errorf("submit market order: %w", err)
 	}
-	
-	l.logger.Printf("[%s] MARKET ORDER SUBMITTED order_id=%s side=%s qty=%s", 
-		l.id, orderID, side, quantity)
 	
 	return nil
 }

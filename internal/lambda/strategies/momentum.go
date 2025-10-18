@@ -102,8 +102,6 @@ func (s *Momentum) OnTicker(_ context.Context, _ *schema.Event, _ schema.TickerP
 // OnBookSnapshot does nothing.
 func (s *Momentum) OnBookSnapshot(_ context.Context, _ *schema.Event, _ schema.BookSnapshotPayload) {}
 
-// OnBookUpdate does nothing.
-func (s *Momentum) OnBookUpdate(_ context.Context, _ *schema.Event, _ schema.BookUpdatePayload) {}
 
 // OnOrderFilled logs fills.
 func (s *Momentum) OnOrderFilled(_ context.Context, _ *schema.Event, payload schema.ExecReportPayload) {
@@ -129,6 +127,21 @@ func (s *Momentum) OnOrderPartialFill(_ context.Context, _ *schema.Event, payloa
 func (s *Momentum) OnOrderCancelled(_ context.Context, _ *schema.Event, payload schema.ExecReportPayload) {
 	s.Lambda.Logger().Printf("[MOMENTUM] Order cancelled: side=%s", payload.Side)
 }
+
+// OnOrderAcknowledged tracks acknowledged orders (no-op for this strategy).
+func (s *Momentum) OnOrderAcknowledged(_ context.Context, _ *schema.Event, _ schema.ExecReportPayload) {}
+
+// OnOrderExpired tracks expired orders (no-op for this strategy).
+func (s *Momentum) OnOrderExpired(_ context.Context, _ *schema.Event, _ schema.ExecReportPayload) {}
+
+// OnKlineSummary tracks kline data (no-op for this strategy).
+func (s *Momentum) OnKlineSummary(_ context.Context, _ *schema.Event, _ schema.KlineSummaryPayload) {}
+
+// OnControlAck tracks control acknowledgments (no-op for this strategy).
+func (s *Momentum) OnControlAck(_ context.Context, _ *schema.Event, _ schema.ControlAckPayload) {}
+
+// OnControlResult tracks control results (no-op for this strategy).
+func (s *Momentum) OnControlResult(_ context.Context, _ *schema.Event, _ schema.ControlResultPayload) {}
 
 // calculateMomentum returns the price change ratio over the lookback period.
 func (s *Momentum) calculateMomentum() float64 {

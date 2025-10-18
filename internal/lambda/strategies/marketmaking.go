@@ -86,8 +86,6 @@ func (s *MarketMaking) OnTicker(ctx context.Context, _ *schema.Event, _ schema.T
 // OnBookSnapshot does nothing.
 func (s *MarketMaking) OnBookSnapshot(_ context.Context, _ *schema.Event, _ schema.BookSnapshotPayload) {}
 
-// OnBookUpdate does nothing.
-func (s *MarketMaking) OnBookUpdate(_ context.Context, _ *schema.Event, _ schema.BookUpdatePayload) {}
 
 // OnOrderFilled decrements active order count.
 func (s *MarketMaking) OnOrderFilled(_ context.Context, _ *schema.Event, payload schema.ExecReportPayload) {
@@ -167,6 +165,21 @@ func absFloat(x float64) float64 {
 	}
 	return x
 }
+
+// OnOrderAcknowledged tracks acknowledged orders (no-op for this strategy).
+func (s *MarketMaking) OnOrderAcknowledged(_ context.Context, _ *schema.Event, _ schema.ExecReportPayload) {}
+
+// OnOrderExpired tracks expired orders (no-op for this strategy).
+func (s *MarketMaking) OnOrderExpired(_ context.Context, _ *schema.Event, _ schema.ExecReportPayload) {}
+
+// OnKlineSummary tracks kline data (no-op for this strategy).
+func (s *MarketMaking) OnKlineSummary(_ context.Context, _ *schema.Event, _ schema.KlineSummaryPayload) {}
+
+// OnControlAck tracks control acknowledgments (no-op for this strategy).
+func (s *MarketMaking) OnControlAck(_ context.Context, _ *schema.Event, _ schema.ControlAckPayload) {}
+
+// OnControlResult tracks control results (no-op for this strategy).
+func (s *MarketMaking) OnControlResult(_ context.Context, _ *schema.Event, _ schema.ControlResultPayload) {}
 
 // ParseFloat safely parses a string to float64.
 func ParseFloat(s string) (float64, error) {

@@ -98,8 +98,6 @@ func (s *MeanReversion) OnTicker(_ context.Context, _ *schema.Event, _ schema.Ti
 // OnBookSnapshot does nothing.
 func (s *MeanReversion) OnBookSnapshot(_ context.Context, _ *schema.Event, _ schema.BookSnapshotPayload) {}
 
-// OnBookUpdate does nothing.
-func (s *MeanReversion) OnBookUpdate(_ context.Context, _ *schema.Event, _ schema.BookUpdatePayload) {}
 
 // OnOrderFilled resets position flag.
 func (s *MeanReversion) OnOrderFilled(_ context.Context, _ *schema.Event, payload schema.ExecReportPayload) {
@@ -127,3 +125,18 @@ func (s *MeanReversion) OnOrderCancelled(_ context.Context, _ *schema.Event, _ s
 	s.mu.Unlock()
 	s.Lambda.Logger().Printf("[MEAN_REV] Order cancelled")
 }
+
+// OnOrderAcknowledged tracks acknowledged orders (no-op for this strategy).
+func (s *MeanReversion) OnOrderAcknowledged(_ context.Context, _ *schema.Event, _ schema.ExecReportPayload) {}
+
+// OnOrderExpired tracks expired orders (no-op for this strategy).
+func (s *MeanReversion) OnOrderExpired(_ context.Context, _ *schema.Event, _ schema.ExecReportPayload) {}
+
+// OnKlineSummary tracks kline data (no-op for this strategy).
+func (s *MeanReversion) OnKlineSummary(_ context.Context, _ *schema.Event, _ schema.KlineSummaryPayload) {}
+
+// OnControlAck tracks control acknowledgments (no-op for this strategy).
+func (s *MeanReversion) OnControlAck(_ context.Context, _ *schema.Event, _ schema.ControlAckPayload) {}
+
+// OnControlResult tracks control results (no-op for this strategy).
+func (s *MeanReversion) OnControlResult(_ context.Context, _ *schema.Event, _ schema.ControlResultPayload) {}

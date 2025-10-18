@@ -123,8 +123,8 @@ func TestLambdaStartAndSubscribe(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	subCount := mockDataBus.GetActiveSubscriptions()
-	if subCount != 5 {
-		t.Errorf("expected 5 subscriptions (TRADE, TICKER, BOOK_SNAPSHOT, BOOK_UPDATE, EXEC_REPORT), got %d", subCount)
+	if subCount != 4 {
+		t.Errorf("expected 4 subscriptions (TRADE, TICKER, BOOK_SNAPSHOT, EXEC_REPORT), got %d", subCount)
 	}
 
 	select {
@@ -587,8 +587,12 @@ type testNoOpStrategy struct{}
 func (s *testNoOpStrategy) OnTrade(_ context.Context, _ *schema.Event, _ schema.TradePayload, _ float64) {}
 func (s *testNoOpStrategy) OnTicker(_ context.Context, _ *schema.Event, _ schema.TickerPayload)           {}
 func (s *testNoOpStrategy) OnBookSnapshot(_ context.Context, _ *schema.Event, _ schema.BookSnapshotPayload) {}
-func (s *testNoOpStrategy) OnBookUpdate(_ context.Context, _ *schema.Event, _ schema.BookUpdatePayload)   {}
 func (s *testNoOpStrategy) OnOrderFilled(_ context.Context, _ *schema.Event, _ schema.ExecReportPayload) {}
 func (s *testNoOpStrategy) OnOrderRejected(_ context.Context, _ *schema.Event, _ schema.ExecReportPayload, _ string) {}
 func (s *testNoOpStrategy) OnOrderPartialFill(_ context.Context, _ *schema.Event, _ schema.ExecReportPayload) {}
 func (s *testNoOpStrategy) OnOrderCancelled(_ context.Context, _ *schema.Event, _ schema.ExecReportPayload) {}
+func (s *testNoOpStrategy) OnOrderAcknowledged(_ context.Context, _ *schema.Event, _ schema.ExecReportPayload) {}
+func (s *testNoOpStrategy) OnOrderExpired(_ context.Context, _ *schema.Event, _ schema.ExecReportPayload) {}
+func (s *testNoOpStrategy) OnKlineSummary(_ context.Context, _ *schema.Event, _ schema.KlineSummaryPayload) {}
+func (s *testNoOpStrategy) OnControlAck(_ context.Context, _ *schema.Event, _ schema.ControlAckPayload) {}
+func (s *testNoOpStrategy) OnControlResult(_ context.Context, _ *schema.Event, _ schema.ControlResultPayload) {}

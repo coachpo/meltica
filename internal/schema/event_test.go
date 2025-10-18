@@ -207,7 +207,6 @@ func TestEventTypeCoalescable(t *testing.T) {
 		want bool
 	}{
 		{"ticker is coalescable", EventTypeTicker, true},
-		{"book update is coalescable", EventTypeBookUpdate, true},
 		{"kline is coalescable", EventTypeKlineSummary, true},
 		{"book snapshot is not coalescable", EventTypeBookSnapshot, false},
 		{"trade is not coalescable", EventTypeTrade, false},

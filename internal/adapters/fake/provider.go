@@ -29,7 +29,6 @@ type Options struct {
 	TickerInterval       time.Duration
 	TradeInterval        time.Duration
 	BookSnapshotInterval time.Duration
-	BookUpdateInterval   time.Duration
 	Pools                *pool.PoolManager
 }
 
@@ -39,7 +38,6 @@ type Provider struct {
 	tickerInterval       time.Duration
 	tradeInterval        time.Duration
 	bookSnapshotInterval time.Duration
-	bookUpdateInterval   time.Duration
 
 	events chan *schema.Event
 	errs   chan error
@@ -103,10 +101,6 @@ func NewProvider(opts Options) *Provider {
 	if bookSnapshotInterval <= 0 {
 		bookSnapshotInterval = 5 * time.Second
 	}
-	bookUpdateInterval := opts.BookUpdateInterval
-	if bookUpdateInterval <= 0 {
-		bookUpdateInterval = 700 * time.Millisecond
-	}
 
 	//nolint:exhaustruct // zero values for ctx, cancel, started, mu, etc. are intentional
 	p := &Provider{
@@ -114,7 +108,6 @@ func NewProvider(opts Options) *Provider {
 		tickerInterval:       tickerInterval,
 		tradeInterval:        tradeInterval,
 		bookSnapshotInterval: bookSnapshotInterval,
-		bookUpdateInterval:   bookUpdateInterval,
 		events:               make(chan *schema.Event, 128),
 		errs:                 make(chan error, 8),
 		orders:               make(chan schema.OrderRequest, 64),
@@ -246,8 +239,6 @@ func (p *Provider) runGenerator(ctx context.Context, evtType schema.EventType, i
 		p.streamTrades(ctx, instruments)
 	case schema.EventTypeBookSnapshot:
 		p.streamBookSnapshots(ctx, instruments)
-	case schema.EventTypeBookUpdate:
-		p.streamBookUpdates(ctx, instruments)
 	case schema.EventTypeExecReport, schema.EventTypeKlineSummary, schema.EventTypeControlAck, schema.EventTypeControlResult:
 		<-ctx.Done()
 	default:
@@ -299,37 +290,9 @@ func (p *Provider) streamBookSnapshots(ctx context.Context, instruments []string
 	}
 }
 
-func (p *Provider) streamBookUpdates(ctx context.Context, instruments []string) {
-	ticker := time.NewTicker(p.bookUpdateInterval)
-	defer ticker.Stop()
-	for {
-		for _, inst := range instruments {
-			p.ensureSnapshot(inst)
-		}
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			for _, inst := range instruments {
-				p.emitBookUpdate(inst)
-			}
-		}
-	}
-}
-
 func (p *Provider) emitSnapshots(instruments []string) {
 	for _, inst := range instruments {
 		p.emitBookSnapshot(inst)
-	}
-}
-
-func (p *Provider) ensureSnapshot(instrument string) {
-	state := p.getInstrumentState(instrument)
-	state.mu.Lock()
-	ready := state.hasSnapshot
-	state.mu.Unlock()
-	if !ready {
-		p.emitBookSnapshot(instrument)
 	}
 }
 
@@ -403,29 +366,6 @@ func (p *Provider) emitBookSnapshot(instrument string) {
 		LastUpdate: ts,
 	}
 	evt := p.newEvent(schema.EventTypeBookSnapshot, instrument, seq, payload, ts)
-	if evt == nil {
-		return
-	}
-	p.emitEvent(evt)
-}
-
-func (p *Provider) emitBookUpdate(instrument string) {
-	state := p.getInstrumentState(instrument)
-	ts := p.clock().UTC()
-	seq := p.nextSeq(schema.EventTypeBookUpdate, instrument)
-	state.mu.Lock()
-	state.bumpOrderBook(seq)
-	bidChanges := toPriceLevels(state.bids[:3])
-	askChanges := toPriceLevels(state.asks[:3])
-	checksum := checksum(instrument, schema.EventTypeBookUpdate, seq)
-	state.mu.Unlock()
-	payload := schema.BookUpdatePayload{
-		UpdateType: schema.BookUpdateTypeDelta,
-		Bids:       bidChanges,
-		Asks:       askChanges,
-		Checksum:   checksum,
-	}
-	evt := p.newEvent(schema.EventTypeBookUpdate, instrument, seq, payload, ts)
 	if evt == nil {
 		return
 	}
@@ -604,29 +544,6 @@ func (s *instrumentState) reseedOrderBook() {
 	}
 }
 
-func (s *instrumentState) bumpOrderBook(seq uint64) {
-	if len(s.bids) == 0 || len(s.asks) == 0 {
-		s.reseedOrderBook()
-	}
-	amplitude := 0.2 * math.Sin(float64(seq%10))
-	if len(s.bids) > 0 {
-		s.bids[0].price = maxFloat64(s.lastPrice-0.3, s.basePrice*0.5)
-		s.bids[0].quantity = 1.0 + 0.2*math.Abs(amplitude)
-	}
-	if len(s.asks) > 0 {
-		s.asks[0].price = s.lastPrice + 0.3
-		s.asks[0].quantity = 1.0 + 0.2*math.Abs(amplitude)
-	}
-	for i := 1; i < len(s.bids); i++ {
-		step := float64(i) * 0.05
-		s.bids[i].quantity = s.bids[i].quantity * (1 + step*0.1)
-	}
-	for i := 1; i < len(s.asks); i++ {
-		step := float64(i) * 0.04
-		s.asks[i].quantity = s.asks[i].quantity * (1 + step*0.1)
-	}
-}
-
 func normaliseInstruments(instruments []string) []string {
 	set := make(map[string]struct{})
 	for _, inst := range instruments {
@@ -719,10 +636,8 @@ func collectInstrumentValues(value any, set map[string]struct{}) {
 
 func canonicalToEventType(c schema.CanonicalType) (schema.EventType, bool) {
 	switch c {
-	case schema.CanonicalType("ORDERBOOK.SNAPSHOT"):
+	case schema.CanonicalType("ORDERBOOK.SNAPSHOT"), schema.CanonicalType("ORDERBOOK.DELTA"), schema.CanonicalType("ORDERBOOK.UPDATE"):
 		return schema.EventTypeBookSnapshot, true
-	case schema.CanonicalType("ORDERBOOK.DELTA"), schema.CanonicalType("ORDERBOOK.UPDATE"):
-		return schema.EventTypeBookUpdate, true
 	case schema.CanonicalType("TRADE"):
 		return schema.EventTypeTrade, true
 	case schema.CanonicalType("TICKER"):
@@ -756,11 +671,4 @@ func stringOrDefault(value *string) string {
 		return ""
 	}
 	return *value
-}
-
-func maxFloat64(a, b float64) float64 {
-	if a > b {
-		return a
-	}
-	return b
 }

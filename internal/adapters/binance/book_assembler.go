@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/coachpo/meltica/internal/schema"
 )
@@ -76,40 +77,44 @@ func (a *BookAssembler) ApplySnapshot(snapshot schema.BookSnapshotPayload, seq u
 	return sanitised, nil
 }
 
-// ApplyUpdate applies a delta update to the maintained order book and validates checksum integrity.
-func (a *BookAssembler) ApplyUpdate(update schema.BookUpdatePayload, seq uint64) (schema.BookUpdatePayload, error) {
+// ApplyUpdate applies a delta update to the maintained order book and returns a full snapshot.
+// This enforces the architecture principle that adapters emit only full snapshots, not deltas.
+func (a *BookAssembler) ApplyUpdate(bids, asks []schema.PriceLevel, checksum string, seq uint64) (schema.BookSnapshotPayload, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
 	if !a.ready {
-		return schema.BookUpdatePayload{}, ErrBookNotInitialized
+		return schema.BookSnapshotPayload{}, ErrBookNotInitialized
 	}
 	if seq <= a.seq {
-		return schema.BookUpdatePayload{}, ErrBookStaleUpdate
+		return schema.BookSnapshotPayload{}, ErrBookStaleUpdate
 	}
 
-	for _, level := range update.Bids {
+	// Apply delta to internal state
+	for _, level := range bids {
 		a.upsertLevel(a.bids, level)
 	}
-	for _, level := range update.Asks {
+	for _, level := range asks {
 		a.upsertLevel(a.asks, level)
 	}
 
-	checksum := a.computeChecksumLocked()
-	if update.Checksum != "" {
-		if err := verifyChecksumValue(update.Checksum, checksum); err != nil {
-			return schema.BookUpdatePayload{}, err
+	// Verify checksum
+	computedChecksum := a.computeChecksumLocked()
+	if checksum != "" {
+		if err := verifyChecksumValue(checksum, computedChecksum); err != nil {
+			return schema.BookSnapshotPayload{}, err
 		}
 	}
 
 	a.seq = seq
-	a.checksum = checksum
+	a.checksum = computedChecksum
 
-	payload := schema.BookUpdatePayload{
-		UpdateType: update.UpdateType,
+	// Return full snapshot (not delta)
+	payload := schema.BookSnapshotPayload{
 		Bids:       a.topLevelsLocked(a.bids, true),
 		Asks:       a.topLevelsLocked(a.asks, false),
-		Checksum:   fmt.Sprintf("%d", checksum),
+		Checksum:   fmt.Sprintf("%d", computedChecksum),
+		LastUpdate: time.Now().UTC(),
 	}
 	return payload, nil
 }

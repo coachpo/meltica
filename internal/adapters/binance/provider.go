@@ -377,23 +377,24 @@ func (p *Provider) prepareOrderBook(evt *schema.Event) ([]*schema.Event, bool, e
 		if assembler == nil {
 			return nil, true, nil
 		}
-		snap, err := assembler.ApplySnapshot(payload, evt.SeqProvider)
-		if err != nil {
-			return nil, false, err
+		
+		// Check if this is a full snapshot (REST) or delta (WS)
+		// Full snapshots have many levels, deltas typically have few
+		isFullSnapshot := len(payload.Bids) > 20 || len(payload.Asks) > 20
+		
+		if isFullSnapshot {
+			// Initial snapshot from REST
+			snap, err := assembler.ApplySnapshot(payload, evt.SeqProvider)
+			if err != nil {
+				return nil, false, err
+			}
+			evt.Payload = snap
+			extra := p.flushBufferedUpdates(evt.Symbol, assembler)
+			return extra, true, nil
 		}
-		evt.Payload = snap
-		extra := p.flushBufferedUpdates(evt.Symbol, assembler)
-		return extra, true, nil
-	case schema.EventTypeBookUpdate:
-		payload, ok := coerceBookUpdate(evt.Payload)
-		if !ok {
-			return nil, false, fmt.Errorf("provider %s: invalid book update payload", p.name)
-		}
-		assembler := p.bookAssembler(evt.Symbol)
-		if assembler == nil {
-			return nil, true, nil
-		}
-		update, err := assembler.ApplyUpdate(payload, evt.SeqProvider)
+		
+		// Delta from WebSocket - apply and return full snapshot
+		snap, err := assembler.ApplyUpdate(payload.Bids, payload.Asks, payload.Checksum, evt.SeqProvider)
 		if err != nil {
 			if errors.Is(err, ErrBookNotInitialized) {
 				p.bufferBookUpdate(evt.Symbol, evt)
@@ -401,7 +402,7 @@ func (p *Provider) prepareOrderBook(evt *schema.Event) ([]*schema.Event, bool, e
 			}
 			return nil, false, err
 		}
-		evt.Payload = update
+		evt.Payload = snap
 		return nil, true, nil
 	case schema.EventTypeTrade, schema.EventTypeTicker, schema.EventTypeExecReport, schema.EventTypeKlineSummary, schema.EventTypeControlAck, schema.EventTypeControlResult:
 		return nil, true, nil
@@ -449,18 +450,19 @@ func (p *Provider) flushBufferedUpdates(symbol string, assembler *BookAssembler)
 		if evt == nil {
 			continue
 		}
-		payload, ok := coerceBookUpdate(evt.Payload)
+		payload, ok := coerceBookSnapshot(evt.Payload)
 		if !ok {
 			continue
 		}
-		update, err := assembler.ApplyUpdate(payload, evt.SeqProvider)
+		// Apply buffered delta and get full snapshot
+		snap, err := assembler.ApplyUpdate(payload.Bids, payload.Asks, payload.Checksum, evt.SeqProvider)
 		if err != nil {
 			if !errors.Is(err, ErrBookNotInitialized) {
 				p.emitError(err)
 			}
 			continue
 		}
-		evt.Payload = update
+		evt.Payload = snap
 		if evt.EmitTS.IsZero() {
 			evt.EmitTS = p.clock().UTC()
 		}
@@ -564,21 +566,5 @@ func coerceBookSnapshot(value any) (schema.BookSnapshotPayload, bool) {
 	default:
 		//nolint:exhaustruct // empty struct for error case
 		return schema.BookSnapshotPayload{}, false
-	}
-}
-
-func coerceBookUpdate(value any) (schema.BookUpdatePayload, bool) {
-	switch v := value.(type) {
-	case schema.BookUpdatePayload:
-		return v, true
-	case *schema.BookUpdatePayload:
-		if v == nil {
-			//nolint:exhaustruct // empty struct for error case
-			return schema.BookUpdatePayload{}, false
-		}
-		return *v, true
-	default:
-		//nolint:exhaustruct // empty struct for error case
-		return schema.BookUpdatePayload{}, false
 	}
 }

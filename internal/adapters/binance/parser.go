@@ -38,21 +38,21 @@ func NewParserWithPool(providerName string, pools *pool.PoolManager) *Parser {
 
 // Parse converts a websocket frame into canonical events.
 func (p *Parser) Parse(ctx context.Context, frame []byte, ingestTS time.Time) ([]*schema.Event, error) {
-	raw, releaseRaw, err := p.acquireProviderRaw(ctx)
+	parseFrame, releaseFrame, err := p.acquireParseFrame(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer releaseRaw()
+	defer releaseFrame()
 
-	raw.Provider = p.providerName
-	raw.ReceivedAt = ingestTS.UnixNano()
-	raw.Payload = append(raw.Payload[:0], frame...)
+	parseFrame.Provider = p.providerName
+	parseFrame.ReceivedAt = ingestTS.UnixNano()
+	parseFrame.Payload = append(parseFrame.Payload[:0], frame...)
 
 	var envelope wsEnvelope
-	if err := json.Unmarshal(raw.Payload, &envelope); err != nil {
+	if err := json.Unmarshal(parseFrame.Payload, &envelope); err != nil {
 		return nil, fmt.Errorf("parse binance ws frame: %w", err)
 	}
-	raw.StreamName = envelope.Stream
+	parseFrame.StreamName = envelope.Stream
 
 	meta := make(map[string]json.RawMessage)
 	if err := json.Unmarshal(envelope.Data, &meta); err != nil {
@@ -75,6 +75,10 @@ func (p *Parser) Parse(ctx context.Context, frame []byte, ingestTS time.Time) ([
 		return p.parseAggTrade(ctx, envelope.Stream, envelope.Data, ingestTS)
 	case "24hrticker", "ticker":
 		return p.parseTicker(ctx, envelope.Stream, envelope.Data, ingestTS)
+	case "kline":
+		return p.parseKline(ctx, envelope.Stream, envelope.Data, ingestTS)
+	case "executionreport":
+		return p.parseExecutionReport(ctx, envelope.Stream, envelope.Data, ingestTS)
 	default:
 		return nil, fmt.Errorf("unsupported binance ws event %s", eventType)
 	}
@@ -105,18 +109,21 @@ func (p *Parser) parseDepthUpdate(ctx context.Context, stream string, data []byt
 	if err != nil {
 		return nil, err
 	}
-	evt.EventID = buildEventID(p.providerName, symbol, schema.EventTypeBookUpdate, seq)
+	// Binance sends deltas, but we emit as snapshot metadata.
+	// The BookAssembler will apply deltas and return full snapshots.
+	evt.EventID = buildEventID(p.providerName, symbol, schema.EventTypeBookSnapshot, seq)
 	evt.Provider = p.providerName
 	evt.Symbol = symbol
-	evt.Type = schema.EventTypeBookUpdate
+	evt.Type = schema.EventTypeBookSnapshot
 	evt.SeqProvider = seq
 	evt.IngestTS = ingestTS
 	evt.EmitTS = ingestTS
-	evt.Payload = schema.BookUpdatePayload{
-		UpdateType: schema.BookUpdateTypeDelta,
+	// Store delta as snapshot payload - provider will handle assembly
+	evt.Payload = schema.BookSnapshotPayload{
 		Bids:       toPriceLevels(payload.Bids),
 		Asks:       toPriceLevels(payload.Asks),
 		Checksum:   payload.Checksum,
+		LastUpdate: time.UnixMilli(payload.EventTime).UTC(),
 	}
 	return []*schema.Event{evt}, nil
 }
@@ -229,45 +236,163 @@ func (p *Parser) parseOrderbookSnapshot(ctx context.Context, body []byte, ingest
 	return []*schema.Event{evt}, nil
 }
 
-func (p *Parser) acquireProviderRaw(ctx context.Context) (*schema.ProviderRaw, func(), error) {
+func (p *Parser) parseKline(ctx context.Context, stream string, data []byte, ingestTS time.Time) ([]*schema.Event, error) {
+	_ = stream
+	var payload klineEvent
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return nil, fmt.Errorf("decode kline: %w", err)
+	}
+	symbol := canonicalInstrument(payload.Symbol)
+	if symbol == "" {
+		return nil, fmt.Errorf("missing symbol in kline")
+	}
+	if payload.EventTime < 0 {
+		return nil, fmt.Errorf("negative kline event time: %d", payload.EventTime)
+	}
+	seq := uint64(payload.EventTime) //nolint:gosec // timestamp conversion is safe after validation
+	evt, err := p.acquireCanonicalEvent(ctx)
+	if err != nil {
+		return nil, err
+	}
+	evt.EventID = buildEventID(p.providerName, symbol, schema.EventTypeKlineSummary, seq)
+	evt.Provider = p.providerName
+	evt.Symbol = symbol
+	evt.Type = schema.EventTypeKlineSummary
+	evt.SeqProvider = seq
+	evt.IngestTS = ingestTS
+	evt.EmitTS = ingestTS
+	evt.Payload = schema.KlineSummaryPayload{
+		OpenPrice:  payload.Kline.Open,
+		ClosePrice: payload.Kline.Close,
+		HighPrice:  payload.Kline.High,
+		LowPrice:   payload.Kline.Low,
+		Volume:     payload.Kline.Volume,
+		OpenTime:   time.UnixMilli(payload.Kline.StartTime).UTC(),
+		CloseTime:  time.UnixMilli(payload.Kline.CloseTime).UTC(),
+	}
+	return []*schema.Event{evt}, nil
+}
+
+func (p *Parser) parseExecutionReport(ctx context.Context, stream string, data []byte, ingestTS time.Time) ([]*schema.Event, error) {
+	_ = stream
+	var payload executionReport
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return nil, fmt.Errorf("decode execution report: %w", err)
+	}
+	symbol := canonicalInstrument(payload.Symbol)
+	if symbol == "" {
+		return nil, fmt.Errorf("missing symbol in execution report")
+	}
+	seq := uint64(payload.OrderID)
+	
+	// Map Binance order status to our ExecReportState
+	var state schema.ExecReportState
+	switch strings.ToUpper(payload.OrderStatus) {
+	case "NEW":
+		state = schema.ExecReportStateACK
+	case "PARTIALLY_FILLED":
+		state = schema.ExecReportStatePARTIAL
+	case "FILLED":
+		state = schema.ExecReportStateFILLED
+	case "CANCELED", "CANCELLED":
+		state = schema.ExecReportStateCANCELLED
+	case "REJECTED":
+		state = schema.ExecReportStateREJECTED
+	case "EXPIRED":
+		state = schema.ExecReportStateEXPIRED
+	default:
+		state = schema.ExecReportStateACK
+	}
+	
+	// Map Binance side to our TradeSide
+	var side schema.TradeSide
+	if strings.ToUpper(payload.Side) == "BUY" {
+		side = schema.TradeSideBuy
+	} else {
+		side = schema.TradeSideSell
+	}
+	
+	// Map Binance order type to our OrderType
+	var orderType schema.OrderType
+	if strings.ToUpper(payload.OrderType) == "MARKET" {
+		orderType = schema.OrderTypeMarket
+	} else {
+		orderType = schema.OrderTypeLimit
+	}
+	
+	evt, err := p.acquireCanonicalEvent(ctx)
+	if err != nil {
+		return nil, err
+	}
+	evt.EventID = buildEventID(p.providerName, symbol, schema.EventTypeExecReport, seq)
+	evt.Provider = p.providerName
+	evt.Symbol = symbol
+	evt.Type = schema.EventTypeExecReport
+	evt.SeqProvider = seq
+	evt.IngestTS = ingestTS
+	evt.EmitTS = ingestTS
+	
+	var rejectReason *string
+	if payload.OrderRejectReason != "" {
+		rejectReason = &payload.OrderRejectReason
+	}
+	
+	evt.Payload = schema.ExecReportPayload{
+		ClientOrderID:   payload.ClientOrderID,
+		ExchangeOrderID: fmt.Sprintf("%d", payload.OrderID),
+		State:           state,
+		Side:            side,
+		OrderType:       orderType,
+		Price:           payload.Price,
+		Quantity:        payload.OrigQty,
+		FilledQuantity:  payload.CumQty,
+		RemainingQty:    payload.OrigQty, // Calculate remaining if needed
+		AvgFillPrice:    payload.LastFilledPrice,
+		Timestamp:       time.UnixMilli(payload.TransactionTime).UTC(),
+		RejectReason:    rejectReason,
+	}
+	return []*schema.Event{evt}, nil
+}
+
+func (p *Parser) acquireParseFrame(ctx context.Context) (*schema.ParseFrame, func(), error) {
 	if p.pools == nil {
-		raw := new(schema.ProviderRaw)
-		return raw, func() {}, nil
+		frame := new(schema.ParseFrame)
+		return frame, func() {}, nil
 	}
 	getCtx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
 	defer cancel()
-	obj, err := p.pools.Get(getCtx, "ProviderRaw")
+	obj, err := p.pools.Get(getCtx, "ParseFrame")
 	if err != nil {
-		return nil, nil, fmt.Errorf("acquire provider raw: %w", err)
+		return nil, nil, fmt.Errorf("acquire parse frame: %w", err)
 	}
-	raw, ok := obj.(*schema.ProviderRaw)
+	frame, ok := obj.(*schema.ParseFrame)
 	if !ok {
-		p.pools.Put("ProviderRaw", obj)
-		return nil, nil, errors.New("provider raw pool returned unexpected type")
+		p.pools.Put("ParseFrame", obj)
+		return nil, nil, errors.New("parse frame pool returned unexpected type")
 	}
-	return raw, func() { p.pools.Put("ProviderRaw", raw) }, nil
+	return frame, func() { p.pools.Put("ParseFrame", frame) }, nil
 }
 
 func (p *Parser) acquireCanonicalEvent(ctx context.Context) (*schema.Event, error) {
 	if p.pools == nil {
-		return nil, errors.New("canonical event pool unavailable")
+		return nil, errors.New("event pool unavailable")
 	}
 	requestCtx := ctx
 	if requestCtx == nil {
 		requestCtx = context.Background()
 	}
 	start := time.Now()
-	obj, err := p.pools.Get(requestCtx, "CanonicalEvent")
+	obj, err := p.pools.Get(requestCtx, "Event")
 	if err != nil {
-		return nil, fmt.Errorf("acquire canonical event: %w", err)
+		return nil, fmt.Errorf("acquire event: %w", err)
 	}
 	if waited := time.Since(start); waited >= parserAcquireWarnDelay {
-		log.Printf("parser: waited %s for CanonicalEvent pool", waited)
+		log.Printf("parser: waited %s for Event pool", waited)
 	}
 	evt, ok := obj.(*schema.Event)
 	if !ok {
-		p.pools.Put("CanonicalEvent", obj)
-		return nil, errors.New("canonical event pool returned unexpected type")
+		p.pools.Put("Event", obj)
+		return nil, errors.New("event pool returned unexpected type")
 	}
 	evt.Reset()
 	return evt, nil
@@ -362,4 +487,47 @@ type orderbookSnapshot struct {
 	Asks         [][]string `json:"asks"`
 	Checksum     string     `json:"checksum"`
 	EventTime    int64      `json:"E"`
+}
+
+type klineEvent struct {
+	EventType string `json:"e"`
+	EventTime int64  `json:"E"`
+	Symbol    string `json:"s"`
+	Kline     struct {
+		StartTime int64  `json:"t"`
+		CloseTime int64  `json:"T"`
+		Symbol    string `json:"s"`
+		Interval  string `json:"i"`
+		Open      string `json:"o"`
+		Close     string `json:"c"`
+		High      string `json:"h"`
+		Low       string `json:"l"`
+		Volume    string `json:"v"`
+		IsClosed  bool   `json:"x"`
+	} `json:"k"`
+}
+
+type executionReport struct {
+	EventType           string `json:"e"`
+	EventTime           int64  `json:"E"`
+	Symbol              string `json:"s"`
+	ClientOrderID       string `json:"c"`
+	Side                string `json:"S"`
+	OrderType           string `json:"o"`
+	OrderStatus         string `json:"X"`
+	OrderRejectReason   string `json:"r"`
+	OrderID             uint64 `json:"i"`
+	LastFilledQty       string `json:"l"`
+	CumQty              string `json:"z"`
+	LastFilledPrice     string `json:"L"`
+	Commission          string `json:"n"`
+	CommissionAsset     string `json:"N"`
+	TransactionTime     int64  `json:"T"`
+	TradeID             uint64 `json:"t"`
+	OrigQty             string `json:"q"`
+	Price               string `json:"p"`
+	StopPrice           string `json:"P"`
+	IcebergQty          string `json:"F"`
+	TimeInForce         string `json:"f"`
+	CurrentOrderStatus  string `json:"x"`
 }

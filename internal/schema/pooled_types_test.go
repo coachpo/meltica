@@ -71,64 +71,64 @@ func TestWsFrameNilHandling(t *testing.T) {
 	}
 }
 
-func TestProviderRawReset(t *testing.T) {
-	raw := &ProviderRaw{
+func TestParseFrameReset(t *testing.T) {
+	frame := &ParseFrame{
 		Provider:   "binance",
 		StreamName: "btcusdt@trade",
 		ReceivedAt: time.Now().UnixNano(),
 		Payload:    []byte(`{"e":"trade"}`),
 	}
 	
-	raw.Reset()
+	frame.Reset()
 	
-	if raw.Provider != "" {
+	if frame.Provider != "" {
 		t.Error("expected Provider to be reset")
 	}
-	if raw.StreamName != "" {
+	if frame.StreamName != "" {
 		t.Error("expected StreamName to be reset")
 	}
-	if raw.ReceivedAt != 0 {
+	if frame.ReceivedAt != 0 {
 		t.Error("expected ReceivedAt to be reset")
 	}
-	if raw.Payload != nil {
+	if frame.Payload != nil {
 		t.Error("expected Payload to be reset")
 	}
 }
 
-func TestProviderRawSetReturned(t *testing.T) {
-	raw := &ProviderRaw{}
+func TestParseFrameSetReturned(t *testing.T) {
+	frame := &ParseFrame{}
 	
-	raw.SetReturned(true)
-	if !raw.IsReturned() {
-		t.Error("expected raw to be marked as returned")
+	frame.SetReturned(true)
+	if !frame.IsReturned() {
+		t.Error("expected frame to be marked as returned")
 	}
 	
-	raw.SetReturned(false)
-	if raw.IsReturned() {
-		t.Error("expected raw to be marked as not returned")
-	}
-}
-
-func TestProviderRawIsReturned(t *testing.T) {
-	raw := &ProviderRaw{}
-	
-	if raw.IsReturned() {
-		t.Error("expected new raw to not be returned")
-	}
-	
-	raw.returned = true
-	if !raw.IsReturned() {
-		t.Error("expected raw to be returned")
+	frame.SetReturned(false)
+	if frame.IsReturned() {
+		t.Error("expected frame to be marked as not returned")
 	}
 }
 
-func TestProviderRawNilHandling(t *testing.T) {
-	var raw *ProviderRaw
+func TestParseFrameIsReturned(t *testing.T) {
+	frame := &ParseFrame{}
 	
-	raw.Reset() // Should not panic
-	raw.SetReturned(true) // Should not panic
+	if frame.IsReturned() {
+		t.Error("expected new frame to not be returned")
+	}
 	
-	if raw.IsReturned() {
-		t.Error("expected nil raw to return false for IsReturned")
+	frame.returned = true
+	if !frame.IsReturned() {
+		t.Error("expected frame to be returned")
+	}
+}
+
+func TestParseFrameNilHandling(t *testing.T) {
+	var frame *ParseFrame
+	
+	frame.Reset() // Should not panic
+	frame.SetReturned(true) // Should not panic
+	
+	if frame.IsReturned() {
+		t.Error("expected nil frame to return false for IsReturned")
 	}
 }

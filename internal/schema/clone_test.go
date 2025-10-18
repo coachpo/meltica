@@ -39,38 +39,6 @@ func TestCopyEventNil(t *testing.T) {
 	CopyEvent(dst, nil) // Should not panic
 }
 
-func TestCopyEventBookUpdate(t *testing.T) {
-	original := &Event{
-		EventID:  "evt-book-1",
-		Provider: "binance",
-		Symbol:   "BTC-USD",
-		Type:     "BOOK_UPDATE",
-		Payload: BookUpdatePayload{
-			Bids: []PriceLevel{
-				{Price: "50000.00", Quantity: "1.5"},
-			},
-			Asks: []PriceLevel{
-				{Price: "50100.00", Quantity: "2.0"},
-			},
-		},
-	}
-	
-	dst := &Event{}
-	CopyEvent(dst, original)
-	
-	// Verify deep copy
-	payload, ok := dst.Payload.(BookUpdatePayload)
-	if !ok {
-		t.Fatal("expected BookUpdatePayload")
-	}
-	if len(payload.Bids) != 1 {
-		t.Error("expected 1 bid level")
-	}
-	if len(payload.Asks) != 1 {
-		t.Error("expected 1 ask level")
-	}
-}
-
 func TestCopyEventBookSnapshot(t *testing.T) {
 	original := &Event{
 		EventID:  "evt-snap-1",
