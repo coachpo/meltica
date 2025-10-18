@@ -62,7 +62,7 @@ Dispatcher ..> Providers : order requests
 
 ### Performance & Memory Enhancements
 
-- **Bounded Object Pools:** `PoolManager` coordinates five bounded pools (`WsFrame`, `ProviderRaw`, `Event`, `OrderRequest`, `ExecReport`) with 100 ms acquisition timeouts and double-Put detection. Debug builds poison returned objects and capture acquisition stacks to accelerate leak investigations.
+- **Bounded Object Pools:** `PoolManager` coordinates bounded pools (`Event`, `OrderRequest`) with 100 ms acquisition timeouts and double-Put detection. Debug builds poison returned objects and capture acquisition stacks to accelerate leak investigations.
 - **WebSocket Transport:** Providers now rely on `github.com/coder/websocket`, enabling context-driven deadlines, native ping/pong, and lower frame overhead compared with the legacy gorilla client.
 - **JSON Serialization:** All canonical serialization paths use `github.com/goccy/go-json`, reducing marshal/unmarshal latency and allocations while preserving API compatibility.
 - **Fan-Out Clones & Recycler:** Dispatcher creates per-subscriber duplicates from `sync.Pool`, delivers them in parallel, and recycles the original via Recycler after enqueue loop. Recycler serves as the single return gateway for all structs (Dispatcher originals and Consumer deliveries). Debug poisoning catches use-after-put violations; double-put guards prevent lifecycle errors. Clones are allocated on the heap (unpooled), guaranteeing clone ownership by consumers.

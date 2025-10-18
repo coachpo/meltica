@@ -73,7 +73,6 @@ Optimized for memory pool operations (typically 0.05-2ms).
 
 **Known Pool Names**:
 - `Event` - Event objects (`*schema.Event`)
-- `WsFrame` - WebSocket frame objects (`*schema.WsFrame`)
 - `OrderRequest` - Order request objects (`*schema.OrderRequest`)
 
 ---
@@ -124,8 +123,8 @@ Optimized for orderbook initialization (typically 500-2000ms).
 | `event_type` | `BookSnapshot`, `Trade`, `Ticker`, `Kline` | Event type classification |
 | `provider` | `binance`, `fake` | Data source provider |
 | `symbol` | `BTC-USDT`, `ETH-USDT`, `XRP-USDT`, etc. | Trading pair |
-| `pool_name` | `Event`, `WsFrame`, `OrderRequest` | Pool identifier |
-| `object_type` | `*schema.Event`, `*schema.WsFrame`, etc. | Go type of pooled object |
+| `pool_name` | `Event`, `OrderRequest` | Pool identifier |
+| `object_type` | `*schema.Event`, `*schema.OrderRequest` | Go type of pooled object |
 | `error_type` | Various | Error classification |
 | `reason` | Various | Specific cause/context |
 

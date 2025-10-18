@@ -64,16 +64,10 @@ func main() {
 	}
 	// Object pools for memory efficiency - avoid allocations on hot paths:
 	//
-	// WsFrame (10000 capacity):
-	//   - Used by WebSocket parsers to receive raw frames from transport
-	//   - Shared across all exchanges (Binance, Coinbase, Kraken, etc.)
-	//   - Hot path: Every WebSocket message allocates/returns one frame
-	//   - Increased to 10K for Binance high-frequency streams (900+ msgs/sec)
-	//
 	// Event (20000 capacity):
 	//   - The canonical event objects sent through the system
 	//   - Highest capacity: Main message type flowing through all components
-	//   - Data flow: WsFrame → Parser → Event (direct conversion, no intermediate frames)
+	//   - Data flow: WebSocket → Parser → Event (direct conversion from raw bytes)
 	//   - Bus fanout clones events for each subscriber, requiring more pool capacity
 	//   - Increased to 20K for high fanout scenarios (multiple lambdas per symbol)
 	//
@@ -82,7 +76,6 @@ func main() {
 	//   - Lower capacity: Orders are less frequent than market data
 	//
 	// Pool sizing accounts for: Binance 9 streams × 100+ msgs/sec + bus fanout cloning + buffering
-	registerPool("WsFrame", 10000, func() interface{} { return new(schema.WsFrame) })
 	registerPool("Event", 20000, func() interface{} { return new(schema.Event) })
 	registerPool("OrderRequest", 5000, func() interface{} { return new(schema.OrderRequest) })
 

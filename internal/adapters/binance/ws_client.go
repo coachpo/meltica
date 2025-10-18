@@ -2,8 +2,6 @@ package binance
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -118,33 +116,9 @@ func (c *WSClient) handleFrame(ctx context.Context, events chan<- *schema.Event,
 	ingestTS := c.clock().UTC()
 	start := time.Now()
 	status := "success"
-	// Increase timeout for high-frequency streams - pool contention can be high
-	// Binance sends 9 streams × 100+ msgs/sec = 900+ msgs/sec
-	frameCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-	wsFrame, release, err := c.acquireWsFrame(frameCtx)
-	cancel()
-	if err != nil {
-		status = "acquire_failed"
-		c.recordFrame(err, status, len(payload), time.Since(start))
-		select {
-		case errs <- err:
-		default:
-		}
-		return
-	}
-	if release != nil {
-		defer release()
-	}
-	if wsFrame == nil {
-		return
-	}
 
-	wsFrame.Provider = c.providerName
-	wsFrame.ReceivedAt = ingestTS.UnixNano()
-	wsFrame.MessageType = 0
-	wsFrame.Data = append(wsFrame.Data[:0], payload...)
-
-	parsed, err := c.parser.Parse(ctx, wsFrame.Data, ingestTS)
+	// Parse frame directly without WsFrame wrapper
+	parsed, err := c.parser.Parse(ctx, payload, ingestTS)
 	if err != nil {
 		status = "parse_failed"
 		c.recordFrame(err, status, len(payload), time.Since(start))
@@ -201,19 +175,4 @@ func (c *WSClient) recordFrame(err error, status string, size int, elapsed time.
 	}
 }
 
-func (c *WSClient) acquireWsFrame(ctx context.Context) (*schema.WsFrame, func(), error) {
-	if c.pools == nil {
-		frame := new(schema.WsFrame)
-		return frame, func() {}, nil
-	}
-	obj, err := c.pools.Get(ctx, "WsFrame")
-	if err != nil {
-		return nil, nil, fmt.Errorf("acquire ws frame: %w", err)
-	}
-	frame, ok := obj.(*schema.WsFrame)
-	if !ok {
-		c.pools.Put("WsFrame", obj)
-		return nil, nil, errors.New("ws frame pool returned unexpected type")
-	}
-	return frame, func() { c.pools.Put("WsFrame", frame) }, nil
-}
+
