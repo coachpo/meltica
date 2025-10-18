@@ -206,13 +206,73 @@
       }
     },
     {
+      "title": "Pool Exhaustion Risk",
+      "type": "stat",
+      "id": 17,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 24,
+        "h": 3
+      },
+      "targets": [
+        {
+          "expr": "sum by (pool_name) (meltica_pool_objects_active{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"}) / sum by (pool_name) (meltica_pool_capacity{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"})",
+          "refId": "A",
+          "legendFormat": "{{pool_name}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": 0,
+                "color": "green"
+              },
+              {
+                "value": 0.8,
+                "color": "yellow"
+              },
+              {
+                "value": 0.95,
+                "color": "red"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      }
+    },
+    {
       "title": "Utilization",
       "type": "row",
       "id": 6,
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 5,
+        "y": 8,
         "w": 24,
         "h": 1
       }
@@ -227,7 +287,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 6,
+        "y": 9,
         "w": 12,
         "h": 8
       },
@@ -305,7 +365,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 6,
+        "y": 9,
         "w": 12,
         "h": 8
       },
@@ -345,7 +405,7 @@
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 14,
+        "y": 17,
         "w": 24,
         "h": 1
       }
@@ -360,7 +420,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 15,
+        "y": 18,
         "w": 12,
         "h": 8
       },
@@ -420,7 +480,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 15,
+        "y": 18,
         "w": 12,
         "h": 8
       },
@@ -465,7 +525,7 @@
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 23,
+        "y": 26,
         "w": 24,
         "h": 1
       }
@@ -480,7 +540,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 24,
+        "y": 27,
         "w": 12,
         "h": 8
       },
@@ -532,7 +592,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 24,
+        "y": 27,
         "w": 12,
         "h": 8
       },
@@ -561,13 +621,133 @@
       }
     },
     {
+      "title": "Health Indicators",
+      "type": "row",
+      "id": 18,
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 35,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "title": "Pool Contention (p99 Borrow > 5ms)",
+      "type": "stat",
+      "id": 19,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 36,
+        "w": 12,
+        "h": 4
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, pool_name) (rate(meltica_pool_borrow_duration_bucket{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"}[5m])))",
+          "refId": "A",
+          "legendFormat": "{{pool_name}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": 0,
+                "color": "green"
+              },
+              {
+                "value": 2,
+                "color": "yellow"
+              },
+              {
+                "value": 5,
+                "color": "red"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      }
+    },
+    {
+      "title": "Potential Leak Detection (Active Objects Trend)",
+      "type": "timeseries",
+      "id": 20,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 36,
+        "w": 12,
+        "h": 4
+      },
+      "targets": [
+        {
+          "expr": "meltica_pool_objects_active{environment=~\"$environment\", pool_name=~\"$pool_name\", object_type=~\"$object_type\"}",
+          "refId": "A",
+          "legendFormat": "{{pool_name}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 20,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "last",
+            "delta"
+          ]
+        }
+      }
+    },
+    {
       "title": "Summary",
       "type": "row",
       "id": 15,
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 32,
+        "y": 40,
         "w": 24,
         "h": 1
       }
@@ -582,7 +762,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 33,
+        "y": 41,
         "w": 24,
         "h": 8
       },
@@ -821,5 +1001,25 @@
   },
   "annotations": {
     "list": []
-  }
+  },
+  "links": [
+    {
+      "title": "System Overview",
+      "url": "/d/meltica-system-overview",
+      "icon": "dashboard",
+      "type": "link"
+    },
+    {
+      "title": "Event Pipeline Details",
+      "url": "/d/meltica-event-pipeline",
+      "icon": "external link",
+      "type": "link"
+    },
+    {
+      "title": "Orderbook Quality Details",
+      "url": "/d/meltica-orderbook",
+      "icon": "external link",
+      "type": "link"
+    }
+  ]
 }

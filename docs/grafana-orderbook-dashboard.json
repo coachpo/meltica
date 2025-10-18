@@ -23,6 +23,65 @@
       }
     },
     {
+      "title": "Overall Quality Score",
+      "type": "stat",
+      "id": 50,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 24,
+        "h": 4
+      },
+      "targets": [
+        {
+          "expr": "1 - clamp_max((sum(rate(meltica_orderbook_gap_detected{environment=~\"$environment\", provider=~\"$provider\", symbol=~\"$symbol\"}[5m])) * 10 + sum(rate(meltica_orderbook_update_stale{environment=~\"$environment\", provider=~\"$provider\", symbol=~\"$symbol\"}[5m])) * 5), 1)",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": 0,
+                "color": "red"
+              },
+              {
+                "value": 0.95,
+                "color": "yellow"
+              },
+              {
+                "value": 0.99,
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
       "title": "Gap Rate (5m)",
       "type": "stat",
       "id": 3,
@@ -32,7 +91,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 1,
+        "y": 5,
         "w": 6,
         "h": 4
       },
@@ -91,7 +150,7 @@
       },
       "gridPos": {
         "x": 6,
-        "y": 1,
+        "y": 5,
         "w": 6,
         "h": 4
       },
@@ -150,7 +209,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 1,
+        "y": 5,
         "w": 6,
         "h": 4
       },
@@ -192,7 +251,7 @@
       },
       "gridPos": {
         "x": 18,
-        "y": 1,
+        "y": 5,
         "w": 6,
         "h": 4
       },
@@ -247,7 +306,7 @@
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 5,
+        "y": 9,
         "w": 24,
         "h": 1
       }
@@ -262,7 +321,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 6,
+        "y": 10,
         "w": 12,
         "h": 8
       },
@@ -305,7 +364,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 6,
+        "y": 10,
         "w": 12,
         "h": 8
       },
@@ -362,9 +421,100 @@
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 14,
+        "y": 18,
         "w": 24,
         "h": 1
+      }
+    },
+    {
+      "title": "Recovery Pattern (Gaps \u2192 Buffer Buildup \u2192 Ready)",
+      "type": "timeseries",
+      "id": 51,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 27,
+        "w": 24,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "sum by (provider, symbol) (rate(meltica_orderbook_gap_detected{environment=~\"$environment\", provider=~\"$provider\", symbol=~\"$symbol\"}[1m]))",
+          "refId": "Gaps",
+          "legendFormat": "Gaps {{provider}}-{{symbol}}"
+        },
+        {
+          "expr": "avg by (provider, symbol) (meltica_orderbook_buffer_size{environment=~\"$environment\", provider=~\"$provider\", symbol=~\"$symbol\"}) / 10",
+          "refId": "Buffer",
+          "legendFormat": "Buffer/10 {{provider}}-{{symbol}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 15
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "Gaps"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              },
+              {
+                "id": "custom.drawStyle",
+                "value": "bars"
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 60
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "Buffer"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "sum",
+            "max"
+          ]
+        }
       }
     },
     {
@@ -377,7 +527,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 15,
+        "y": 19,
         "w": 12,
         "h": 8
       },
@@ -420,56 +570,13 @@
       }
     },
     {
-      "title": "Updates Replayed",
-      "type": "timeseries",
-      "id": 12,
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "gridPos": {
-        "x": 12,
-        "y": 15,
-        "w": 12,
-        "h": 8
-      },
-      "targets": [
-        {
-          "expr": "sum by (provider, symbol) (rate(meltica_orderbook_updates_replayed{environment=~\"$environment\", provider=~\"$provider\", symbol=~\"$symbol\"}[5m]))",
-          "refId": "A",
-          "legendFormat": "{{provider}} {{symbol}}"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "ops",
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 2,
-            "fillOpacity": 10
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "bottom",
-          "calcs": [
-            "sum",
-            "max"
-          ]
-        }
-      }
-    },
-    {
       "title": "WebSocket Health",
       "type": "row",
       "id": 13,
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 23,
+        "y": 35,
         "w": 24,
         "h": 1
       }
@@ -484,7 +591,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 24,
+        "y": 36,
         "w": 12,
         "h": 8
       },
@@ -527,7 +634,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 24,
+        "y": 19,
         "w": 12,
         "h": 8
       },
@@ -568,9 +675,9 @@
         "uid": "${DS_PROMETHEUS}"
       },
       "gridPos": {
-        "x": 0,
-        "y": 32,
-        "w": 24,
+        "x": 12,
+        "y": 36,
+        "w": 12,
         "h": 8
       },
       "targets": [
@@ -617,7 +724,18 @@
               "Time": true,
               "__name__": true,
               "instance": true,
-              "job": true
+              "job": true,
+              "cluster": true,
+              "deployment_environment": true,
+              "environment": true,
+              "exported_job": true,
+              "host_name": true,
+              "os_type": true,
+              "process_runtime_name": true,
+              "process_runtime_version": true,
+              "service": true,
+              "service_name": true,
+              "service_version": true
             },
             "indexByName": {
               "provider": 0,
@@ -810,5 +928,25 @@
   },
   "annotations": {
     "list": []
-  }
+  },
+  "links": [
+    {
+      "title": "System Overview",
+      "url": "/d/meltica-system-overview",
+      "icon": "dashboard",
+      "type": "link"
+    },
+    {
+      "title": "Event Pipeline Details",
+      "url": "/d/meltica-event-pipeline",
+      "icon": "external link",
+      "type": "link"
+    },
+    {
+      "title": "Pool Health Details",
+      "url": "/d/meltica-pool-usage",
+      "icon": "external link",
+      "type": "link"
+    }
+  ]
 }

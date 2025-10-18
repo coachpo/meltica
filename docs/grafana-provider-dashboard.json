@@ -1,6 +1,6 @@
 {
-  "title": "Meltica Telemetry Overview",
-  "uid": "meltica-provider-health",
+  "title": "Meltica Event Pipeline",
+  "uid": "meltica-event-pipeline",
   "timezone": "browser",
   "editable": true,
   "graphTooltip": 1,
@@ -1356,7 +1356,16 @@
               "instance": true,
               "job": true,
               "service": true,
-              "exported_job": true
+              "exported_job": true,
+              "cluster": true,
+              "deployment_environment": true,
+              "environment": true,
+              "host_name": true,
+              "os_type": true,
+              "process_runtime_name": true,
+              "process_runtime_version": true,
+              "service_name": true,
+              "service_version": true
             },
             "renameByName": {
               "provider": "Provider",
@@ -1371,16 +1380,16 @@
               "Value #Stale": "Stale Rate"
             },
             "indexByName": {
-              "Provider": 0,
-              "Event Type": 1,
-              "Symbol": 2,
-              "Ingestion Rate": 3,
-              "Drop Rate": 4,
-              "Duplicate Rate": 5,
-              "Buffered Avg": 6,
-              "Published Rate": 7,
-              "Gap Rate": 8,
-              "Stale Rate": 9
+              "provider": 0,
+              "event_type": 1,
+              "symbol": 2,
+              "Value #Ingested": 3,
+              "Value #Dropped": 4,
+              "Value #Duplicate": 5,
+              "Value #Buffered": 6,
+              "Value #Published": 7,
+              "Value #Gaps": 8,
+              "Value #Stale": 9
             }
           }
         }
@@ -1568,5 +1577,25 @@
         ]
       }
     ]
-  }
+  },
+  "links": [
+    {
+      "title": "System Overview",
+      "url": "/d/meltica-system-overview",
+      "icon": "dashboard",
+      "type": "link"
+    },
+    {
+      "title": "Pool Health Details",
+      "url": "/d/meltica-pool-usage",
+      "icon": "external link",
+      "type": "link"
+    },
+    {
+      "title": "Orderbook Quality Details",
+      "url": "/d/meltica-orderbook",
+      "icon": "external link",
+      "type": "link"
+    }
+  ]
 }
