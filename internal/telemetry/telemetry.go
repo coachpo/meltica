@@ -220,13 +220,59 @@ func newMeterProvider(ctx context.Context, res *resource.Resource, cfg Config) (
 		return nil, fmt.Errorf("create metric exporter: %w", err)
 	}
 
+	// Configure Views for histogram bucket customization
+	views := createHistogramViews()
+
 	mp := sdkmetric.NewMeterProvider(
 		sdkmetric.WithResource(res),
 		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(exporter,
 			sdkmetric.WithInterval(cfg.MetricInterval),
 		)),
+		sdkmetric.WithView(views...),
 	)
 	return mp, nil
+}
+
+// createHistogramViews configures explicit histogram buckets optimized for observed latency patterns.
+func createHistogramViews() []sdkmetric.View {
+	return []sdkmetric.View{
+		// Dispatcher processing duration: 0.1ms - 500ms (event processing latency)
+		sdkmetric.NewView(
+			sdkmetric.Instrument{Name: "dispatcher.processing.duration"},
+			sdkmetric.Stream{
+				Aggregation: sdkmetric.AggregationExplicitBucketHistogram{
+					Boundaries: []float64{0.1, 0.5, 1, 2, 5, 10, 25, 50, 100, 250, 500},
+				},
+			},
+		),
+		// Pool borrow duration: 0.01ms - 50ms (memory pool operations)
+		sdkmetric.NewView(
+			sdkmetric.Instrument{Name: "pool.borrow.duration"},
+			sdkmetric.Stream{
+				Aggregation: sdkmetric.AggregationExplicitBucketHistogram{
+					Boundaries: []float64{0.01, 0.05, 0.1, 0.5, 1, 2, 5, 10, 25, 50},
+				},
+			},
+		),
+		// Orderbook cold start duration: 100ms - 30s (initial snapshot loading)
+		sdkmetric.NewView(
+			sdkmetric.Instrument{Name: "orderbook.coldstart.duration"},
+			sdkmetric.Stream{
+				Aggregation: sdkmetric.AggregationExplicitBucketHistogram{
+					Boundaries: []float64{100, 250, 500, 1000, 2000, 5000, 10000, 30000},
+				},
+			},
+		),
+		// Databus fanout size: 1 - 100 subscribers
+		sdkmetric.NewView(
+			sdkmetric.Instrument{Name: "databus.fanout.size"},
+			sdkmetric.Stream{
+				Aggregation: sdkmetric.AggregationExplicitBucketHistogram{
+					Boundaries: []float64{1, 2, 5, 10, 20, 50, 100},
+				},
+			},
+		),
+	}
 }
 
 // Environment returns the configured environment name for use in metric labels.

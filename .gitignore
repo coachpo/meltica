@@ -47,3 +47,6 @@ coverage/
 # Ignore IDE directories
 .idea/
 .vscode/
+
+# Deployment
+!deployments/**/*
