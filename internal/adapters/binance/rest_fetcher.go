@@ -19,14 +19,14 @@ const (
 	binanceRESTURL        = "https://api.binance.com"
 	binanceTestnetRESTURL = "https://testnet.binance.vision"
 
-	// REST API rate limits per Binance documentation
-	maxRequestsPerMinute = 1200
-	maxOrdersPerSecond   = 10
-	maxOrdersPerDay      = 200000
+	// REST API rate limits per Binance documentation (for reference)
+	_ = 1200   // maxRequestsPerMinute - enforced by RateLimiter
+	_ = 10     // maxOrdersPerSecond - enforced by RateLimiter
+	_ = 200000 // maxOrdersPerDay - enforced by RateLimiter
 )
 
-// BinanceRESTFetcher implements REST API client with authentication and rate limiting.
-type BinanceRESTFetcher struct {
+// RESTFetcher implements REST API client with authentication and rate limiting.
+type RESTFetcher struct {
 	baseURL     string
 	apiKey      string
 	secretKey   string
@@ -36,16 +36,17 @@ type BinanceRESTFetcher struct {
 }
 
 // NewBinanceRESTFetcher creates a production-ready REST client.
-func NewBinanceRESTFetcher(apiKey, secretKey string, useTestnet bool) *BinanceRESTFetcher {
+func NewBinanceRESTFetcher(apiKey, secretKey string, useTestnet bool) *RESTFetcher {
 	baseURL := binanceRESTURL
 	if useTestnet {
 		baseURL = binanceTestnetRESTURL
 	}
 
-	return &BinanceRESTFetcher{
-		baseURL:     baseURL,
-		apiKey:      apiKey,
-		secretKey:   secretKey,
+	return &RESTFetcher{
+		baseURL:   baseURL,
+		apiKey:    apiKey,
+		secretKey: secretKey,
+		//nolint:exhaustruct // default http.Client settings are appropriate
 		httpClient:  &http.Client{Timeout: 10 * time.Second},
 		rateLimiter: NewRateLimiter(20), // 20 requests per second = 1200/minute
 		useTestnet:  useTestnet,
@@ -53,7 +54,7 @@ func NewBinanceRESTFetcher(apiKey, secretKey string, useTestnet bool) *BinanceRE
 }
 
 // Fetch retrieves data from Binance REST API endpoint.
-func (f *BinanceRESTFetcher) Fetch(ctx context.Context, endpoint string) ([]byte, error) {
+func (f *RESTFetcher) Fetch(ctx context.Context, endpoint string) ([]byte, error) {
 	// Parse endpoint to see if it's a full URL or path
 	var fullURL string
 	if endpoint == "" {
@@ -87,7 +88,7 @@ func (f *BinanceRESTFetcher) Fetch(ctx context.Context, endpoint string) ([]byte
 	if err != nil {
 		return nil, fmt.Errorf("execute request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Read response
 	body, err := io.ReadAll(resp.Body)
@@ -104,7 +105,7 @@ func (f *BinanceRESTFetcher) Fetch(ctx context.Context, endpoint string) ([]byte
 }
 
 // FetchSigned makes a signed request to Binance (for authenticated endpoints).
-func (f *BinanceRESTFetcher) FetchSigned(ctx context.Context, endpoint string, params url.Values) ([]byte, error) {
+func (f *RESTFetcher) FetchSigned(ctx context.Context, endpoint string, params url.Values) ([]byte, error) {
 	if f.secretKey == "" {
 		return nil, fmt.Errorf("secret key required for signed requests")
 	}
@@ -143,7 +144,7 @@ func (f *BinanceRESTFetcher) FetchSigned(ctx context.Context, endpoint string, p
 	if err != nil {
 		return nil, fmt.Errorf("execute request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Read response
 	body, err := io.ReadAll(resp.Body)
@@ -160,14 +161,14 @@ func (f *BinanceRESTFetcher) FetchSigned(ctx context.Context, endpoint string, p
 }
 
 // sign generates HMAC SHA256 signature for Binance API.
-func (f *BinanceRESTFetcher) sign(payload string) string {
+func (f *RESTFetcher) sign(payload string) string {
 	mac := hmac.New(sha256.New, []byte(f.secretKey))
 	mac.Write([]byte(payload))
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
 // GetServerTime retrieves Binance server time (useful for synchronization).
-func (f *BinanceRESTFetcher) GetServerTime(ctx context.Context) (int64, error) {
+func (f *RESTFetcher) GetServerTime(ctx context.Context) (int64, error) {
 	body, err := f.Fetch(ctx, "/api/v3/time")
 	if err != nil {
 		return 0, err
@@ -186,7 +187,7 @@ func (f *BinanceRESTFetcher) GetServerTime(ctx context.Context) (int64, error) {
 }
 
 // CreateListenKey creates a user data stream listen key.
-func (f *BinanceRESTFetcher) CreateListenKey(ctx context.Context) (string, error) {
+func (f *RESTFetcher) CreateListenKey(ctx context.Context) (string, error) {
 	if f.apiKey == "" {
 		return "", fmt.Errorf("API key required for user data stream")
 	}
@@ -207,7 +208,7 @@ func (f *BinanceRESTFetcher) CreateListenKey(ctx context.Context) (string, error
 	if err != nil {
 		return "", fmt.Errorf("execute request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -231,7 +232,7 @@ func (f *BinanceRESTFetcher) CreateListenKey(ctx context.Context) (string, error
 }
 
 // KeepAliveListenKey extends the validity of a user data stream.
-func (f *BinanceRESTFetcher) KeepAliveListenKey(ctx context.Context, listenKey string) error {
+func (f *RESTFetcher) KeepAliveListenKey(ctx context.Context, listenKey string) error {
 	if f.apiKey == "" {
 		return fmt.Errorf("API key required")
 	}
@@ -251,7 +252,7 @@ func (f *BinanceRESTFetcher) KeepAliveListenKey(ctx context.Context, listenKey s
 	if err != nil {
 		return fmt.Errorf("execute request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)

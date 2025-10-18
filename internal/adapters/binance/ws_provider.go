@@ -30,11 +30,16 @@ const (
 	connectionTTL   = 23 * time.Hour // Binance connections valid for 24h, reconnect before
 )
 
+// Errors returned by WebSocket provider.
 var (
-	ErrTooManyStreams      = errors.New("too many streams subscribed")
-	ErrRateLimitExceeded   = errors.New("message rate limit exceeded")
-	ErrConnectionClosed    = errors.New("websocket connection closed")
-	ErrReconnectFailed     = errors.New("failed to reconnect after max attempts")
+	// ErrTooManyStreams is returned when attempting to subscribe to more than 1024 streams.
+	ErrTooManyStreams = errors.New("too many streams subscribed")
+	// ErrRateLimitExceeded is returned when message rate limit is exceeded.
+	ErrRateLimitExceeded = errors.New("message rate limit exceeded")
+	// ErrConnectionClosed is returned when WebSocket connection is closed.
+	ErrConnectionClosed = errors.New("websocket connection closed")
+	// ErrReconnectFailed is returned after max reconnection attempts.
+	ErrReconnectFailed = errors.New("failed to reconnect after max attempts")
 )
 
 // WSProviderConfig configures the WebSocket provider.
@@ -47,8 +52,8 @@ type WSProviderConfig struct {
 	MaxReconnects int
 }
 
-// BinanceWSProvider implements real WebSocket connection to Binance.
-type BinanceWSProvider struct {
+// WSProvider implements real WebSocket connection to Binance.
+type WSProvider struct {
 	cfg        WSProviderConfig
 	conn       *websocket.Conn
 	connMu     sync.RWMutex
@@ -68,7 +73,7 @@ type BinanceWSProvider struct {
 }
 
 // NewBinanceWSProvider creates a production-ready WebSocket provider.
-func NewBinanceWSProvider(cfg WSProviderConfig) *BinanceWSProvider {
+func NewBinanceWSProvider(cfg WSProviderConfig) *WSProvider {
 	if cfg.BaseURL == "" {
 		if cfg.UseTestnet {
 			cfg.BaseURL = binanceTestnetWS
@@ -86,7 +91,8 @@ func NewBinanceWSProvider(cfg WSProviderConfig) *BinanceWSProvider {
 		cfg.MaxReconnects = 10
 	}
 
-	return &BinanceWSProvider{
+	//nolint:exhaustruct // other fields initialized on Subscribe()
+	return &WSProvider{
 		cfg:         cfg,
 		streams:     make(map[string]bool),
 		rateLimiter: cfg.RateLimiter,
@@ -97,7 +103,7 @@ func NewBinanceWSProvider(cfg WSProviderConfig) *BinanceWSProvider {
 
 // Subscribe establishes WebSocket connection and subscribes to topics.
 // Implements auto-reconnection with exponential backoff.
-func (p *BinanceWSProvider) Subscribe(ctx context.Context, topics []string) (<-chan []byte, <-chan error, error) {
+func (p *WSProvider) Subscribe(ctx context.Context, topics []string) (<-chan []byte, <-chan error, error) {
 	p.startedMu.Lock()
 	if p.started {
 		p.startedMu.Unlock()
@@ -136,7 +142,7 @@ func (p *BinanceWSProvider) Subscribe(ctx context.Context, topics []string) (<-c
 }
 
 // connect establishes WebSocket connection to Binance.
-func (p *BinanceWSProvider) connect() error {
+func (p *WSProvider) connect() error {
 	p.connMu.Lock()
 	defer p.connMu.Unlock()
 
@@ -166,20 +172,20 @@ func (p *BinanceWSProvider) connect() error {
 }
 
 // disconnect closes the WebSocket connection.
-func (p *BinanceWSProvider) disconnect() {
+func (p *WSProvider) disconnect() {
 	p.connMu.Lock()
 	defer p.connMu.Unlock()
 
 	if p.conn != nil {
 		// Close with normal closure status
-		p.conn.Close(websocket.StatusNormalClosure, "")
+		_ = p.conn.Close(websocket.StatusNormalClosure, "")
 		p.conn = nil
 		p.logger.Println("binance ws: disconnected")
 	}
 }
 
 // subscribeTo sends subscribe messages for the given topics.
-func (p *BinanceWSProvider) subscribeTo(topics []string) error {
+func (p *WSProvider) subscribeTo(topics []string) error {
 	if len(topics) == 0 {
 		return nil
 	}
@@ -201,7 +207,7 @@ func (p *BinanceWSProvider) subscribeTo(topics []string) error {
 }
 
 // sendJSON sends a JSON message with rate limiting.
-func (p *BinanceWSProvider) sendJSON(v interface{}) error {
+func (p *WSProvider) sendJSON(v interface{}) error {
 	// Rate limiting
 	if !p.rateLimiter.Allow() {
 		return ErrRateLimitExceeded
@@ -232,7 +238,7 @@ func (p *BinanceWSProvider) sendJSON(v interface{}) error {
 }
 
 // pingLoop sends periodic ping frames as required by Binance.
-func (p *BinanceWSProvider) pingLoop() {
+func (p *WSProvider) pingLoop() {
 	ticker := time.NewTicker(pingInterval)
 	defer ticker.Stop()
 
@@ -260,7 +266,7 @@ func (p *BinanceWSProvider) pingLoop() {
 }
 
 // readLoop reads messages from WebSocket.
-func (p *BinanceWSProvider) readLoop(frames chan<- []byte, errs chan<- error) {
+func (p *WSProvider) readLoop(frames chan<- []byte, errs chan<- error) {
 	defer close(frames)
 	defer close(errs)
 
@@ -330,7 +336,7 @@ func (p *BinanceWSProvider) readLoop(frames chan<- []byte, errs chan<- error) {
 }
 
 // reconnectLoop handles automatic reconnection.
-func (p *BinanceWSProvider) reconnectLoop(topics []string) {
+func (p *WSProvider) reconnectLoop(topics []string) {
 	backoff := reconnectDelay
 
 	for {
@@ -376,7 +382,7 @@ func (p *BinanceWSProvider) reconnectLoop(topics []string) {
 }
 
 // connectionTTLMonitor monitors connection age and triggers reconnect before TTL expires.
-func (p *BinanceWSProvider) connectionTTLMonitor() {
+func (p *WSProvider) connectionTTLMonitor() {
 	ticker := time.NewTicker(1 * time.Hour)
 	defer ticker.Stop()
 
@@ -398,7 +404,7 @@ func (p *BinanceWSProvider) connectionTTLMonitor() {
 }
 
 // triggerReconnect signals the reconnect loop.
-func (p *BinanceWSProvider) triggerReconnect() {
+func (p *WSProvider) triggerReconnect() {
 	select {
 	case p.reconnectC <- struct{}{}:
 	default:
@@ -407,7 +413,7 @@ func (p *BinanceWSProvider) triggerReconnect() {
 }
 
 // Close gracefully closes the WebSocket connection.
-func (p *BinanceWSProvider) Close() error {
+func (p *WSProvider) Close() error {
 	p.startedMu.Lock()
 	if !p.started {
 		p.startedMu.Unlock()

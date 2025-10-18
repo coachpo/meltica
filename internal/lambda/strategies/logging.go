@@ -13,72 +13,72 @@ type Logging struct {
 }
 
 // OnTrade logs trade events.
-func (s *Logging) OnTrade(_ context.Context, _ *schema.Event, _ schema.TradePayload, price float64) {
-	s.Logger.Printf("[STRATEGY] Trade received: price=%.2f", price)
+func (s *Logging) OnTrade(_ context.Context, evt *schema.Event, _ schema.TradePayload, price float64) {
+	s.Logger.Printf("[STRATEGY] Trade received: provider=%s symbol=%s price=%.2f", evt.Provider, evt.Symbol, price)
 }
 
 // OnTicker logs ticker events.
-func (s *Logging) OnTicker(_ context.Context, _ *schema.Event, payload schema.TickerPayload) {
-	s.Logger.Printf("[STRATEGY] Ticker: last=%s bid=%s ask=%s",
-		payload.LastPrice, payload.BidPrice, payload.AskPrice)
+func (s *Logging) OnTicker(_ context.Context, evt *schema.Event, payload schema.TickerPayload) {
+	s.Logger.Printf("[STRATEGY] Ticker: provider=%s symbol=%s last=%s bid=%s ask=%s",
+		evt.Provider, evt.Symbol, payload.LastPrice, payload.BidPrice, payload.AskPrice)
 }
 
 // OnBookSnapshot logs book snapshot events.
-func (s *Logging) OnBookSnapshot(_ context.Context, _ *schema.Event, payload schema.BookSnapshotPayload) {
-	s.Logger.Printf("[STRATEGY] Book snapshot: %d bids, %d asks", len(payload.Bids), len(payload.Asks))
+func (s *Logging) OnBookSnapshot(_ context.Context, evt *schema.Event, payload schema.BookSnapshotPayload) {
+	s.Logger.Printf("[STRATEGY] Book snapshot: provider=%s symbol=%s %d bids, %d asks", evt.Provider, evt.Symbol, len(payload.Bids), len(payload.Asks))
 }
 
 // OnOrderFilled logs filled order events.
-func (s *Logging) OnOrderFilled(_ context.Context, _ *schema.Event, payload schema.ExecReportPayload) {
-	s.Logger.Printf("[STRATEGY] Order filled: id=%s qty=%s price=%s",
-		payload.ClientOrderID, payload.FilledQuantity, payload.AvgFillPrice)
+func (s *Logging) OnOrderFilled(_ context.Context, evt *schema.Event, payload schema.ExecReportPayload) {
+	s.Logger.Printf("[STRATEGY] Order filled: provider=%s symbol=%s id=%s qty=%s price=%s",
+		evt.Provider, evt.Symbol, payload.ClientOrderID, payload.FilledQuantity, payload.AvgFillPrice)
 }
 
 // OnOrderRejected logs rejected order events.
-func (s *Logging) OnOrderRejected(_ context.Context, _ *schema.Event, payload schema.ExecReportPayload, reason string) {
-	s.Logger.Printf("[STRATEGY] Order rejected: id=%s reason=%s", payload.ClientOrderID, reason)
+func (s *Logging) OnOrderRejected(_ context.Context, evt *schema.Event, payload schema.ExecReportPayload, reason string) {
+	s.Logger.Printf("[STRATEGY] Order rejected: provider=%s symbol=%s id=%s reason=%s", evt.Provider, evt.Symbol, payload.ClientOrderID, reason)
 }
 
 // OnOrderPartialFill logs partial fill events.
-func (s *Logging) OnOrderPartialFill(_ context.Context, _ *schema.Event, payload schema.ExecReportPayload) {
-	s.Logger.Printf("[STRATEGY] Order partial fill: id=%s filled=%s remaining=%s",
-		payload.ClientOrderID, payload.FilledQuantity, payload.RemainingQty)
+func (s *Logging) OnOrderPartialFill(_ context.Context, evt *schema.Event, payload schema.ExecReportPayload) {
+	s.Logger.Printf("[STRATEGY] Order partial fill: provider=%s symbol=%s id=%s filled=%s remaining=%s",
+		evt.Provider, evt.Symbol, payload.ClientOrderID, payload.FilledQuantity, payload.RemainingQty)
 }
 
 // OnOrderCancelled logs cancelled order events.
-func (s *Logging) OnOrderCancelled(_ context.Context, _ *schema.Event, payload schema.ExecReportPayload) {
-	s.Logger.Printf("[STRATEGY] Order cancelled: id=%s", payload.ClientOrderID)
+func (s *Logging) OnOrderCancelled(_ context.Context, evt *schema.Event, payload schema.ExecReportPayload) {
+	s.Logger.Printf("[STRATEGY] Order cancelled: provider=%s symbol=%s id=%s", evt.Provider, evt.Symbol, payload.ClientOrderID)
 }
 
 // OnOrderAcknowledged logs order acknowledgment events.
-func (s *Logging) OnOrderAcknowledged(_ context.Context, _ *schema.Event, payload schema.ExecReportPayload) {
-	s.Logger.Printf("[STRATEGY] Order acknowledged: id=%s", payload.ClientOrderID)
+func (s *Logging) OnOrderAcknowledged(_ context.Context, evt *schema.Event, payload schema.ExecReportPayload) {
+	s.Logger.Printf("[STRATEGY] Order acknowledged: provider=%s symbol=%s id=%s", evt.Provider, evt.Symbol, payload.ClientOrderID)
 }
 
 // OnOrderExpired logs expired order events.
-func (s *Logging) OnOrderExpired(_ context.Context, _ *schema.Event, payload schema.ExecReportPayload) {
-	s.Logger.Printf("[STRATEGY] Order expired: id=%s", payload.ClientOrderID)
+func (s *Logging) OnOrderExpired(_ context.Context, evt *schema.Event, payload schema.ExecReportPayload) {
+	s.Logger.Printf("[STRATEGY] Order expired: provider=%s symbol=%s id=%s", evt.Provider, evt.Symbol, payload.ClientOrderID)
 }
 
 // OnKlineSummary logs kline summary events.
-func (s *Logging) OnKlineSummary(_ context.Context, _ *schema.Event, payload schema.KlineSummaryPayload) {
-	s.Logger.Printf("[STRATEGY] Kline: open=%s close=%s high=%s low=%s vol=%s", 
-		payload.OpenPrice, payload.ClosePrice, payload.HighPrice, payload.LowPrice, payload.Volume)
+func (s *Logging) OnKlineSummary(_ context.Context, evt *schema.Event, payload schema.KlineSummaryPayload) {
+	s.Logger.Printf("[STRATEGY] Kline: provider=%s symbol=%s open=%s close=%s high=%s low=%s vol=%s", 
+		evt.Provider, evt.Symbol, payload.OpenPrice, payload.ClosePrice, payload.HighPrice, payload.LowPrice, payload.Volume)
 }
 
 // OnControlAck logs control acknowledgment events.
-func (s *Logging) OnControlAck(_ context.Context, _ *schema.Event, payload schema.ControlAckPayload) {
+func (s *Logging) OnControlAck(_ context.Context, evt *schema.Event, payload schema.ControlAckPayload) {
 	if payload.Success {
-		s.Logger.Printf("[STRATEGY] Control ACK: command=%s consumer=%s success=true", 
-			payload.CommandType, payload.ConsumerID)
+		s.Logger.Printf("[STRATEGY] Control ACK: provider=%s symbol=%s command=%s consumer=%s success=true", 
+			evt.Provider, evt.Symbol, payload.CommandType, payload.ConsumerID)
 	} else {
-		s.Logger.Printf("[STRATEGY] Control ACK: command=%s consumer=%s success=false error=%s", 
-			payload.CommandType, payload.ConsumerID, payload.ErrorMessage)
+		s.Logger.Printf("[STRATEGY] Control ACK: provider=%s symbol=%s command=%s consumer=%s success=false error=%s", 
+			evt.Provider, evt.Symbol, payload.CommandType, payload.ConsumerID, payload.ErrorMessage)
 	}
 }
 
 // OnControlResult logs control result events.
-func (s *Logging) OnControlResult(_ context.Context, _ *schema.Event, payload schema.ControlResultPayload) {
-	s.Logger.Printf("[STRATEGY] Control RESULT: command=%s consumer=%s", 
-		payload.CommandType, payload.ConsumerID)
+func (s *Logging) OnControlResult(_ context.Context, evt *schema.Event, payload schema.ControlResultPayload) {
+	s.Logger.Printf("[STRATEGY] Control RESULT: provider=%s symbol=%s command=%s consumer=%s", 
+		evt.Provider, evt.Symbol, payload.CommandType, payload.ConsumerID)
 }

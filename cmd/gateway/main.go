@@ -175,7 +175,7 @@ func main() {
 			continue // Provider not active
 		}
 
-		lam := lambda.NewBaseLambda("", cfg, bus, controlBus, lambdaProvider, poolMgr, &strategies.Logging{})
+		lam := lambda.NewBaseLambda("", cfg, bus, controlBus, lambdaProvider, poolMgr, &strategies.Logging{Logger: logger})
 
 		if lambdaErrs, err := lam.Start(ctx); err != nil {
 			logger.Fatalf("start lambda %s/%s: %v", cfg.Provider, cfg.Symbol, err)
@@ -401,6 +401,7 @@ func createProvider(ctx context.Context, providerType string, poolMgr *pool.Pool
 		useTestnet := os.Getenv("BINANCE_USE_TESTNET") == "true"
 
 		// Create WebSocket provider with reconnection and rate limiting
+		//nolint:exhaustruct // optional fields use defaults
 		wsProvider := binance.NewBinanceWSProvider(binance.WSProviderConfig{
 			UseTestnet:    useTestnet,
 			APIKey:        apiKey,
@@ -512,10 +513,35 @@ func parseProviders(input string) []string {
 }
 
 func contains(s, substr string) bool {
-	return len(s) > 0 && len(substr) > 0 && (s == substr ||
-		s[:len(substr)] == substr ||
-		s[len(s)-len(substr):] == substr ||
-		len(s) > len(substr) && (s[:len(substr)+1] == substr+"," || s[len(s)-len(substr)-1:] == ","+substr))
+	if len(s) == 0 || len(substr) == 0 {
+		return false
+	}
+	if s == substr {
+		return true
+	}
+	if len(s) < len(substr) {
+		return false
+	}
+	// Check if starts with substr
+	if s[:len(substr)] == substr {
+		return true
+	}
+	// Check if ends with substr
+	if s[len(s)-len(substr):] == substr {
+		return true
+	}
+	// Check if substr appears with comma (comma-separated list)
+	if len(s) > len(substr) {
+		// Check "substr," at start
+		if len(s) >= len(substr)+1 && s[:len(substr)+1] == substr+"," {
+			return true
+		}
+		// Check ",substr" at end
+		if len(s) >= len(substr)+1 && s[len(s)-len(substr)-1:] == ","+substr {
+			return true
+		}
+	}
+	return false
 }
 
 type providerInstance struct {
@@ -549,9 +575,9 @@ func createMultipleProviders(ctx context.Context, providerTypes []string, poolMg
 	mergedErrors := make(chan error, 64)
 
 	// Fan-in events from all providers
-	for i, evtChan := range eventChannels {
-		provName := instances[i].name
-		go func(ch <-chan *schema.Event, name string) {
+	for _, evtChan := range eventChannels {
+		evtChan := evtChan
+		go func(ch <-chan *schema.Event) {
 			for evt := range ch {
 				select {
 				case mergedEvents <- evt:
@@ -559,7 +585,7 @@ func createMultipleProviders(ctx context.Context, providerTypes []string, poolMg
 					return
 				}
 			}
-		}(evtChan, provName)
+		}(evtChan)
 	}
 
 	// Fan-in errors from all providers

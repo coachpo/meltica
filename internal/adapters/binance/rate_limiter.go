@@ -17,6 +17,7 @@ type RateLimiter struct {
 
 // NewRateLimiter creates a rate limiter with the specified messages per second.
 func NewRateLimiter(messagesPerSecond int) *RateLimiter {
+	//nolint:exhaustruct // mu is zero-value initialized
 	return &RateLimiter{
 		rate:       messagesPerSecond,
 		tokens:     messagesPerSecond,
