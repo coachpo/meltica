@@ -1,0 +1,390 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "graphTooltip": 0,
+  "panels": [
+    {
+      "datasource": {
+        "uid": "$datasource"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "rgba(45, 191, 94, 1)",
+                "value": null
+              },
+              {
+                "color": "rgba(255, 188, 0, 1)",
+                "value": 0.97
+              },
+              {
+                "color": "rgba(240, 0, 0, 1)",
+                "value": 0.95
+              }
+            ]
+          },
+          "unit": "percentunit"
+        }
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "expr": "1 - (sum(rate(wsclient_frames_errors_total{environment=\"$environment\",provider=~\"$provider\"}[5m])) / clamp_min(sum(rate(wsclient_frames_processed_total{environment=\"$environment\",provider=~\"$provider\"}[5m])), 1e-6))",
+          "legendFormat": "frame success",
+          "refId": "A"
+        }
+      ],
+      "title": "Frame Success Rate",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "uid": "$datasource"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "rgba(45, 191, 94, 1)",
+                "value": null
+              },
+              {
+                "color": "rgba(255, 188, 0, 1)",
+                "value": 120
+              },
+              {
+                "color": "rgba(240, 0, 0, 1)",
+                "value": 180
+              }
+            ]
+          },
+          "unit": "ms"
+        }
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(databus_publish_duration_bucket{environment=\"$environment\",provider=~\"$provider\"}[5m])) by (le))",
+          "refId": "A"
+        }
+      ],
+      "title": "Publish Latency p95",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "uid": "$datasource"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "rgba(45, 191, 94, 1)",
+                "value": null
+              },
+              {
+                "color": "rgba(255, 188, 0, 1)",
+                "value": 200
+              },
+              {
+                "color": "rgba(240, 0, 0, 1)",
+                "value": 400
+              }
+            ]
+          },
+          "unit": "ms"
+        }
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "id": 3,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(controlbus_send_duration_sum{environment=\"$environment\",command_type=~\"$command_type\"}[5m])) / clamp_min(sum(rate(controlbus_send_duration_count{environment=\"$environment\",command_type=~\"$command_type\"}[5m])), 1e-6)",
+          "refId": "A"
+        }
+      ],
+      "title": "Control Ack Latency",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "uid": "$datasource"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "center"
+          }
+        }
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "id": 4,
+      "options": {
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(databus_delivery_errors_total{environment=\"$environment\",provider=~\"$provider\"}[5m]))",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "title": "Delivery Errors/s",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "uid": "$datasource"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "percentunit"
+        }
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 5
+      },
+      "id": 5,
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "expr": "1 - (sum(rate(wsclient_frames_errors_total{environment=\"$environment\",provider=~\"$provider\"}[5m])) / clamp_min(sum(rate(wsclient_frames_processed_total{environment=\"$environment\",provider=~\"$provider\"}[5m])), 1e-6))",
+          "legendFormat": "{{provider}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Frame Success Trend",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "uid": "$datasource"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "ms"
+        }
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 5
+      },
+      "id": 6,
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(databus_publish_duration_bucket{environment=\"$environment\",provider=~\"$provider\",event_type=~\"$event_type\"}[5m])) by (le, provider))",
+          "legendFormat": "{{provider}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Publish p95 by Provider",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "uid": "$datasource"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 24,
+        "x": 0,
+        "y": 12
+      },
+      "id": 7,
+      "options": {
+        "content": "### Alert Rule Suggestions\n- **Frame success** alert when < 97% for 5 consecutive minutes.\n- **Publish latency p95** alert when > 150ms for 5 minutes.\n- **Control ack latency** alert when > 400ms or error rate spikes.\n- Attach these panels to alert rules with annotations feeding this dashboard.",
+        "mode": "markdown"
+      },
+      "type": "text"
+    }
+  ],
+  "refresh": "1m",
+  "schemaVersion": 38,
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "refresh": 1
+      },
+      {
+        "current": {
+          "text": "production",
+          "value": "production"
+        },
+        "datasource": {
+          "uid": "$datasource"
+        },
+        "label": "Environment",
+        "name": "environment",
+        "query": "label_values(databus_events_published_total, environment)",
+        "refresh": 2,
+        "type": "query"
+      },
+      {
+        "current": {
+          "text": ".*",
+          "value": ".*"
+        },
+        "datasource": {
+          "uid": "$datasource"
+        },
+        "includeAll": true,
+        "label": "Provider",
+        "multi": true,
+        "name": "provider",
+        "query": "label_values(databus_events_published_total, provider)",
+        "refresh": 2,
+        "type": "query"
+      },
+      {
+        "current": {
+          "text": ".*",
+          "value": ".*"
+        },
+        "datasource": {
+          "uid": "$datasource"
+        },
+        "includeAll": true,
+        "label": "Event Type",
+        "multi": true,
+        "name": "event_type",
+        "query": "label_values(databus_events_published_total, event_type)",
+        "refresh": 2,
+        "type": "query"
+      },
+      {
+        "current": {
+          "text": ".*",
+          "value": ".*"
+        },
+        "datasource": {
+          "uid": "$datasource"
+        },
+        "includeAll": true,
+        "label": "Command Type",
+        "multi": true,
+        "name": "command_type",
+        "query": "label_values(controlbus_send_duration_sum, command_type)",
+        "refresh": 2,
+        "type": "query"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "title": "Meltica - SLI & Alerting Board"
+}

@@ -1,0 +1,282 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "graphTooltip": 1,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {
+        "uid": "$datasource"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0.85
+              }
+            ]
+          },
+          "unit": "percentunit"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(pool_objects_active{environment=\"$environment\",pool_name=~\"$pool_name\"}) / clamp_min(sum(pool_capacity{environment=\"$environment\",pool_name=~\"$pool_name\"}), 1e-6)",
+          "legendFormat": "util",
+          "refId": "A"
+        }
+      ],
+      "title": "Pool Utilization",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "uid": "$datasource"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "ms"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "id": 2,
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(pool_borrow_duration_bucket{environment=\"$environment\",pool_name=~\"$pool_name\"}[5m])) by (le, pool_name))",
+          "legendFormat": "p95 {{pool_name}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Borrow Latency",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "uid": "$datasource"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "continuous-GrYlRd"
+          }
+        }
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "id": 3,
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(pool_objects_borrowed_total{environment=\"$environment\",pool_name=~\"$pool_name\"}[5m])) by (pool_name)",
+          "legendFormat": "borrow {{pool_name}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Borrow Rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "uid": "$datasource"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left"
+          }
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 4
+      },
+      "id": 4,
+      "options": {
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "expr": "sum(pool_active_callers{environment=\"$environment\",pool_name=~\"$pool_name\"}) by (pool_name, caller)",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "title": "Outstanding Borrowers (needs instrumentation)",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "uid": "$datasource"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 12,
+        "y": 6
+      },
+      "id": 5,
+      "options": {
+        "content": "### Instrumentation TODO\n- Emit metrics for per-caller outstanding leases and double-put/tryPut rejections.\n- Track slow returns via pool.TryPut rejection reason counters.\n- Add panel once metrics exist (pool_try_put_rejections_total, etc).",
+        "mode": "markdown"
+      },
+      "type": "text"
+    },
+    {
+      "datasource": {
+        "uid": "$datasource"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          }
+        }
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 12
+      },
+      "id": 6,
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(pool_available{environment=\"$environment\",pool_name=~\"$pool_name\"}) by (pool_name)",
+          "legendFormat": "available {{pool_name}}",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(pool_objects_active{environment=\"$environment\",pool_name=~\"$pool_name\"}) by (pool_name)",
+          "legendFormat": "active {{pool_name}}",
+          "refId": "B"
+        }
+      ],
+      "title": "Pool Inventory",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "refresh": 1
+      },
+      {
+        "current": {
+          "text": "production",
+          "value": "production"
+        },
+        "datasource": {
+          "uid": "$datasource"
+        },
+        "label": "Environment",
+        "name": "environment",
+        "query": "label_values(pool_objects_active, environment)",
+        "refresh": 2,
+        "type": "query"
+      },
+      {
+        "current": {
+          "text": ".*",
+          "value": ".*"
+        },
+        "datasource": {
+          "uid": "$datasource"
+        },
+        "includeAll": true,
+        "label": "Pool",
+        "multi": true,
+        "name": "pool_name",
+        "query": "label_values(pool_objects_active, pool_name)",
+        "refresh": 2,
+        "type": "query"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "title": "Meltica - Pool Operations"
+}

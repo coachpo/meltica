@@ -4,9 +4,16 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/coachpo/meltica/internal/errs"
 	"github.com/coachpo/meltica/internal/schema"
+	"github.com/coachpo/meltica/internal/telemetry"
 )
 
 // MemoryBus provides an in-memory control bus backed by bounded channels.
@@ -19,6 +26,12 @@ type MemoryBus struct {
 	mu        sync.RWMutex
 	consumers []*consumer
 	once      sync.Once
+
+	tracer        trace.Tracer
+	meter         metric.Meter
+	sendDuration  metric.Float64Histogram
+	queueDepth    metric.Int64UpDownCounter
+	commandErrors metric.Int64Counter
 }
 
 type consumer struct {
@@ -36,6 +49,17 @@ func NewMemoryBus(cfg MemoryConfig) *MemoryBus {
 	bus.cfg = cfg
 	bus.ctx = ctx
 	bus.cancel = cancel
+	bus.tracer = otel.Tracer("controlbus")
+	bus.meter = otel.Meter("controlbus")
+	bus.sendDuration, _ = bus.meter.Float64Histogram("controlbus.send.duration",
+		metric.WithDescription("Latency of control bus send operations"),
+		metric.WithUnit("ms"))
+	bus.queueDepth, _ = bus.meter.Int64UpDownCounter("controlbus.queue.depth",
+		metric.WithDescription("Point-in-time depth of control bus queues"),
+		metric.WithUnit("{message}"))
+	bus.commandErrors, _ = bus.meter.Int64Counter("controlbus.send.errors",
+		metric.WithDescription("Number of control bus send failures"),
+		metric.WithUnit("{error}"))
 	return bus
 }
 
@@ -47,6 +71,20 @@ func (b *MemoryBus) Send(ctx context.Context, cmd schema.ControlMessage) (schema
 	if cmd.Type == "" {
 		return schema.ControlAcknowledgement{}, errs.New("controlbus/send", errs.CodeInvalid, errs.WithMessage("command type required"))
 	}
+	cmdType := string(cmd.Type)
+	start := time.Now()
+	status := "success"
+
+	defer func() {
+		if b.sendDuration != nil {
+			attrs := telemetry.CommandAttributes(telemetry.Environment(), cmdType, status)
+			b.sendDuration.Record(ctx, float64(time.Since(start).Milliseconds()), metric.WithAttributes(attrs...))
+		}
+	}()
+
+	ctx, span := b.tracer.Start(ctx, "controlbus.Send",
+		trace.WithAttributes(attribute.String("command.type", cmdType)))
+	defer span.End()
 	reply := make(chan schema.ControlAcknowledgement, 1)
 	message := Message{Command: cmd, Reply: reply}
 
@@ -54,17 +92,49 @@ func (b *MemoryBus) Send(ctx context.Context, cmd schema.ControlMessage) (schema
 	consumers := append([]*consumer(nil), b.consumers...)
 	b.mu.RUnlock()
 	if len(consumers) == 0 {
+		status = "no_consumers"
+		if b.commandErrors != nil {
+			attrs := telemetry.CommandAttributes(telemetry.Environment(), cmdType, status)
+			b.commandErrors.Add(ctx, 1, metric.WithAttributes(attrs...))
+		}
 		return schema.ControlAcknowledgement{}, errs.New("controlbus/send", errs.CodeUnavailable, errs.WithMessage("no consumers available"))
 	}
 
 	for _, con := range consumers {
+		if con == nil {
+			continue
+		}
+		if b.queueDepth != nil {
+			attrs := telemetry.CommandAttributes(telemetry.Environment(), cmdType, "inflight")
+			b.queueDepth.Add(ctx, int64(len(con.ch)), metric.WithAttributes(attrs...))
+		}
 		if con == nil || con.ctx.Err() != nil {
 			continue
 		}
 		if err := b.enqueue(ctx, con, message); err != nil {
+			if b.commandErrors != nil {
+				attrs := telemetry.CommandAttributes(telemetry.Environment(), cmdType, "enqueue_failed")
+				b.commandErrors.Add(ctx, 1, metric.WithAttributes(attrs...))
+			}
+			status = "enqueue_failed"
 			return schema.ControlAcknowledgement{}, err
 		}
-		return b.awaitAck(ctx, reply)
+		ack, err := b.awaitAck(ctx, reply)
+		if err != nil {
+			span.RecordError(err)
+			if b.commandErrors != nil {
+				attrs := telemetry.CommandAttributes(telemetry.Environment(), cmdType, "ack_failed")
+				b.commandErrors.Add(ctx, 1, metric.WithAttributes(attrs...))
+			}
+			status = "ack_failed"
+			return schema.ControlAcknowledgement{}, err
+		}
+		return ack, nil
+	}
+	status = "no_active_consumers"
+	if b.commandErrors != nil {
+		attrs := telemetry.CommandAttributes(telemetry.Environment(), cmdType, status)
+		b.commandErrors.Add(ctx, 1, metric.WithAttributes(attrs...))
 	}
 	return schema.ControlAcknowledgement{}, errs.New("controlbus/send", errs.CodeUnavailable, errs.WithMessage("no active consumers"))
 }

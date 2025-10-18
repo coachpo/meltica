@@ -23,7 +23,7 @@ coverage/
 !README.md
 !LICENSE
 !*.puml
-!docs/*
+!docs/**/*
 
 # Makefile
 !Makefile

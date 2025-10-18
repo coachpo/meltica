@@ -6,8 +6,14 @@ import (
 	"fmt"
 	"time"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/coachpo/meltica/internal/pool"
 	"github.com/coachpo/meltica/internal/schema"
+	"github.com/coachpo/meltica/internal/telemetry"
 )
 
 // FrameProvider subscribes to Binance websocket topics.
@@ -27,6 +33,12 @@ type WSClient struct {
 	parser       WSParser
 	clock        func() time.Time
 	pools        *pool.PoolManager
+
+	tracer             trace.Tracer
+	meter              metric.Meter
+	framesCounter      metric.Int64Counter
+	frameErrorsCounter metric.Int64Counter
+	frameLatency       metric.Float64Histogram
 }
 
 // NewWSClient creates a websocket client with the supplied provider and parser.
@@ -34,7 +46,19 @@ func NewWSClient(providerName string, provider FrameProvider, parser WSParser, c
 	if clock == nil {
 		clock = time.Now
 	}
-	return &WSClient{providerName: providerName, provider: provider, parser: parser, clock: clock, pools: pools}
+	client := &WSClient{providerName: providerName, provider: provider, parser: parser, clock: clock, pools: pools}
+	client.tracer = otel.Tracer("binance.wsclient")
+	client.meter = otel.Meter("binance.wsclient")
+	client.framesCounter, _ = client.meter.Int64Counter("wsclient.frames.processed",
+		metric.WithDescription("Number of websocket frames processed"),
+		metric.WithUnit("{frame}"))
+	client.frameErrorsCounter, _ = client.meter.Int64Counter("wsclient.frames.errors",
+		metric.WithDescription("Number of websocket frame processing errors"),
+		metric.WithUnit("{error}"))
+	client.frameLatency, _ = client.meter.Float64Histogram("wsclient.frame.processing.duration",
+		metric.WithDescription("Latency to decode and dispatch a websocket frame"),
+		metric.WithUnit("ms"))
+	return client
 }
 
 // Stream subscribes to the given topics and returns canonical events and error notifications.
@@ -92,12 +116,16 @@ func (c *WSClient) Stream(ctx context.Context, topics []string) (<-chan *schema.
 
 func (c *WSClient) handleFrame(ctx context.Context, events chan<- *schema.Event, errs chan<- error, payload []byte) {
 	ingestTS := c.clock().UTC()
+	start := time.Now()
+	status := "success"
 	// Increase timeout for high-frequency streams - pool contention can be high
 	// Binance sends 9 streams × 100+ msgs/sec = 900+ msgs/sec
 	frameCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	wsFrame, release, err := c.acquireWsFrame(frameCtx)
 	cancel()
 	if err != nil {
+		status = "acquire_failed"
+		c.recordFrame(err, status, len(payload), time.Since(start))
 		select {
 		case errs <- err:
 		default:
@@ -118,6 +146,8 @@ func (c *WSClient) handleFrame(ctx context.Context, events chan<- *schema.Event,
 
 	parsed, err := c.parser.Parse(ctx, wsFrame.Data, ingestTS)
 	if err != nil {
+		status = "parse_failed"
+		c.recordFrame(err, status, len(payload), time.Since(start))
 		select {
 		case errs <- err:
 		default:
@@ -125,11 +155,19 @@ func (c *WSClient) handleFrame(ctx context.Context, events chan<- *schema.Event,
 		return
 	}
 
+	_, span := c.tracer.Start(ctx, "wsclient.handleFrame",
+		trace.WithAttributes(
+			attribute.String("provider", c.providerName),
+			attribute.Int("frame.size_bytes", len(payload)),
+			attribute.Int("events.count", len(parsed)),
+		))
+	defer span.End()
+
 	for _, evt := range parsed {
 		if evt == nil {
 			continue
 		}
-		
+		span.SetAttributes(attribute.String("event.type", string(evt.Type)))
 		if evt.IngestTS.IsZero() {
 			evt.IngestTS = ingestTS
 		}
@@ -141,6 +179,25 @@ func (c *WSClient) handleFrame(ctx context.Context, events chan<- *schema.Event,
 			return
 		case events <- evt:
 		}
+	}
+	c.recordFrame(nil, status, len(payload), time.Since(start))
+}
+
+func (c *WSClient) recordFrame(err error, status string, size int, elapsed time.Duration) {
+	env := telemetry.Environment()
+	attrs := telemetry.MessageAttributes(env, c.providerName, status)
+	if size > 0 {
+		attrs = append(attrs, attribute.Int("frame.size_bytes", size))
+	}
+	if c.framesCounter != nil {
+		c.framesCounter.Add(context.Background(), 1, metric.WithAttributes(attrs...))
+	}
+	if err != nil && c.frameErrorsCounter != nil {
+		errAttrs := telemetry.OperationResultAttributes(env, c.providerName, "frame", status)
+		c.frameErrorsCounter.Add(context.Background(), 1, metric.WithAttributes(errAttrs...))
+	}
+	if c.frameLatency != nil {
+		c.frameLatency.Record(context.Background(), float64(elapsed.Milliseconds()), metric.WithAttributes(attrs...))
 	}
 }
 

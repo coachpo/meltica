@@ -1,0 +1,383 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {
+        "uid": "$datasource"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.7
+              },
+              {
+                "color": "red",
+                "value": 0.9
+              }
+            ]
+          },
+          "unit": "percentunit"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "expr": "sum(pool_objects_active{environment=\"$environment\",pool_name=~\"$pool_name\"}) / clamp_min(sum(pool_capacity{environment=\"$environment\",pool_name=~\"$pool_name\"}), 1e-6)",
+          "legendFormat": "utilization",
+          "refId": "A"
+        }
+      ],
+      "title": "Pool Utilization",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "uid": "$datasource"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "ms"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 8,
+        "y": 0
+      },
+      "id": 2,
+      "options": {
+        "legend": {
+          "calcs": [
+            "last"
+          ],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(pool_borrow_duration_bucket{environment=\"$environment\",pool_name=~\"$pool_name\"}[5m])) by (le, pool_name))",
+          "legendFormat": "p95 {{pool_name}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Borrow Duration (p95)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "uid": "$datasource"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 0
+      },
+      "id": 3,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "right"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      },
+      "targets": [
+        {
+          "expr": "avg(pool_available{environment=\"$environment\",pool_name=~\"$pool_name\"}) by (pool_name)",
+          "legendFormat": "{{pool_name}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Available Objects",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "uid": "$datasource"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "ops"
+        }
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 4
+      },
+      "id": 4,
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(databus_events_published_total{environment=\"$environment\",provider=~\"$provider\",event_type=~\"$event_type\",symbol=~\"$symbol\"}[5m]))",
+          "legendFormat": "events",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(databus_delivery_blocked_total{environment=\"$environment\",provider=~\"$provider\",event_type=~\"$event_type\",symbol=~\"$symbol\"}[5m]))",
+          "legendFormat": "blocked",
+          "refId": "B"
+        }
+      ],
+      "title": "Pipeline Throughput vs Blocked",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "uid": "$datasource"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "continuous-GrYlRd"
+          },
+          "custom": {
+            "align": "center"
+          }
+        }
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 4
+      },
+      "id": 5,
+      "options": {
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "expr": "sum(pool_objects_active{environment=\"$environment\"}) by (pool_name, object_type)",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "title": "Active Objects Breakdown",
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "renameByName": {
+              "Value": "Active",
+              "object_type": "Object Type",
+              "pool_name": "Pool"
+            }
+          }
+        }
+      ],
+      "type": "table"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": [
+    "meltica",
+    "resources"
+  ],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "hide": 0,
+        "label": "Datasource",
+        "name": "datasource",
+        "options": [],
+        "query": "prometheus",
+        "refresh": 1,
+        "regex": "",
+        "type": "datasource"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "production",
+          "value": "production"
+        },
+        "datasource": {
+          "uid": "$datasource"
+        },
+        "definition": "label_values(pool_objects_active, environment)",
+        "hide": 0,
+        "label": "Environment",
+        "name": "environment",
+        "query": "label_values(pool_objects_active, environment)",
+        "refresh": 2,
+        "regex": "",
+        "type": "query"
+      },
+      {
+        "current": {
+          "text": ".*",
+          "value": ".*"
+        },
+        "datasource": {
+          "uid": "$datasource"
+        },
+        "definition": "label_values(pool_objects_active, pool_name)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Pool",
+        "multi": true,
+        "name": "pool_name",
+        "query": "label_values(pool_objects_active, pool_name)",
+        "refresh": 2,
+        "regex": "",
+        "type": "query"
+      },
+      {
+        "current": {
+          "text": ".*",
+          "value": ".*"
+        },
+        "datasource": {
+          "uid": "$datasource"
+        },
+        "definition": "label_values(databus_events_published_total, provider)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Provider",
+        "multi": true,
+        "name": "provider",
+        "query": "label_values(databus_events_published_total, provider)",
+        "refresh": 2,
+        "regex": "",
+        "type": "query"
+      },
+      {
+        "current": {
+          "text": ".*",
+          "value": ".*"
+        },
+        "datasource": {
+          "uid": "$datasource"
+        },
+        "definition": "label_values(databus_events_published_total, event_type)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Event Type",
+        "multi": true,
+        "name": "event_type",
+        "query": "label_values(databus_events_published_total, event_type)",
+        "refresh": 2,
+        "regex": "",
+        "type": "query"
+      },
+      {
+        "current": {
+          "text": ".*",
+          "value": ".*"
+        },
+        "datasource": {
+          "uid": "$datasource"
+        },
+        "definition": "label_values(databus_events_published_total, symbol)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Symbol",
+        "multi": true,
+        "name": "symbol",
+        "query": "label_values(databus_events_published_total, symbol)",
+        "refresh": 2,
+        "regex": "",
+        "type": "query"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-12h",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "1m",
+      "5m",
+      "15m"
+    ]
+  },
+  "timezone": "browser",
+  "title": "Meltica - Resource Utilization",
+  "uid": "meltica-resources",
+  "version": 1
+}

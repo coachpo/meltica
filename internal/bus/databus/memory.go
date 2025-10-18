@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	concpool "github.com/sourcegraph/conc/pool"
 	"go.opentelemetry.io/otel"
@@ -37,6 +38,8 @@ type MemoryBus struct {
 	subscriberGauge        metric.Int64UpDownCounter
 	deliveryErrorCounter   metric.Int64Counter
 	fanoutHistogram        metric.Int64Histogram
+	publishDuration        metric.Float64Histogram
+	deliveryBlockedCounter metric.Int64Counter
 }
 
 type subscriber struct {
@@ -72,6 +75,12 @@ func NewMemoryBus(cfg MemoryConfig) *MemoryBus {
 	bus.fanoutHistogram, _ = meter.Int64Histogram("databus.fanout.size",
 		metric.WithDescription("Number of subscribers per fanout"),
 		metric.WithUnit("{subscriber}"))
+	bus.publishDuration, _ = meter.Float64Histogram("databus.publish.duration",
+		metric.WithDescription("Latency of databus publish operations"),
+		metric.WithUnit("ms"))
+	bus.deliveryBlockedCounter, _ = meter.Int64Counter("databus.delivery.blocked",
+		metric.WithDescription("Number of deliveries dropped due to subscriber backpressure"),
+		metric.WithUnit("{event}"))
 
 	return bus
 }
@@ -88,6 +97,25 @@ func (b *MemoryBus) Publish(ctx context.Context, evt *schema.Event) error {
 	if evt.Type == "" {
 		return errs.New("databus/publish", errs.CodeInvalid, errs.WithMessage("event type required"))
 	}
+
+	provider := evt.Provider
+	symbol := evt.Symbol
+	eventType := string(evt.Type)
+	start := time.Now()
+	result := "success"
+
+	defer func() {
+		if b.publishDuration != nil {
+			attrs := telemetry.OperationResultAttributes(telemetry.Environment(), provider, "databus.publish", result)
+			if eventType != "" {
+				attrs = append(attrs, telemetry.AttrEventType.String(eventType))
+			}
+			if symbol != "" {
+				attrs = append(attrs, telemetry.AttrSymbol.String(symbol))
+			}
+			b.publishDuration.Record(ctx, float64(time.Since(start).Milliseconds()), metric.WithAttributes(attrs...))
+		}
+	}()
 
 	ctx, span := b.tracer.Start(ctx, "databus.Publish",
 		trace.WithAttributes(
@@ -117,6 +145,7 @@ func (b *MemoryBus) Publish(ctx context.Context, evt *schema.Event) error {
 
 	// SHORT-CIRCUIT: no subscribers means no pool work, no delivery.
 	if n == 0 {
+		result = "no_subscribers"
 		b.recycle(evt)
 		return nil
 	}
@@ -135,6 +164,7 @@ func (b *MemoryBus) Publish(ctx context.Context, evt *schema.Event) error {
 				attribute.String("provider", evt.Provider),
 				attribute.String("symbol", evt.Symbol)))
 		}
+		result = "clone_batch_failed"
 		return err
 	}
 
@@ -153,6 +183,7 @@ func (b *MemoryBus) Publish(ctx context.Context, evt *schema.Event) error {
 				attribute.String("provider", evt.Provider),
 				attribute.String("symbol", evt.Symbol)))
 		}
+		result = "dispatch_failed"
 		return err
 	}
 
@@ -283,6 +314,10 @@ func (b *MemoryBus) deliverWithRecycle(ctx context.Context, sub *subscriber, evt
 		return nil
 	default:
 		b.recycle(evt)
+		if b.deliveryBlockedCounter != nil {
+			attrs := telemetry.EventAttributes(telemetry.Environment(), string(evt.Type), evt.Provider, evt.Symbol)
+			b.deliveryBlockedCounter.Add(ctx, 1, metric.WithAttributes(attrs...))
+		}
 		return errs.New("databus/publish", errs.CodeUnavailable, errs.WithMessage("subscriber buffer full"))
 	}
 }
