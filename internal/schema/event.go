@@ -212,6 +212,10 @@ type BookSnapshotPayload struct {
 	Asks       []PriceLevel `json:"asks"`
 	Checksum   string       `json:"checksum"`
 	LastUpdate time.Time    `json:"last_update"`
+	
+	// Binance-specific sequence tracking (optional, used internally during assembly)
+	FirstUpdateID uint64 `json:"first_update_id,omitempty"` // U - First update ID in event
+	FinalUpdateID uint64 `json:"final_update_id,omitempty"` // u - Final update ID in event
 }
 
 // TradeSide captures the direction of a trade.

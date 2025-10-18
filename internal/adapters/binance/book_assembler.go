@@ -22,6 +22,8 @@ var (
 	ErrBookNotInitialized = fmt.Errorf("binance book assembler: snapshot required before updates")
 	// ErrBookStaleUpdate is returned when an update with an older sequence is applied.
 	ErrBookStaleUpdate = fmt.Errorf("binance book assembler: stale update")
+	// ErrBookSequenceGap is returned when there's a gap in update sequence.
+	ErrBookSequenceGap = fmt.Errorf("binance book assembler: sequence gap detected - restart required")
 )
 
 // BookAssembler keeps a canonical representation of the Binance order book,
@@ -79,15 +81,26 @@ func (a *BookAssembler) ApplySnapshot(snapshot schema.BookSnapshotPayload, seq u
 
 // ApplyUpdate applies a delta update to the maintained order book and returns a full snapshot.
 // This enforces the architecture principle that adapters emit only full snapshots, not deltas.
-func (a *BookAssembler) ApplyUpdate(bids, asks []schema.PriceLevel, checksum string, seq uint64) (schema.BookSnapshotPayload, error) {
+// Per Binance documentation:
+// - If u < currentUpdateId: ignore (stale)
+// - If U > currentUpdateId + 1: gap detected, restart required
+// - Otherwise: apply the update
+func (a *BookAssembler) ApplyUpdate(bids, asks []schema.PriceLevel, checksum string, firstUpdateID, finalUpdateID uint64) (schema.BookSnapshotPayload, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
 	if !a.ready {
 		return schema.BookSnapshotPayload{}, ErrBookNotInitialized
 	}
-	if seq <= a.seq {
+	
+	// If u < currentUpdateId: ignore (stale event)
+	if finalUpdateID <= a.seq {
 		return schema.BookSnapshotPayload{}, ErrBookStaleUpdate
+	}
+	
+	// If U > currentUpdateId + 1: gap detected, restart required
+	if firstUpdateID > a.seq+1 {
+		return schema.BookSnapshotPayload{}, ErrBookSequenceGap
 	}
 
 	// Apply delta to internal state
@@ -106,7 +119,8 @@ func (a *BookAssembler) ApplyUpdate(bids, asks []schema.PriceLevel, checksum str
 		}
 	}
 
-	a.seq = seq
+	// Update sequence to finalUpdateID (u)
+	a.seq = finalUpdateID
 	a.checksum = computedChecksum
 
 	// Return full snapshot (not delta)

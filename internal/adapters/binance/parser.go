@@ -56,7 +56,9 @@ func (p *Parser) Parse(ctx context.Context, frame []byte, ingestTS time.Time) ([
 
 	meta := make(map[string]json.RawMessage)
 	if err := json.Unmarshal(envelope.Data, &meta); err != nil {
-		return nil, fmt.Errorf("parse binance ws meta: %w", err)
+		// Binance sends non-data messages like subscription responses: {"result":null,"id":1}
+		// These aren't errors, just skip them
+		return nil, nil
 	}
 	var eventType string
 	if rawType, ok := meta["e"]; ok {
@@ -66,6 +68,11 @@ func (p *Parser) Parse(ctx context.Context, frame []byte, ingestTS time.Time) ([
 	}
 	if eventType == "" {
 		eventType = inferStreamType(envelope.Stream)
+	}
+	
+	// Skip non-data messages (subscription confirmations, etc)
+	if eventType == "" {
+		return nil, nil
 	}
 
 	switch strings.ToLower(eventType) {
@@ -119,11 +126,14 @@ func (p *Parser) parseDepthUpdate(ctx context.Context, stream string, data []byt
 	evt.IngestTS = ingestTS
 	evt.EmitTS = ingestTS
 	// Store delta as snapshot payload - provider will handle assembly
+	// Include Binance-specific U and u for proper sequence validation
 	evt.Payload = schema.BookSnapshotPayload{
-		Bids:       toPriceLevels(payload.Bids),
-		Asks:       toPriceLevels(payload.Asks),
-		Checksum:   payload.Checksum,
-		LastUpdate: time.UnixMilli(payload.EventTime).UTC(),
+		Bids:          toPriceLevels(payload.Bids),
+		Asks:          toPriceLevels(payload.Asks),
+		Checksum:      payload.Checksum,
+		LastUpdate:    time.UnixMilli(payload.EventTime).UTC(),
+		FirstUpdateID: payload.FirstUpdateID, // U - First update ID
+		FinalUpdateID: payload.FinalUpdateID, // u - Final update ID
 	}
 	return []*schema.Event{evt}, nil
 }
@@ -228,10 +238,12 @@ func (p *Parser) parseOrderbookSnapshot(ctx context.Context, body []byte, ingest
 	evt.IngestTS = ingestTS
 	evt.EmitTS = ingestTS
 	evt.Payload = schema.BookSnapshotPayload{
-		Bids:       toPriceLevels(payload.Bids),
-		Asks:       toPriceLevels(payload.Asks),
-		Checksum:   payload.Checksum,
-		LastUpdate: time.UnixMilli(payload.EventTime).UTC(),
+		Bids:          toPriceLevels(payload.Bids),
+		Asks:          toPriceLevels(payload.Asks),
+		Checksum:      payload.Checksum,
+		LastUpdate:    time.UnixMilli(payload.EventTime).UTC(),
+		FirstUpdateID: 0,                   // REST snapshots don't have FirstUpdateID (U)
+		FinalUpdateID: payload.LastUpdateID, // REST snapshots have lastUpdateId as FinalUpdateID
 	}
 	return []*schema.Event{evt}, nil
 }
@@ -451,13 +463,14 @@ type wsEnvelope struct {
 }
 
 type depthUpdate struct {
-	EventType     string     `json:"e"`
-	EventTime     int64      `json:"E"`
-	Symbol        string     `json:"s"`
-	FinalUpdateID uint64     `json:"u"`
-	Bids          [][]string `json:"b"`
-	Asks          [][]string `json:"a"`
-	Checksum      string     `json:"checksum"`
+	EventType      string     `json:"e"`
+	EventTime      int64      `json:"E"`
+	Symbol         string     `json:"s"`
+	FirstUpdateID  uint64     `json:"U"` // First update ID in event
+	FinalUpdateID  uint64     `json:"u"` // Final update ID in event
+	Bids           [][]string `json:"b"`
+	Asks           [][]string `json:"a"`
+	Checksum       string     `json:"checksum"`
 }
 
 type aggTrade struct {

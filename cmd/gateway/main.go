@@ -31,7 +31,7 @@ import (
 
 func main() {
 	cfgPath := flag.String("config", "", "Path to streaming configuration file (default: streaming.yml or streaming.yaml alongside binary)")
-	providers := flag.String("providers", "fake", "Comma-separated provider types: fake,binance (runs all simultaneously)")
+	providers := flag.String("providers", "fake,binance", "Comma-separated provider types: fake,binance (runs all simultaneously)")
 	flag.Parse()
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -119,8 +119,8 @@ func main() {
 	//nolint:exhaustruct // optional fields use zero values
 	runtimeCfg := config.DispatcherRuntimeConfig{
 		StreamOrdering: config.StreamOrderingConfig{
-			LatenessTolerance: 150 * time.Millisecond,
-			FlushInterval:     50 * time.Millisecond,
+			LatenessTolerance: 1500 * time.Millisecond,
+			FlushInterval:     1000 * time.Millisecond,
 			MaxBufferSize:     1024,
 		},
 	}
@@ -142,11 +142,15 @@ func main() {
 	primaryProvider := activeProviders[0].provider
 	subscriptionManager := shared.NewSubscriptionManager(primaryProvider)
 	tradingState := dispatcher.NewTradingState()
+	logger.Printf("subscribing %d routes to %d providers", len(table.Routes()), len(activeProviders))
 	for _, route := range table.Routes() {
 		// Activate route on all providers
 		for _, p := range activeProviders {
+			logger.Printf("subscribing route %s to provider %s", route.Type, p.name)
 			if err := p.provider.SubscribeRoute(route); err != nil {
 				logger.Printf("subscribe route %s on %s: %v", route.Type, p.name, err)
+			} else {
+				logger.Printf("subscribed route %s on %s successfully", route.Type, p.name)
 			}
 		}
 	}
@@ -417,55 +421,13 @@ func createProvider(ctx context.Context, providerType string, poolMgr *pool.Pool
 		// Create REST client with real fetcher
 		restClient := binance.NewRESTClient(restFetcher, parser, time.Now)
 
-		// Configure market data streams
-		topics := []string{
-			"btcusdt@depth@100ms", // Orderbook depth updates
-			"ethusdt@depth@100ms",
-			"xrpusdt@depth@100ms",
-			"btcusdt@aggTrade", // Aggregate trades
-			"ethusdt@aggTrade",
-			"xrpusdt@aggTrade",
-			"btcusdt@ticker", // 24hr ticker
-			"ethusdt@ticker",
-			"xrpusdt@ticker",
-			"btcusdt@kline_1m", // 1-minute klines
-			"ethusdt@kline_1m",
-			"xrpusdt@kline_1m",
-		}
-
-		// Configure REST snapshot pollers
-		snapshots := []binance.RESTPoller{
-			{
-				Name:     "orderbook",
-				Endpoint: "https://api.binance.com/api/v3/depth?symbol=BTCUSDT&limit=1000",
-				Interval: 30 * time.Second,
-				Parser:   "orderbook",
-			},
-			{
-				Name:     "orderbook",
-				Endpoint: "https://api.binance.com/api/v3/depth?symbol=ETHUSDT&limit=1000",
-				Interval: 30 * time.Second,
-				Parser:   "orderbook",
-			},
-			{
-				Name:     "orderbook",
-				Endpoint: "https://api.binance.com/api/v3/depth?symbol=XRPUSDT&limit=1000",
-				Interval: 30 * time.Second,
-				Parser:   "orderbook",
-			},
-		}
-
-		if useTestnet {
-			// Adjust endpoints for testnet
-			for i := range snapshots {
-				snapshots[i].Endpoint = "https://testnet.binance.vision" + snapshots[i].Endpoint[len("https://api.binance.com"):]
-			}
-		}
+		// Note: Market data streams and REST endpoints are configured via streaming.yaml routes
+		// The provider starts empty and routes are subscribed after initialization via SubscribeRoute
 
 		//nolint:exhaustruct // optional fields use zero values
 		provider := binance.NewProvider("binance", wsClient, restClient, binance.ProviderOptions{
-			Topics:    topics,
-			Snapshots: snapshots,
+			Topics:    nil, // Will be set via SubscribeRoute from streaming.yaml
+			Snapshots: nil, // Will be set via SubscribeRoute from streaming.yaml
 			Pools:     poolMgr,
 		})
 
@@ -473,10 +435,9 @@ func createProvider(ctx context.Context, providerType string, poolMgr *pool.Pool
 			return nil, "", fmt.Errorf("start binance provider: %w", err)
 		}
 
-		logger.Printf("binance: testnet=%v, api_key=%s, streams=%d",
+		logger.Printf("binance: testnet=%v, api_key=%s (streams configured via routes)",
 			useTestnet,
-			maskAPIKey(apiKey),
-			len(topics))
+			maskAPIKey(apiKey))
 
 		return provider, "binance", nil
 
@@ -574,38 +535,41 @@ func createMultipleProviders(ctx context.Context, providerTypes []string, poolMg
 	mergedEvents := make(chan *schema.Event, 512)
 	mergedErrors := make(chan error, 64)
 
+	var fanInWg conc.WaitGroup
+
 	// Fan-in events from all providers
 	for _, evtChan := range eventChannels {
 		evtChan := evtChan
-		go func(ch <-chan *schema.Event) {
-			for evt := range ch {
+		fanInWg.Go(func() {
+			for evt := range evtChan {
 				select {
 				case mergedEvents <- evt:
 				case <-ctx.Done():
 					return
 				}
 			}
-		}(evtChan)
+		})
 	}
 
 	// Fan-in errors from all providers
 	for i, errChan := range errorChannels {
 		provName := instances[i].name
-		go func(ch <-chan error, name string) {
-			for err := range ch {
+		fanInWg.Go(func() {
+			for err := range errChan {
 				select {
-				case mergedErrors <- fmt.Errorf("%s: %w", name, err):
+				case mergedErrors <- fmt.Errorf("%s: %w", provName, err):
 				case <-ctx.Done():
 					return
 				default:
+					// Drop error if channel is full and context not cancelled
 				}
 			}
-		}(errChan, provName)
+		})
 	}
 
-	// Close merged channels when all sources are done
+	// Close merged channels when all fan-in goroutines complete
 	go func() {
-		<-ctx.Done()
+		fanInWg.Wait()
 		close(mergedEvents)
 		close(mergedErrors)
 	}()

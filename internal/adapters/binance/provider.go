@@ -378,13 +378,14 @@ func (p *Provider) prepareOrderBook(evt *schema.Event) ([]*schema.Event, bool, e
 			return nil, true, nil
 		}
 		
-		// Check if this is a full snapshot (REST) or delta (WS)
-		// Full snapshots have many levels, deltas typically have few
-		isFullSnapshot := len(payload.Bids) > 20 || len(payload.Asks) > 20
+		// Distinguish REST snapshots from WS deltas by checking if FirstUpdateID is set
+		// REST snapshots have FinalUpdateID (lastUpdateId) but not FirstUpdateID
+		// WS deltas have both FirstUpdateID (U) and FinalUpdateID (u)
+		isRESTSnapshot := payload.FirstUpdateID == 0 && payload.FinalUpdateID > 0
 		
-		if isFullSnapshot {
-			// Initial snapshot from REST
-			snap, err := assembler.ApplySnapshot(payload, evt.SeqProvider)
+		if isRESTSnapshot {
+			// Initial snapshot from REST - use lastUpdateId
+			snap, err := assembler.ApplySnapshot(payload, payload.FinalUpdateID)
 			if err != nil {
 				return nil, false, err
 			}
@@ -394,10 +395,21 @@ func (p *Provider) prepareOrderBook(evt *schema.Event) ([]*schema.Event, bool, e
 		}
 		
 		// Delta from WebSocket - apply and return full snapshot
-		snap, err := assembler.ApplyUpdate(payload.Bids, payload.Asks, payload.Checksum, evt.SeqProvider)
+		// Pass both U (FirstUpdateID) and u (FinalUpdateID) for proper sequence validation per Binance docs
+		snap, err := assembler.ApplyUpdate(payload.Bids, payload.Asks, payload.Checksum, payload.FirstUpdateID, payload.FinalUpdateID)
 		if err != nil {
 			if errors.Is(err, ErrBookNotInitialized) {
 				p.bufferBookUpdate(evt.Symbol, evt)
+				return nil, false, nil
+			}
+			if errors.Is(err, ErrBookSequenceGap) {
+				// Sequence gap detected - need to restart with fresh snapshot
+				p.emitError(fmt.Errorf("orderbook %s: %w", evt.Symbol, err))
+				// Clear the assembler to force re-initialization
+				p.bookMu.Lock()
+				delete(p.books, evt.Symbol)
+				delete(p.pending, evt.Symbol)
+				p.bookMu.Unlock()
 				return nil, false, nil
 			}
 			return nil, false, err
@@ -455,9 +467,10 @@ func (p *Provider) flushBufferedUpdates(symbol string, assembler *BookAssembler)
 			continue
 		}
 		// Apply buffered delta and get full snapshot
-		snap, err := assembler.ApplyUpdate(payload.Bids, payload.Asks, payload.Checksum, evt.SeqProvider)
+		// Use FirstUpdateID and FinalUpdateID from payload for proper sequence validation
+		snap, err := assembler.ApplyUpdate(payload.Bids, payload.Asks, payload.Checksum, payload.FirstUpdateID, payload.FinalUpdateID)
 		if err != nil {
-			if !errors.Is(err, ErrBookNotInitialized) {
+			if !errors.Is(err, ErrBookNotInitialized) && !errors.Is(err, ErrBookStaleUpdate) {
 				p.emitError(err)
 			}
 			continue
