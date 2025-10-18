@@ -114,7 +114,7 @@
       "pluginVersion": "10.4.3",
       "targets": [
         {
-          "expr": "sum(rate(meltica_wsclient_frames_processed{environment=\"$environment\",provider=~\"$provider\",message_type=~\"error|parse_error|unmarshal_error\"}[5m])) / clamp_min(sum(rate(meltica_wsclient_frames_processed{environment=\"$environment\",provider=~\"$provider\"}[5m])), 1e-6)",
+          "expr": "(sum(rate(meltica_wsclient_frames_processed{environment=\"$environment\",provider=~\"$provider\",message_type=~\"error|parse_error|unmarshal_error\"}[5m])) or vector(0)) / clamp_min(sum(rate(meltica_wsclient_frames_processed{environment=\"$environment\",provider=~\"$provider\"}[5m])), 1e-6)",
           "legendFormat": "error ratio",
           "refId": "A"
         }

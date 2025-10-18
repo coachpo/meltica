@@ -87,7 +87,7 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(meltica_dispatcher_events_dropped{environment=\"$environment\",provider=~\"$provider\",event_type=~\"$event_type\"}[5m])) by (provider)",
+          "expr": "sum(rate(meltica_databus_delivery_blocked{environment=\"$environment\"}[5m])) by (provider)",
           "legendFormat": "blocked {{provider}}",
           "refId": "A"
         }
@@ -125,7 +125,7 @@
       },
       "targets": [
         {
-          "expr": "sum(meltica_databus_subscribers{environment=\"$environment\",provider=~\"$provider\",event_type=~\"$event_type\"}) by (provider, event_type)",
+          "expr": "sum(meltica_databus_subscribers{environment=\"$environment\",event_type=~\"$event_type\"}) by (provider, event_type)",
           "legendFormat": "{{provider}} {{event_type}}",
           "refId": "A"
         }
@@ -182,7 +182,7 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(meltica_dispatcher_events_dropped{environment=\"$environment\",provider=~\"$provider\",event_type=~\"$event_type\"}[5m])) / clamp_min(sum(rate(meltica_databus_events_published{environment=\"$environment\",provider=~\"$provider\",event_type=~\"$event_type\"}[5m])), 1e-6)",
+          "expr": "sum(rate(meltica_databus_delivery_blocked{environment=\"$environment\"}[5m])) / clamp_min(sum(rate(meltica_databus_events_published{environment=\"$environment\",provider=~\"$provider\",event_type=~\"$event_type\"}[5m])), 1e-6)",
           "legendFormat": "blocked ratio",
           "refId": "A"
         }

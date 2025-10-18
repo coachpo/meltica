@@ -194,7 +194,7 @@
           "refId": "A"
         },
         {
-          "expr": "sum(rate(meltica_dispatcher_events_dropped{environment=\"$environment\",provider=~\"$provider\",event_type=~\"$event_type\",symbol=~\"$symbol\"}[5m]))",
+          "expr": "sum(rate(meltica_databus_delivery_blocked{environment=\"$environment\"}[5m]))",
           "legendFormat": "blocked",
           "refId": "B"
         }

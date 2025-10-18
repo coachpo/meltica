@@ -147,37 +147,6 @@
       "datasource": {
         "uid": "$datasource"
       },
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "align": "left"
-          }
-        }
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 4
-      },
-      "id": 4,
-      "options": {
-        "showHeader": true
-      },
-      "targets": [
-        {
-          "expr": "sum(meltica_pool_active_callers{environment=\"$environment\",pool_name=~\"$pool_name\"}) by (pool_name, caller)",
-          "format": "table",
-          "refId": "A"
-        }
-      ],
-      "title": "Outstanding Borrowers (needs instrumentation)",
-      "type": "table"
-    },
-    {
-      "datasource": {
-        "uid": "$datasource"
-      },
       "gridPos": {
         "h": 6,
         "w": 12,
@@ -185,11 +154,32 @@
         "y": 6
       },
       "id": 5,
-      "options": {
-        "content": "### Instrumentation TODO\n- Emit metrics for per-caller outstanding leases and double-put/tryPut rejections.\n- Track slow returns via pool.TryPut rejection reason counters.\n- Add panel once metrics exist (pool_try_put_rejections_total, etc).",
-        "mode": "markdown"
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "short"
+        }
       },
-      "type": "text"
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(meltica_pool_objects_borrowed{environment=\"$environment\",pool_name=~\"$pool_name\"}[5m])) by (pool_name)",
+          "legendFormat": "borrow/s {{pool_name}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Pool Borrow Activity (caller tracking not yet implemented)",
+      "type": "timeseries"
     },
     {
       "datasource": {

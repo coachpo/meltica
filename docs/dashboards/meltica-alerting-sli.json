@@ -59,7 +59,9 @@
         "graphMode": "none",
         "orientation": "auto",
         "reduceOptions": {
-          "calcs": ["lastNotNull"]
+          "calcs": [
+            "lastNotNull"
+          ]
         }
       },
       "targets": [
@@ -112,7 +114,9 @@
         "colorMode": "value",
         "graphMode": "none",
         "reduceOptions": {
-          "calcs": ["lastNotNull"]
+          "calcs": [
+            "lastNotNull"
+          ]
         }
       },
       "targets": [
@@ -164,16 +168,18 @@
         "colorMode": "value",
         "graphMode": "none",
         "reduceOptions": {
-          "calcs": ["lastNotNull"]
+          "calcs": [
+            "lastNotNull"
+          ]
         }
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum(rate(meltica_dispatcher_processing_duration_bucket{environment=\"$environment\",provider=~\"$provider\"}[5m])) by (le))",
+          "expr": "sum(rate(meltica_controlbus_send_duration_sum{environment=\"$environment\"}[5m])) / clamp_min(sum(rate(meltica_controlbus_send_duration_count{environment=\"$environment\"}[5m])), 1e-6)",
           "refId": "A"
         }
       ],
-      "title": "Dispatcher Processing p95",
+      "title": "Control Bus Latency (avg)",
       "type": "stat"
     },
     {
@@ -199,7 +205,7 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(meltica_databus_delivery_errors{environment=\"$environment\",provider=~\"$provider\"}[5m]))",
+          "expr": "sum(rate(meltica_databus_delivery_errors{environment=\"$environment\"}[5m]))",
           "format": "table",
           "refId": "A"
         }
@@ -295,7 +301,7 @@
       },
       "id": 7,
       "options": {
-        "content": "### Alert Rule Suggestions\n- **Frame success** alert when < 97% for 5 consecutive minutes.\n- **Publish latency p95** alert when > 150ms for 5 minutes.\n- **Dispatcher processing p95** alert when > 50ms for 5 minutes.\n- **Delivery errors** alert when rate exceeds threshold.\n\n### Missing Metrics\nNote: Control bus metrics not yet implemented. Panel 3 shows dispatcher latency as proxy.",
+        "content": "### Alert Rule Suggestions\n- **Frame success** alert when < 97% for 5 consecutive minutes.\n- **Publish latency p95** alert when > 150ms for 5 minutes.\n- **Control bus latency** alert when > 200ms for 5 minutes.\n- **Control bus errors** alert when error rate > 0.01/s.\n- **Delivery errors** alert when rate exceeds threshold.\n\n### Note on Control Bus\nControl bus metrics are event-driven and only emit when commands are sent via HTTP API at :8880/control/*. May show 'No data' if no control commands were issued recently.",
         "mode": "markdown"
       },
       "type": "text"

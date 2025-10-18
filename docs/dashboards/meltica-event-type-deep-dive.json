@@ -66,7 +66,9 @@
         "justifyMode": "auto",
         "orientation": "auto",
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         },
@@ -146,7 +148,9 @@
       "id": 3,
       "options": {
         "legend": {
-          "calcs": ["last"],
+          "calcs": [
+            "last"
+          ],
           "displayMode": "table",
           "placement": "right"
         },
@@ -200,7 +204,7 @@
           "refId": "A"
         },
         {
-          "expr": "sum(rate(meltica_dispatcher_events_dropped{environment=\"$environment\",provider=~\"$provider\",event_type=\"$event_type\",symbol!=\"\"}[5m])) by (provider, symbol)",
+          "expr": "sum(rate(meltica_databus_delivery_blocked{environment=\"$environment\"}[5m])) by (provider, symbol)",
           "format": "table",
           "refId": "B"
         }
@@ -226,6 +230,14 @@
       "datasource": {
         "uid": "$datasource"
       },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "short"
+        }
+      },
       "gridPos": {
         "h": 6,
         "w": 12,
@@ -234,10 +246,28 @@
       },
       "id": 5,
       "options": {
-        "content": "### Sequence Gap Monitoring\nAdditional telemetry (e.g., per-stream sequence gap counters) can enrich this dashboard. Consider instrumenting book assemblers with gap/error metrics to populate a future panel here.",
-        "mode": "markdown"
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
       },
-      "type": "text"
+      "targets": [
+        {
+          "expr": "sum(rate(meltica_orderbook_gap_detected{environment=\"$environment\",provider=~\"$provider\",event_type=~\".*\",symbol=~\"$symbol\"}[5m])) by (symbol)",
+          "legendFormat": "gaps {{symbol}}",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(meltica_orderbook_snapshot_applied{environment=\"$environment\",provider=~\"$provider\",event_type=~\".*\",symbol=~\"$symbol\"}[5m])) by (symbol)",
+          "legendFormat": "recoveries {{symbol}}",
+          "refId": "B"
+        }
+      ],
+      "title": "Sequence Gap Detection & Recovery",
+      "type": "timeseries"
     }
   ],
   "refresh": "30s",
@@ -322,7 +352,12 @@
     "to": "now"
   },
   "timepicker": {
-    "refresh_intervals": ["10s", "30s", "1m", "5m"]
+    "refresh_intervals": [
+      "10s",
+      "30s",
+      "1m",
+      "5m"
+    ]
   },
   "timezone": "browser",
   "title": "Meltica - Event Type Deep Dive",

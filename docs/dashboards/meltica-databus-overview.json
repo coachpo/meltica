@@ -69,7 +69,9 @@
         "justifyMode": "auto",
         "orientation": "auto",
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         },
@@ -125,7 +127,9 @@
         "justifyMode": "auto",
         "orientation": "auto",
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         },
@@ -134,7 +138,7 @@
       "pluginVersion": "10.4.3",
       "targets": [
         {
-          "expr": "sum(rate(meltica_dispatcher_events_dropped{environment=\"$environment\",provider=~\"$provider\",event_type=~\"$event_type\",symbol=~\"$symbol\"}[5m])) / clamp_min(sum(rate(meltica_databus_events_published{environment=\"$environment\",provider=~\"$provider\",event_type=~\"$event_type\",symbol=~\"$symbol\"}[5m])), 1e-6)",
+          "expr": "sum(rate(meltica_databus_delivery_blocked{environment=\"$environment\"}[5m])) / clamp_min(sum(rate(meltica_databus_events_published{environment=\"$environment\",provider=~\"$provider\",event_type=~\"$event_type\",symbol=~\"$symbol\"}[5m])), 1e-6)",
           "legendFormat": "blocked ratio",
           "refId": "A"
         }
@@ -169,7 +173,9 @@
       "id": 3,
       "options": {
         "legend": {
-          "calcs": ["last"],
+          "calcs": [
+            "last"
+          ],
           "displayMode": "table",
           "placement": "right"
         },
@@ -218,7 +224,9 @@
       "id": 4,
       "options": {
         "legend": {
-          "calcs": ["last"],
+          "calcs": [
+            "last"
+          ],
           "displayMode": "table",
           "placement": "right"
         },
@@ -228,12 +236,12 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(meltica_databus_delivery_errors{environment=\"$environment\",provider=~\"$provider\",event_type=~\"$event_type\",symbol=~\"$symbol\"}[5m])) by (error)",
+          "expr": "sum(rate(meltica_databus_delivery_errors{environment=\"$environment\"}[5m])) by (error)",
           "legendFormat": "{{error}}",
           "refId": "A"
         },
         {
-          "expr": "sum(rate(meltica_dispatcher_events_dropped{environment=\"$environment\",provider=~\"$provider\",event_type=~\"$event_type\",symbol=~\"$symbol\"}[5m])) by (provider)",
+          "expr": "sum(rate(meltica_databus_delivery_blocked{environment=\"$environment\"}[5m])) by (provider)",
           "legendFormat": "blocked {{provider}}",
           "refId": "B"
         }
@@ -268,7 +276,7 @@
       },
       "targets": [
         {
-          "expr": "topk(10, sum(meltica_databus_subscribers{environment=\"$environment\",provider=~\"$provider\",event_type=~\"$event_type\",symbol=~\"$symbol\"}) by (event_type, symbol))",
+          "expr": "topk(10, sum(meltica_databus_subscribers{environment=\"$environment\",event_type=~\"$event_type\"}) by (event_type, symbol))",
           "format": "table",
           "legendFormat": "",
           "refId": "A"
@@ -398,7 +406,13 @@
     "to": "now"
   },
   "timepicker": {
-    "refresh_intervals": ["10s", "30s", "1m", "5m", "15m"]
+    "refresh_intervals": [
+      "10s",
+      "30s",
+      "1m",
+      "5m",
+      "15m"
+    ]
   },
   "timezone": "browser",
   "title": "Meltica - Databus Overview",
