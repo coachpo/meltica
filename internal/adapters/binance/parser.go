@@ -38,26 +38,16 @@ func NewParserWithPool(providerName string, pools *pool.PoolManager) *Parser {
 
 // Parse converts a websocket frame into canonical events.
 func (p *Parser) Parse(ctx context.Context, frame []byte, ingestTS time.Time) ([]*schema.Event, error) {
-	parseFrame, releaseFrame, err := p.acquireParseFrame(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer releaseFrame()
-
-	parseFrame.Provider = p.providerName
-	parseFrame.ReceivedAt = ingestTS.UnixNano()
-	parseFrame.Payload = append(parseFrame.Payload[:0], frame...)
-
 	var envelope wsEnvelope
-	if err := json.Unmarshal(parseFrame.Payload, &envelope); err != nil {
+	if err := json.Unmarshal(frame, &envelope); err != nil {
 		return nil, fmt.Errorf("parse binance ws frame: %w", err)
 	}
-	parseFrame.StreamName = envelope.Stream
 
 	meta := make(map[string]json.RawMessage)
 	if err := json.Unmarshal(envelope.Data, &meta); err != nil {
 		// Binance sends non-data messages like subscription responses: {"result":null,"id":1}
 		// These aren't errors, just skip them
+		//nolint:nilerr // Non-data messages are expected and should be skipped silently
 		return nil, nil
 	}
 	var eventType string
@@ -364,25 +354,6 @@ func (p *Parser) parseExecutionReport(ctx context.Context, stream string, data [
 		RejectReason:    rejectReason,
 	}
 	return []*schema.Event{evt}, nil
-}
-
-func (p *Parser) acquireParseFrame(ctx context.Context) (*schema.ParseFrame, func(), error) {
-	if p.pools == nil {
-		frame := new(schema.ParseFrame)
-		return frame, func() {}, nil
-	}
-	getCtx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
-	defer cancel()
-	obj, err := p.pools.Get(getCtx, "ParseFrame")
-	if err != nil {
-		return nil, nil, fmt.Errorf("acquire parse frame: %w", err)
-	}
-	frame, ok := obj.(*schema.ParseFrame)
-	if !ok {
-		p.pools.Put("ParseFrame", obj)
-		return nil, nil, errors.New("parse frame pool returned unexpected type")
-	}
-	return frame, func() { p.pools.Put("ParseFrame", frame) }, nil
 }
 
 func (p *Parser) acquireCanonicalEvent(ctx context.Context) (*schema.Event, error) {

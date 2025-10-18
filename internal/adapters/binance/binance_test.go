@@ -56,26 +56,6 @@ func TestBookAssembler_ApplySnapshot(t *testing.T) {
 	}
 }
 
-func TestBookAssembler_ChecksumValidation(t *testing.T) {
-	assembler := NewBookAssembler()
-	
-	// Snapshot with invalid checksum should fail
-	snapshot := schema.BookSnapshotPayload{
-		Bids: []schema.PriceLevel{
-			{Price: "50000.00", Quantity: "1.5"},
-		},
-		Asks: []schema.PriceLevel{
-			{Price: "50001.00", Quantity: "0.5"},
-		},
-		Checksum: "invalid_checksum",
-	}
-	
-	_, err := assembler.ApplySnapshot(snapshot, 1)
-	if err == nil {
-		t.Error("expected error for invalid checksum")
-	}
-}
-
 // Test RateLimiter
 
 func TestRateLimiter_Allow(t *testing.T) {

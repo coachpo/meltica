@@ -118,7 +118,8 @@ func (p *WSProvider) Subscribe(ctx context.Context, topics []string) (<-chan []b
 
 	p.ctx, p.cancel = context.WithCancel(ctx)
 
-	frames := make(chan []byte, 256)
+	// Large buffer for high-frequency Binance streams (9 streams × ~100 msgs/sec)
+	frames := make(chan []byte, 2048)
 	errs := make(chan error, 16)
 
 	// Initial connection
@@ -158,15 +159,20 @@ func (p *WSProvider) connect() error {
 	defer dialCancel()
 
 	// Dial with coder/websocket (first-class context support)
+	// Note: Binance doesn't use WebSocket compression, data comes uncompressed
 	conn, _, err := websocket.Dial(dialCtx, url, nil)
 	if err != nil {
 		return fmt.Errorf("dial failed: %w", err)
 	}
 
+	// Set read limit to 10MB to handle large orderbook snapshots
+	// Default is 32KB which is too small for depth@100ms streams
+	conn.SetReadLimit(10 * 1024 * 1024)
+
 	p.conn = conn
 	p.lastConnect = time.Now()
 	p.reconnectCount = 0
-	p.logger.Printf("binance ws: connected to %s", url)
+	p.logger.Printf("binance ws: connected to %s (10MB read limit)", url)
 
 	return nil
 }
@@ -187,8 +193,11 @@ func (p *WSProvider) disconnect() {
 // subscribeTo sends subscribe messages for the given topics.
 func (p *WSProvider) subscribeTo(topics []string) error {
 	if len(topics) == 0 {
+		p.logger.Println("binance ws: subscribeTo called with 0 topics")
 		return nil
 	}
+
+	p.logger.Printf("binance ws: subscribing to %d topics: %v", len(topics), topics)
 
 	p.streamsMu.Lock()
 	for _, topic := range topics {
@@ -203,7 +212,13 @@ func (p *WSProvider) subscribeTo(topics []string) error {
 		"id":     time.Now().UnixNano(),
 	}
 
-	return p.sendJSON(msg)
+	err := p.sendJSON(msg)
+	if err != nil {
+		p.logger.Printf("binance ws: subscribe failed: %v", err)
+	} else {
+		p.logger.Printf("binance ws: subscribe message sent successfully")
+	}
+	return err
 }
 
 // sendJSON sends a JSON message with rate limiting.

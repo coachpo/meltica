@@ -2,6 +2,8 @@ package binance
 
 import (
 	"context"
+	json "github.com/goccy/go-json"
+	"strings"
 	"time"
 
 	"github.com/coachpo/meltica/internal/schema"
@@ -74,6 +76,11 @@ func (c *RESTClient) Poll(ctx context.Context, pollers []RESTPoller) (<-chan *sc
 						}
 						return
 					}
+					
+					// Extract symbol from endpoint URL and inject into response for parsing
+					// Binance REST API doesn't include symbol in /api/v3/depth response
+					body = injectSymbolFromURL(poller.Endpoint, body)
+					
 					ingest := c.clock().UTC()
 					parsed, err := c.parser.ParseSnapshot(ctx, poller.Parser, body, ingest)
 					if err != nil {
@@ -111,4 +118,51 @@ func (c *RESTClient) Poll(ctx context.Context, pollers []RESTPoller) (<-chan *sc
 	}()
 
 	return events, errs
+}
+
+// injectSymbolFromURL extracts symbol from URL query parameter and injects it into JSON response
+// Binance /api/v3/depth doesn't include "s" (symbol) field, so we need to add it
+func injectSymbolFromURL(endpoint string, body []byte) []byte {
+	// Extract symbol from URL: /api/v3/depth?symbol=BTCUSDT&limit=1000
+	symbol := extractSymbolFromURL(endpoint)
+	if symbol == "" {
+		return body
+	}
+	
+	// Parse existing JSON
+	var data map[string]interface{}
+	if err := json.Unmarshal(body, &data); err != nil {
+		return body // Return original on error
+	}
+	
+	// Add symbol field
+	data["s"] = symbol
+	
+	// Re-encode
+	modified, err := json.Marshal(data)
+	if err != nil {
+		return body // Return original on error
+	}
+	
+	return modified
+}
+
+// extractSymbolFromURL extracts the symbol query parameter from a URL
+func extractSymbolFromURL(endpoint string) string {
+	// Look for symbol= in the URL
+	idx := strings.Index(endpoint, "symbol=")
+	if idx == -1 {
+		return ""
+	}
+	
+	// Extract everything after "symbol="
+	rest := endpoint[idx+7:] // len("symbol=") == 7
+	
+	// Find end (either & or end of string)
+	endIdx := strings.IndexAny(rest, "&?#")
+	if endIdx == -1 {
+		return rest
+	}
+	
+	return rest[:endIdx]
 }

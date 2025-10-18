@@ -39,7 +39,8 @@ func NewWSClient(providerName string, provider FrameProvider, parser WSParser, c
 
 // Stream subscribes to the given topics and returns canonical events and error notifications.
 func (c *WSClient) Stream(ctx context.Context, topics []string) (<-chan *schema.Event, <-chan error) {
-	events := make(chan *schema.Event)
+	// Buffer events channel for high-frequency streams (Binance sends 900+ msgs/sec)
+	events := make(chan *schema.Event, 2048)
 	errs := make(chan error, 4)
 
 	frames, providerErrs, err := c.provider.Subscribe(ctx, topics)
@@ -91,7 +92,9 @@ func (c *WSClient) Stream(ctx context.Context, topics []string) (<-chan *schema.
 
 func (c *WSClient) handleFrame(ctx context.Context, events chan<- *schema.Event, errs chan<- error, payload []byte) {
 	ingestTS := c.clock().UTC()
-	frameCtx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+	// Increase timeout for high-frequency streams - pool contention can be high
+	// Binance sends 9 streams × 100+ msgs/sec = 900+ msgs/sec
+	frameCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	wsFrame, release, err := c.acquireWsFrame(frameCtx)
 	cancel()
 	if err != nil {

@@ -23,9 +23,27 @@ func (s *Logging) OnTicker(_ context.Context, evt *schema.Event, payload schema.
 		evt.Provider, evt.Symbol, payload.LastPrice, payload.BidPrice, payload.AskPrice)
 }
 
-// OnBookSnapshot logs book snapshot events.
+// OnBookSnapshot logs book snapshot events with truncated orderbook (top 5 levels).
 func (s *Logging) OnBookSnapshot(_ context.Context, evt *schema.Event, payload schema.BookSnapshotPayload) {
 	s.Logger.Printf("[STRATEGY] Book snapshot: provider=%s symbol=%s %d bids, %d asks", evt.Provider, evt.Symbol, len(payload.Bids), len(payload.Asks))
+	
+	// Print top 5 bids
+	bidLimit := 5
+	if len(payload.Bids) < bidLimit {
+		bidLimit = len(payload.Bids)
+	}
+	for i := 0; i < bidLimit; i++ {
+		s.Logger.Printf("  BID[%d]: %s @ %s", i, payload.Bids[i].Quantity, payload.Bids[i].Price)
+	}
+	
+	// Print top 5 asks
+	askLimit := 5
+	if len(payload.Asks) < askLimit {
+		askLimit = len(payload.Asks)
+	}
+	for i := 0; i < askLimit; i++ {
+		s.Logger.Printf("  ASK[%d]: %s @ %s", i, payload.Asks[i].Quantity, payload.Asks[i].Price)
+	}
 }
 
 // OnOrderFilled logs filled order events.

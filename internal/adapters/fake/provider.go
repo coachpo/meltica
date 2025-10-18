@@ -359,6 +359,7 @@ func (p *Provider) emitBookSnapshot(instrument string) {
 	state.hasSnapshot = true
 	checksum := checksum(instrument, schema.EventTypeBookSnapshot, seq)
 	state.mu.Unlock()
+	//nolint:exhaustruct // FirstUpdateID and FinalUpdateID not used by fake provider
 	payload := schema.BookSnapshotPayload{
 		Bids:       levelsBids,
 		Asks:       levelsAsks,

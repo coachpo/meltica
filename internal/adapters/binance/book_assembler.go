@@ -1,9 +1,8 @@
-// Package binance provides order book assembly functionality with checksum verification.
+// Package binance provides order book assembly functionality.
 package binance
 
 import (
 	"fmt"
-	"hash/crc32"
 	"sort"
 	"strconv"
 	"strings"
@@ -14,7 +13,10 @@ import (
 )
 
 const (
-	bookDepthChecksum = 10
+	// maxOutputDepth limits the number of price levels returned in snapshots.
+	// Binance REST API supports up to 5000 levels per side, but we cap output
+	// to balance bandwidth and usefulness.
+	maxOutputDepth = 1000
 )
 
 var (
@@ -26,27 +28,26 @@ var (
 	ErrBookSequenceGap = fmt.Errorf("binance book assembler: sequence gap detected - restart required")
 )
 
-// BookAssembler keeps a canonical representation of the Binance order book,
-// validates checksum integrity, and produces normalised payloads for downstream consumers.
+// BookAssembler keeps a canonical representation of the Binance order book
+// and produces normalised payloads for downstream consumers.
 type BookAssembler struct {
-	mu       sync.Mutex
-	bids     map[string]string
-	asks     map[string]string
-	seq      uint64
-	ready    bool
-	checksum uint32
+	mu    sync.Mutex
+	bids  map[string]string
+	asks  map[string]string
+	seq   uint64
+	ready bool
 }
 
 // NewBookAssembler constructs an empty order book assembler.
 func NewBookAssembler() *BookAssembler {
-	//nolint:exhaustruct // zero values for mu, seq, ready, checksum are intentional
+	//nolint:exhaustruct // zero values for mu, seq, ready are intentional
 	return &BookAssembler{
 		bids: make(map[string]string),
 		asks: make(map[string]string),
 	}
 }
 
-// ApplySnapshot ingests a full depth snapshot, resets internal state, and verifies checksum integrity.
+// ApplySnapshot ingests a full depth snapshot and resets internal state.
 func (a *BookAssembler) ApplySnapshot(snapshot schema.BookSnapshotPayload, seq uint64) (schema.BookSnapshotPayload, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -59,21 +60,14 @@ func (a *BookAssembler) ApplySnapshot(snapshot schema.BookSnapshotPayload, seq u
 		a.upsertLevel(a.asks, level)
 	}
 
-	checksum := a.computeChecksumLocked()
-	if snapshot.Checksum != "" {
-		if err := verifyChecksumValue(snapshot.Checksum, checksum); err != nil {
-			return schema.BookSnapshotPayload{}, err
-		}
-	}
-
 	a.seq = seq
 	a.ready = true
-	a.checksum = checksum
 
+	//nolint:exhaustruct // FirstUpdateID and FinalUpdateID not needed for output snapshots
 	sanitised := schema.BookSnapshotPayload{
-		Bids:       a.topLevelsLocked(a.bids, true),
-		Asks:       a.topLevelsLocked(a.asks, false),
-		Checksum:   fmt.Sprintf("%d", checksum),
+		Bids:       a.topNLevelsLocked(a.bids, true, maxOutputDepth),
+		Asks:       a.topNLevelsLocked(a.asks, false, maxOutputDepth),
+		Checksum:   "",
 		LastUpdate: snapshot.LastUpdate,
 	}
 	return sanitised, nil
@@ -85,7 +79,7 @@ func (a *BookAssembler) ApplySnapshot(snapshot schema.BookSnapshotPayload, seq u
 // - If u < currentUpdateId: ignore (stale)
 // - If U > currentUpdateId + 1: gap detected, restart required
 // - Otherwise: apply the update
-func (a *BookAssembler) ApplyUpdate(bids, asks []schema.PriceLevel, checksum string, firstUpdateID, finalUpdateID uint64) (schema.BookSnapshotPayload, error) {
+func (a *BookAssembler) ApplyUpdate(bids, asks []schema.PriceLevel, firstUpdateID, finalUpdateID uint64) (schema.BookSnapshotPayload, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -111,23 +105,15 @@ func (a *BookAssembler) ApplyUpdate(bids, asks []schema.PriceLevel, checksum str
 		a.upsertLevel(a.asks, level)
 	}
 
-	// Verify checksum
-	computedChecksum := a.computeChecksumLocked()
-	if checksum != "" {
-		if err := verifyChecksumValue(checksum, computedChecksum); err != nil {
-			return schema.BookSnapshotPayload{}, err
-		}
-	}
-
 	// Update sequence to finalUpdateID (u)
 	a.seq = finalUpdateID
-	a.checksum = computedChecksum
 
 	// Return full snapshot (not delta)
+	//nolint:exhaustruct // FirstUpdateID and FinalUpdateID not needed for output snapshots
 	payload := schema.BookSnapshotPayload{
-		Bids:       a.topLevelsLocked(a.bids, true),
-		Asks:       a.topLevelsLocked(a.asks, false),
-		Checksum:   fmt.Sprintf("%d", computedChecksum),
+		Bids:       a.topNLevelsLocked(a.bids, true, maxOutputDepth),
+		Asks:       a.topNLevelsLocked(a.asks, false, maxOutputDepth),
+		Checksum:   "",
 		LastUpdate: time.Now().UTC(),
 	}
 	return payload, nil
@@ -160,25 +146,7 @@ func (a *BookAssembler) resetBooks() {
 	a.asks = make(map[string]string, len(a.asks))
 }
 
-func (a *BookAssembler) computeChecksumLocked() uint32 {
-	bids := a.topLevelsLocked(a.bids, true)
-	asks := a.topLevelsLocked(a.asks, false)
-	parts := make([]string, 0, (len(bids)+len(asks))*2)
-
-	for _, level := range bids {
-		parts = append(parts, normaliseDecimal(level.Price))
-		parts = append(parts, normaliseDecimal(level.Quantity))
-	}
-	for _, level := range asks {
-		parts = append(parts, normaliseDecimal(level.Price))
-		parts = append(parts, normaliseDecimal(level.Quantity))
-	}
-
-	data := strings.Join(parts, ":")
-	return crc32.ChecksumIEEE([]byte(data))
-}
-
-func (a *BookAssembler) topLevelsLocked(book map[string]string, desc bool) []schema.PriceLevel {
+func (a *BookAssembler) topNLevelsLocked(book map[string]string, desc bool, limit int) []schema.PriceLevel {
 	if len(book) == 0 {
 		return nil
 	}
@@ -207,7 +175,6 @@ func (a *BookAssembler) topLevelsLocked(book map[string]string, desc bool) []sch
 		return levels[i].price < levels[j].price
 	})
 
-	limit := bookDepthChecksum
 	if len(levels) < limit {
 		limit = len(levels)
 	}
@@ -216,32 +183,4 @@ func (a *BookAssembler) topLevelsLocked(book map[string]string, desc bool) []sch
 		out = append(out, levels[i].raw)
 	}
 	return out
-}
-
-func normaliseDecimal(value string) string {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return value
-	}
-	value = strings.TrimLeft(value, "+")
-	if !strings.Contains(value, ".") {
-		return value
-	}
-	value = strings.TrimRight(value, "0")
-	value = strings.TrimSuffix(value, ".")
-	if value == "" || value == "-" {
-		return "0"
-	}
-	return value
-}
-
-func verifyChecksumValue(source string, expected uint32) error {
-	provided, err := strconv.ParseUint(strings.TrimSpace(source), 10, 32)
-	if err != nil {
-		return fmt.Errorf("binance book assembler: parse checksum %q: %w", source, err)
-	}
-	if uint32(provided) != expected {
-		return fmt.Errorf("binance book assembler: checksum mismatch (expected %d, got %d)", expected, provided)
-	}
-	return nil
 }

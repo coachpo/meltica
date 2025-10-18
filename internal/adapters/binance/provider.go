@@ -40,6 +40,8 @@ type Provider struct {
 
 	mu        sync.Mutex
 	routes    map[string]*routeHandle
+	wsStarted bool          // Track if WebSocket has been started
+	allTopics []string      // Aggregate all topics across routes
 	ctx       context.Context
 	cancel    context.CancelFunc
 	orderMu   sync.RWMutex
@@ -287,18 +289,39 @@ func (p *Provider) startRouteLocked(_ string, topics []string, pollers []RESTPol
 	handle := new(routeHandle)
 	handle.cancel = cancel
 
+	// Aggregate WebSocket topics across all routes
 	if len(topics) > 0 && p.ws != nil {
-		events, errs := p.ws.Stream(routeCtx, topics)
-		handle.wg.Go(func() {
-			p.pipeEvents(routeCtx, events)
-		})
-		if errs != nil {
+		// Add topics to aggregate list
+		p.allTopics = append(p.allTopics, topics...)
+		
+		// Start WebSocket with all collected topics after a brief delay to allow other routes to register
+		// This ensures we subscribe to all topics in a single WebSocket connection
+		if !p.wsStarted {
+			p.wsStarted = true
+			// Start in WaitGroup to ensure it's tracked properly
 			handle.wg.Go(func() {
-				p.pipeErrors(routeCtx, errs)
+				// Brief delay to allow all routes to register their topics
+				time.Sleep(50 * time.Millisecond)
+				
+				p.mu.Lock()
+				allTopics := make([]string, len(p.allTopics))
+				copy(allTopics, p.allTopics)
+				p.mu.Unlock()
+				
+				events, errs := p.ws.Stream(routeCtx, allTopics)
+				handle.wg.Go(func() {
+					p.pipeEvents(routeCtx, events)
+				})
+				if errs != nil {
+					handle.wg.Go(func() {
+						p.pipeErrors(routeCtx, errs)
+					})
+				}
 			})
 		}
 	}
 
+	// REST pollers can be started independently for each route
 	if len(pollers) > 0 && p.rest != nil {
 		events, errs := p.rest.Poll(routeCtx, pollers)
 		handle.wg.Go(func() {
@@ -396,7 +419,7 @@ func (p *Provider) prepareOrderBook(evt *schema.Event) ([]*schema.Event, bool, e
 		
 		// Delta from WebSocket - apply and return full snapshot
 		// Pass both U (FirstUpdateID) and u (FinalUpdateID) for proper sequence validation per Binance docs
-		snap, err := assembler.ApplyUpdate(payload.Bids, payload.Asks, payload.Checksum, payload.FirstUpdateID, payload.FinalUpdateID)
+		snap, err := assembler.ApplyUpdate(payload.Bids, payload.Asks, payload.FirstUpdateID, payload.FinalUpdateID)
 		if err != nil {
 			if errors.Is(err, ErrBookNotInitialized) {
 				p.bufferBookUpdate(evt.Symbol, evt)
@@ -468,7 +491,7 @@ func (p *Provider) flushBufferedUpdates(symbol string, assembler *BookAssembler)
 		}
 		// Apply buffered delta and get full snapshot
 		// Use FirstUpdateID and FinalUpdateID from payload for proper sequence validation
-		snap, err := assembler.ApplyUpdate(payload.Bids, payload.Asks, payload.Checksum, payload.FirstUpdateID, payload.FinalUpdateID)
+		snap, err := assembler.ApplyUpdate(payload.Bids, payload.Asks, payload.FirstUpdateID, payload.FinalUpdateID)
 		if err != nil {
 			if !errors.Is(err, ErrBookNotInitialized) && !errors.Is(err, ErrBookStaleUpdate) {
 				p.emitError(err)

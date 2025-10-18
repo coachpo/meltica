@@ -13,7 +13,6 @@ import (
 func TestParser_ParseDepthUpdate(t *testing.T) {
 	pools := pool.NewPoolManager()
 	pools.RegisterPool("Event", 10, func() any { return new(schema.Event) })
-	pools.RegisterPool("ParseFrame", 10, func() any { return new(schema.ParseFrame) })
 	parser := NewParserWithPool("binance", pools)
 
 	frame := []byte(`{
@@ -64,7 +63,6 @@ func TestParser_ParseDepthUpdate(t *testing.T) {
 func TestParser_ParseAggTrade(t *testing.T) {
 	pools := pool.NewPoolManager()
 	pools.RegisterPool("Event", 10, func() any { return new(schema.Event) })
-	pools.RegisterPool("ParseFrame", 10, func() any { return new(schema.ParseFrame) })
 	parser := NewParserWithPool("binance", pools)
 
 	frame := []byte(`{
@@ -115,7 +113,6 @@ func TestParser_ParseAggTrade(t *testing.T) {
 func TestParser_ParseAggTrade_SellerMaker(t *testing.T) {
 	pools := pool.NewPoolManager()
 	pools.RegisterPool("Event", 10, func() any { return new(schema.Event) })
-	pools.RegisterPool("ParseFrame", 10, func() any { return new(schema.ParseFrame) })
 	parser := NewParserWithPool("binance", pools)
 
 	frame := []byte(`{
@@ -148,7 +145,6 @@ func TestParser_ParseAggTrade_SellerMaker(t *testing.T) {
 func TestParser_ParseTicker(t *testing.T) {
 	pools := pool.NewPoolManager()
 	pools.RegisterPool("Event", 10, func() any { return new(schema.Event) })
-	pools.RegisterPool("ParseFrame", 10, func() any { return new(schema.ParseFrame) })
 	parser := NewParserWithPool("binance", pools)
 
 	frame := []byte(`{
@@ -199,7 +195,6 @@ func TestParser_ParseTicker(t *testing.T) {
 func TestParser_ParseKline(t *testing.T) {
 	pools := pool.NewPoolManager()
 	pools.RegisterPool("Event", 10, func() any { return new(schema.Event) })
-	pools.RegisterPool("ParseFrame", 10, func() any { return new(schema.ParseFrame) })
 	parser := NewParserWithPool("binance", pools)
 
 	frame := []byte(`{
@@ -258,7 +253,6 @@ func TestParser_ParseKline(t *testing.T) {
 func TestParser_ParseExecutionReport(t *testing.T) {
 	pools := pool.NewPoolManager()
 	pools.RegisterPool("Event", 10, func() any { return new(schema.Event) })
-	pools.RegisterPool("ParseFrame", 10, func() any { return new(schema.ParseFrame) })
 	parser := NewParserWithPool("binance", pools)
 
 	frame := []byte(`{
@@ -319,7 +313,6 @@ func TestParser_ParseExecutionReport(t *testing.T) {
 func TestParser_ParseExecutionReport_States(t *testing.T) {
 	pools := pool.NewPoolManager()
 	pools.RegisterPool("Event", 10, func() any { return new(schema.Event) })
-	pools.RegisterPool("ParseFrame", 10, func() any { return new(schema.ParseFrame) })
 	parser := NewParserWithPool("binance", pools)
 
 	tests := []struct {
@@ -370,7 +363,6 @@ func TestParser_ParseExecutionReport_States(t *testing.T) {
 func TestParser_ParseSnapshot_Orderbook(t *testing.T) {
 	pools := pool.NewPoolManager()
 	pools.RegisterPool("Event", 10, func() any { return new(schema.Event) })
-	pools.RegisterPool("ParseFrame", 10, func() any { return new(schema.ParseFrame) })
 	parser := NewParserWithPool("binance", pools)
 
 	body := []byte(`{
@@ -414,7 +406,6 @@ func TestParser_ParseSnapshot_Orderbook(t *testing.T) {
 func TestParser_ParseSnapshot_UnsupportedType(t *testing.T) {
 	pools := pool.NewPoolManager()
 	pools.RegisterPool("Event", 10, func() any { return new(schema.Event) })
-	pools.RegisterPool("ParseFrame", 10, func() any { return new(schema.ParseFrame) })
 	parser := NewParserWithPool("binance", pools)
 
 	_, err := parser.ParseSnapshot(context.Background(), "unknown", []byte("{}"), time.Now())
@@ -429,7 +420,6 @@ func TestParser_ParseSnapshot_UnsupportedType(t *testing.T) {
 func TestParser_InvalidJSON(t *testing.T) {
 	pools := pool.NewPoolManager()
 	pools.RegisterPool("Event", 10, func() any { return new(schema.Event) })
-	pools.RegisterPool("ParseFrame", 10, func() any { return new(schema.ParseFrame) })
 	parser := NewParserWithPool("binance", pools)
 
 	_, err := parser.Parse(context.Background(), []byte("invalid json"), time.Now())
@@ -441,7 +431,6 @@ func TestParser_InvalidJSON(t *testing.T) {
 func TestParser_MissingSymbol(t *testing.T) {
 	pools := pool.NewPoolManager()
 	pools.RegisterPool("Event", 10, func() any { return new(schema.Event) })
-	pools.RegisterPool("ParseFrame", 10, func() any { return new(schema.ParseFrame) })
 	parser := NewParserWithPool("binance", pools)
 
 	frame := []byte(`{
@@ -516,7 +505,6 @@ func TestInferStreamType(t *testing.T) {
 func TestParser_NegativeTimestamp(t *testing.T) {
 	pools := pool.NewPoolManager()
 	pools.RegisterPool("Event", 10, func() any { return new(schema.Event) })
-	pools.RegisterPool("ParseFrame", 10, func() any { return new(schema.ParseFrame) })
 	parser := NewParserWithPool("binance", pools)
 
 	frame := []byte(`{

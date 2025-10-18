@@ -31,7 +31,7 @@ import (
 
 func main() {
 	cfgPath := flag.String("config", "", "Path to streaming configuration file (default: streaming.yml or streaming.yaml alongside binary)")
-	providers := flag.String("providers", "fake,binance", "Comma-separated provider types: fake,binance (runs all simultaneously)")
+	providers := flag.String("providers", "binance", "Comma-separated provider types: fake,binance (runs all simultaneously)")
 	flag.Parse()
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -64,29 +64,23 @@ func main() {
 	}
 	// Object pools for memory efficiency - avoid allocations on hot paths:
 	//
-	// WsFrame (200 capacity):
-	//   - Used by WebSocket parsers to receive raw frames before canonicalization
+	// WsFrame (5000 capacity):
+	//   - Used by WebSocket parsers to receive raw frames from transport
 	//   - Shared across all exchanges (Binance, Coinbase, Kraken, etc.)
 	//   - Hot path: Every WebSocket message allocates/returns one frame
 	//
-	// ParseFrame (200 capacity):
-	//   - Frame during parsing phase, before canonicalization to Event
-	//   - Holds raw exchange-specific JSON during transformation
-	//   - Exchange-agnostic: Supports all provider types (Binance, Coinbase, etc.)
-	//   - Data flow: WsFrame → Parser → ParseFrame → Event
-	//   - Hot path: Temporary holder during JSON parsing and normalization
-	//
-	// Event (1000 capacity):
+	// Event (10000 capacity):
 	//   - The canonical event objects sent through the system
 	//   - Highest capacity: Main message type flowing through all components
+	//   - Data flow: WsFrame → Parser → Event (direct conversion, no intermediate frames)
 	//
 	// OrderRequest (20 capacity):
 	//   - Order request objects for trading operations
 	//   - Lower capacity: Orders are less frequent than market data
 	//
-	registerPool("WsFrame", 200, func() interface{} { return new(schema.WsFrame) })
-	registerPool("ParseFrame", 200, func() interface{} { return new(schema.ParseFrame) })
-	registerPool("Event", 1000, func() interface{} { return new(schema.Event) })
+	// Increased pool sizes for high-frequency Binance streams (9 streams × 100+ msgs/sec = 900+ msgs/sec)
+	registerPool("WsFrame", 5000, func() interface{} { return new(schema.WsFrame) })
+	registerPool("Event", 10000, func() interface{} { return new(schema.Event) })
 	registerPool("OrderRequest", 20, func() interface{} { return new(schema.OrderRequest) })
 
 	var lifecycle conc.WaitGroup
@@ -120,7 +114,7 @@ func main() {
 	runtimeCfg := config.DispatcherRuntimeConfig{
 		StreamOrdering: config.StreamOrderingConfig{
 			LatenessTolerance: 1500 * time.Millisecond,
-			FlushInterval:     1000 * time.Millisecond,
+			FlushInterval:     50 * time.Millisecond,
 			MaxBufferSize:     1024,
 		},
 	}
@@ -143,6 +137,9 @@ func main() {
 	subscriptionManager := shared.NewSubscriptionManager(primaryProvider)
 	tradingState := dispatcher.NewTradingState()
 	logger.Printf("subscribing %d routes to %d providers", len(table.Routes()), len(activeProviders))
+
+	// Subscribe all routes to providers
+	// Note: Binance provider aggregates WebSocket topics from all routes and subscribes once
 	for _, route := range table.Routes() {
 		// Activate route on all providers
 		for _, p := range activeProviders {
@@ -386,8 +383,8 @@ func createProvider(ctx context.Context, providerType string, poolMgr *pool.Pool
 		//nolint:exhaustruct // optional fields use zero values
 		provider := fake.NewProvider(fake.Options{
 			Name:           "fake",
-			TickerInterval: 1000 * time.Microsecond,
-			TradeInterval:  1000 * time.Microsecond,
+			TickerInterval: 500 * time.Millisecond,
+			TradeInterval:  500 * time.Millisecond,
 			Pools:          poolMgr,
 		})
 		if err := provider.Start(ctx); err != nil {
