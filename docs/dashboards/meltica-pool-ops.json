@@ -233,6 +233,11 @@
   ],
   "refresh": "30s",
   "schemaVersion": 38,
+  "style": "dark",
+  "tags": [
+    "meltica",
+    "pool"
+  ],
   "templating": {
     "list": [
       {

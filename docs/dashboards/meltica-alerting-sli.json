@@ -303,6 +303,11 @@
   ],
   "refresh": "1m",
   "schemaVersion": 38,
+  "style": "dark",
+  "tags": [
+    "meltica",
+    "sli"
+  ],
   "templating": {
     "list": [
       {

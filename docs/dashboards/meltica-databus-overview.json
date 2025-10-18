@@ -299,7 +299,10 @@
   "refresh": "30s",
   "schemaVersion": 38,
   "style": "dark",
-  "tags": ["meltica", "databus"],
+  "tags": [
+    "meltica",
+    "databus"
+  ],
   "templating": {
     "list": [
       {
