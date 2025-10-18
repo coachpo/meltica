@@ -57,6 +57,7 @@ func (c *RESTClient) Poll(ctx context.Context, pollers []RESTPoller) (<-chan *sc
 	var wg conc.WaitGroup
 
 	for _, poller := range pollers {
+		poller := poller
 		if poller.Interval <= 0 {
 			poller.Interval = time.Second
 		}

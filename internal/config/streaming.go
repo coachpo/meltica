@@ -29,8 +29,9 @@ type AdapterSet struct {
 
 // BinanceAdapterConfig declares Binance transport configuration.
 type BinanceAdapterConfig struct {
-	WS   BinanceWSConfig   `yaml:"ws"`
-	REST BinanceRESTConfig `yaml:"rest"`
+	WS                  BinanceWSConfig   `yaml:"ws"`
+	REST                BinanceRESTConfig `yaml:"rest"`
+	BookRefreshInterval time.Duration     `yaml:"book_refresh_interval"`
 }
 
 // BinanceWSConfig controls websocket connectivity.
@@ -175,15 +176,21 @@ func LoadStreamingConfig(ctx context.Context, path string) (StreamingConfig, err
 		return StreamingConfig{}, fmt.Errorf("unmarshal streaming config: %w", err)
 	}
 
-	if err := cfg.Validate(ctx); err != nil {
+	if err := (&cfg).Validate(ctx); err != nil {
 		return StreamingConfig{}, err
 	}
 	return cfg, nil
 }
 
 // Validate performs semantic validation on the loaded configuration.
-func (c StreamingConfig) Validate(ctx context.Context) error {
+func (c *StreamingConfig) Validate(ctx context.Context) error {
 	_ = ctx
+	
+	// Set default book refresh interval if not specified
+	if c.Adapters.Binance.BookRefreshInterval == 0 {
+		c.Adapters.Binance.BookRefreshInterval = 1 * time.Minute // Default: 1 minute
+	}
+	
 	if c.Dispatcher.Routes == nil {
 		return fmt.Errorf("streaming dispatcher routes required")
 	}
@@ -200,9 +207,10 @@ func (c StreamingConfig) Validate(ctx context.Context) error {
 				return fmt.Errorf("dispatcher route %s: filter op required", name)
 			}
 		}
-		for _, rest := range route.RestFns {
+		for i, rest := range route.RestFns {
+			// Use global book refresh interval as default if not specified
 			if rest.Interval <= 0 {
-				return fmt.Errorf("dispatcher route %s: rest interval must be >0", name)
+				route.RestFns[i].Interval = c.Adapters.Binance.BookRefreshInterval
 			}
 		}
 	}

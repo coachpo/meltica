@@ -380,7 +380,7 @@ func (p *Provider) bookAssembler(symbol string) *BookAssembler {
 	defer p.bookMu.Unlock()
 	assembler, ok := p.books[symbol]
 	if !ok {
-		assembler = NewBookAssembler()
+		assembler = NewBookAssemblerWithSymbol(symbol)
 		p.books[symbol] = assembler
 	}
 	return assembler
