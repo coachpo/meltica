@@ -81,7 +81,7 @@ func main() {
 	// Increased pool sizes for high-frequency Binance streams (9 streams × 100+ msgs/sec = 900+ msgs/sec)
 	registerPool("WsFrame", 5000, func() interface{} { return new(schema.WsFrame) })
 	registerPool("Event", 10000, func() interface{} { return new(schema.Event) })
-	registerPool("OrderRequest", 20, func() interface{} { return new(schema.OrderRequest) })
+	registerPool("OrderRequest", 5000, func() interface{} { return new(schema.OrderRequest) })
 
 	var lifecycle conc.WaitGroup
 
@@ -383,8 +383,8 @@ func createProvider(ctx context.Context, providerType string, poolMgr *pool.Pool
 		//nolint:exhaustruct // optional fields use zero values
 		provider := fake.NewProvider(fake.Options{
 			Name:           "fake",
-			TickerInterval: 1000 * time.Millisecond,
-			TradeInterval:  1000 * time.Millisecond,
+			TickerInterval: 100 * time.Millisecond,
+			TradeInterval:  100 * time.Millisecond,
 			Pools:          poolMgr,
 		})
 		if err := provider.Start(ctx); err != nil {
