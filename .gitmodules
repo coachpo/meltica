@@ -1,0 +1,9 @@
+[submodule "meltica-gateway"]
+	path = meltica-gateway
+	url = git@github.com:coachpo/meltica-gateway.git
+[submodule "meltica-client"]
+	path = meltica-client
+	url = git@github.com:coachpo/meltica-client.git
+[submodule "meltica-strategy"]
+	path = meltica-strategy
+	url = git@github.com:coachpo/meltica-strategy.git
