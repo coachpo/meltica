@@ -2,14 +2,16 @@
 
 Meltica is a Go 1.25 trading gateway that ingests market data, routes deterministic events, and executes lightweight JavaScript strategies. It focuses on low-allocation pipelines, explicit observability hooks, and configuration-driven provider wiring so you can swap exchanges or fake adapters without code changes.
 
+This service now lives in `backend/` inside the combined Meltica mono-repo.
+
 ## Overview
 
 - **Entrypoint**: `cmd/gateway` loads configuration from `config/app.yaml` or `MELTICA_CONFIG_PATH`, applies migrations, starts telemetry, spins up providers, and exposes the control API.
 - **Architecture**: Internal packages separate orchestration (`internal/app`), domain entities (`internal/domain`), infrastructure adapters (`internal/infra`), and helpers (`internal/support`). JS strategy runtime lives under `internal/app/lambda`.
 - **Persistence & schema**: Postgres migrations live in `db/migrations`; sqlc-generated repositories live in `internal/infra/persistence/postgres/sqlc`.
 - **Contracts & docs**: Public APIs in `api/`; operational docs and dashboards in `docs/` and `deployments/telemetry/`.
-- **Strategies**: Drop reference strategies in `strategies/` or point `strategies.directory` elsewhere. Experimental adapters live under `hypnotism/` and `strategies/` submodules when present.
-- **Ecosystem fit**: The Next.js **meltica-client** UI calls this gateway’s REST API (default `:8880`) to list/upload strategies, manage providers, and operate instances. Strategy bundles come from the **meltica-strategy** registry—`strategies.directory` should point at that repo (or a synced copy), and the loader reads `registry.json` exclusively.
+- **Strategies**: Point `strategies.directory` at the sibling `../strategy` directory or another synced registry path. Experimental adapters live under `hypnotism/` and strategy-related submodules when present.
+- **Ecosystem fit**: The Next.js frontend in `../frontend` calls this gateway’s REST API (default `:8880`) to list/upload strategies, manage providers, and operate instances. Strategy bundles come from the sibling `../strategy` registry—set `strategies.directory` to that directory (or another synced copy), and the loader reads `registry.json` exclusively.
 
 ## Project Layout
 
@@ -35,10 +37,11 @@ Meltica is a Go 1.25 trading gateway that ingests market data, routes determinis
 
 ## Quickstart
 
+From the monorepo root:
+
 ```bash
-git clone git@github.com:coachpo/meltica-gateway.git
-cd meltica-gateway
-cp config/app.example.yaml config/app.yaml   # adjust DSN, telemetry, pools, strategy directory
+cd backend
+cp config/app.example.yaml config/app.yaml   # set strategies.directory to ../strategy if using the bundled registry
 export DATABASE_URL=postgresql://postgres:root@localhost:5432/meltica?sslmode=disable
 make run                                     # or: make run CONFIG_FILE=path/to/app.yaml
 ```
@@ -95,7 +98,7 @@ Environment knobs:
 
 ## Strategy Development
 
-- Place strategy bundles in `strategies/` or point `strategies.directory` to another path.
+- Point `strategies.directory` at `../strategy` or another synced registry path.
 - Runtime registers strategies via the dispatcher and lambda manager; see `internal/app/lambda` for lifecycle details.
 
 ## Code Generation
@@ -109,4 +112,4 @@ Environment knobs:
 
 ## License
 
-MIT License (`LICENSE`).
+MIT License; see the root `../LICENSE`.
