@@ -23,6 +23,7 @@ This prevents external projects from depending on internal implementation detail
   - `adapters/` – Built-in exchange adapters plus shared utilities
   - `bus/` – In-memory event bus implementation
   - `config/` – Typed configuration loader and helpers
+  - `persistence/` – Durable storage wiring, migrations, and PostgreSQL/sqlc repositories
   - `pool/` – Object pool manager and helpers
   - `server/` – HTTP control-plane surface
   - `telemetry/` – OpenTelemetry wiring and semantic conventions
@@ -34,7 +35,7 @@ This prevents external projects from depending on internal implementation detail
 1. **Privacy**: No external imports allowed - keeps internal details private
 2. **Separation of Concerns**: Each package has a clear, focused responsibility
 3. **Minimal Dependencies**: Packages depend on abstractions, not implementations
-4. **In-Memory Only**: No persistence layer - configuration state only
+4. **Persistence-Aware Boundaries**: Durable store contracts live under `internal/domain/*store`, while concrete PostgreSQL and sqlc-backed implementations live under `internal/infra/persistence`.
 5. **High Performance**: Object pooling and efficient event routing
 
 ## Import Guidelines

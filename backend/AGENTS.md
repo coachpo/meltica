@@ -1,26 +1,25 @@
-# Repository Guidelines
+# Backend Guidelines
 
-## Project Structure & Module Organization
-`cmd/gateway` is the gateway binary, configured via `config/app.yaml` or `MELTICA_CONFIG_PATH`. Core packages live under `internal/app` (composition), `internal/domain` (entities), `internal/infra` (bus, telemetry, persistence), and `internal/support`. Contracts stay in `api/`, while observability and lambda docs live in `docs/` and `deployments/telemetry`. Database migrations live in `db/migrations`, and SQLC output sits in `internal/infra/persistence/postgres/sqlc`. Submodules (`strategies/`, `hypnotism/`) provide reusable strategies and experimental adapters. Tests are colocated with code; cross-package suites use `tests/contract/*` and fixtures live in `test/`.
+## Scope and nearest guidance
+This file applies to all of `backend/`. More specific AGENTS files now live under `cmd`, `db/migrations`, `internal/app`, `internal/domain`, `internal/domain/schema`, `internal/infra`, `internal/testutil`, and `tests/contract`; follow the nearest file when it adds local rules.
 
-## Build, Test & Development Commands
-- `make run CONFIG_FILE=config/app.yaml` — run the gateway with any config (or set `MELTICA_CONFIG_PATH`).
-- `make build` / `make build-linux-arm64` — compile to `bin/`; the ARM64 target also stages configs.
-- `make lint` — run `golangci-lint` using `.golangci.yml`.
-- `make test` — execute `go test ./... -race -count=1 -timeout=30s`.
-- `make coverage` — enforce the TS-01 ≥70% bar and emit `coverage.out` for review.
-- `make bench` — measure hot paths before or after perf work.
-- `make migrate` / `make migrate-down` — apply or roll back via `cmd/migrate` against `DATABASE_URL`.
-- `sqlc generate` — regenerate typed repositories after editing SQL.
+## Project structure
+`cmd/gateway` starts the runtime and `cmd/migrate` runs database migrations. Orchestration belongs in `internal/app`, canonical types and store contracts belong in `internal/domain`, and adapters, config, persistence, HTTP, pools, and telemetry belong in `internal/infra`. Shared test helpers live in `internal/testutil`, migrations live in `db/migrations`, and cross package suites live in `tests/contract`.
 
-## Coding Style & Naming Conventions
-Target Go 1.25; run `gofmt`/`goimports` before committing and rely on `golangci-lint` (staticcheck, revive, gocyclo) for extra enforcement. Use tabs, `camelCase` locals, and `PascalCase` exports, and keep package names short (`dispatcher`, `telemetry`, `lambda`). Align config keys and strategy IDs with provider aliases (e.g., `fake:`, `binance:`) to keep dispatcher bindings readable. Prefer constructors inside `internal/app` rather than mutable globals.
+## Local priority
+The repo has no external users yet, so clean architecture and current best practices beat compatibility shims or speculative legacy paths. Prefer clear package boundaries, direct contract cleanup, and small focused changes over aliases or fallback paths that preserve old behavior.
 
-## Testing Guidelines
-Keep `_test.go` files next to the code they cover, and move multi-package or contract suites into `tests/contract/*` (run `make contract-ws-routing` when touching websocket routing). Every PR must pass `make coverage`; if the ≥70% bar slips, add table-driven cases or cite supporting benchmarks. Name tests `Test<Component>_<Scenario>` so `go test` stays searchable.
+## Commands
+- `make run CONFIG_FILE=config/app.yaml`: start the gateway locally.
+- `make build` and `make build-linux-arm64`: compile binaries into `bin/`.
+- `make lint`: run `golangci-lint` with `.golangci.yml`.
+- `make test`: run `go test ./... -race -count=1 -timeout=30s`.
+- `make coverage`: enforce the TS-01 coverage bar.
+- `make migrate` and `make migrate-down`: apply or roll back `db/migrations` against `DATABASE_URL`.
+- `make sqlc`: regenerate `internal/infra/persistence/postgres/sqlc` after SQL changes.
 
-## Commit & Pull Request Guidelines
-History favors Conventional Commits (`feat(submodules): …`, `chore(strategies): …`), so stick to `type(scope): summary` and list the validation commands you ran (`make lint && make test && make coverage`). Reference tickets, and call out config or migration impacts explicitly. In PR descriptions, mention telemetry/doc touchpoints and attach screenshots or logs whenever UI or observability output changes.
+## Coding and tests
+Target Go 1.25. Run `gofmt` and `goimports`, keep package names short, and prefer constructors over mutable globals. Keep `_test.go` files beside the code they cover, then use `tests/contract/` for cross package persistence or API behavior. Do not hand edit generated sqlc files.
 
-## Security & Configuration Tips
-Never commit credentials—use `.env` for `DATABASE_URL`, OTLP endpoints, and exchange keys. Demonstrate config edits in `config/app.example.yaml`, and keep `config/app.ci.yaml` deterministic for CI. Rotate sample secrets immediately if exposure is suspected.
+## Secrets and config
+Never commit credentials. Use `.env` for `DATABASE_URL` and provider secrets, keep `config/app.example.yaml` safe for sharing, and keep `config/app.ci.yaml` deterministic for CI.
