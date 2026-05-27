@@ -1,9 +1,11 @@
 # Quick Start Guide
 
+Run these commands from the monorepo root.
+
 ## Start the Client
 
 ```bash
-cd /home/qing/work/meltica/web/client
+cd frontend
 pnpm dev
 ```
 
@@ -26,9 +28,8 @@ Once the dev server is running, you can:
 ## Register Strategy Modules
 
 1. Open http://localhost:3000/strategies/modules.
-2. Click **Register module** to upload JavaScript source. This writes to `strategies/registry.json` first, then to the
-   configured strategy directory. Copying files directly into the directory is ignored until they are registered.
-3. After deleting modules or revisions, run `node strategies/gc.js --write` on the gateway host to prune stray files.
+2. Click **Register module** to upload JavaScript source. When you use the bundled registry in this mono-repo, this writes to `strategy/registry.json` first, then to the configured strategy directory. Copying files directly into the directory is ignored until they are registered.
+3. After deleting modules or revisions, run `node strategy/gc.js` in the bundled registry directory to prune stray files.
 4. When editing the manifest manually, POST `/strategies/refresh` (or use **Refresh catalog**) so the runtime reloads
    the updated selectors.
 

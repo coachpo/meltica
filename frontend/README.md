@@ -2,6 +2,8 @@
 
 Frontend for the Meltica control plane. It gives operators one place to browse strategy catalogs, register JS strategy modules, configure providers/adapters, launch and monitor instances, tune risk limits, and back up or restore the runtime snapshot. All actions flow through the **meltica-gateway** REST API at `NEXT_PUBLIC_API_URL`, and the strategy catalog you see is whatever the gateway exposes from the **meltica-strategy** `registry.json` manifest—no direct file access from the UI.
 
+This frontend now lives in `frontend/` inside the combined Meltica mono-repo.
+
 ## At a Glance
 
 - **App Router + React 19** with Tailwind v4 and shadcn/ui primitives.
@@ -18,7 +20,10 @@ Frontend for the Meltica control plane. It gives operators one place to browse s
 
 ## Quick Start
 
+From the monorepo root:
+
 ```bash
+cd frontend
 pnpm install
 echo "NEXT_PUBLIC_API_URL=http://localhost:8880" > .env.local   # optional override
 pnpm dev
@@ -79,15 +84,15 @@ Playwright suites can also run against another host by overriding `PLAYWRIGHT_BA
 
 ## Docker
 
-Build and run locally:
+Build and run locally from `frontend/`:
 
 ```bash
-docker build -t ghcr.io/coachpo/meltica-client:local \
+docker build -t meltica-frontend:local \
   --build-arg NEXT_PUBLIC_API_URL=https://gateway.example.com .
 
 docker run -p 3000:3000 \
   -e NEXT_PUBLIC_API_URL=https://gateway.example.com \
-  ghcr.io/coachpo/meltica-client:local
+  meltica-frontend:local
 ```
 
 GHCR images are published via `.github/workflows/docker-publish.yml` (multi-arch AMD64/ARM64). Daily cleanup lives in `.github/workflows/cleanup.yml`.
@@ -110,4 +115,4 @@ Ensure the gateway is reachable from the host and that CORS/HTTPS rules permit b
 
 ## License
 
-MIT license in `LICENSE`.
+MIT License; see the root `../LICENSE`.
