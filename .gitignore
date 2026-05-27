@@ -1,3 +1,762 @@
 # Local agent artifacts
 /.omo/
 AGENTS.md
+
+# Merged from backend/.gitignore
+/backend/**/coverage/
+# Allowlisting gitignore template for GO projects prevents us
+# from adding various unwanted local files, such as generated
+# files, developer configurations or IDE-specific files etc.
+#
+# Recommended: Go.AllowList.gitignore
+/backend/**/.DS_Store
+
+# Ignore everything
+/backend/**/*
+!/backend/**/.golangci.yml
+# But not these files...
+
+#Config
+!/backend/config/*.yaml
+
+!/backend/**/*.go
+!/backend/**/go.sum
+!/backend/**/go.mod
+
+# Documentation
+!/backend/**/*.md
+!/backend/**/README.md
+!/backend/**/LICENSE
+!/backend/**/*.puml
+!/backend/docs/**/*
+
+# Makefile
+!/backend/**/Makefile
+
+# ...even if they are in subdirectories
+!/backend/**/*/
+
+# Testdata
+!/backend/**/*_snapshots.json
+
+# Github Actions
+!/backend/.github/workflows/*
+
+# Ignore AI assistant and tooling directories
+/backend/**/.claude/
+/backend/**/.factory/
+/backend/**/.cursor/
+/backend/**/.codex/
+/backend/**/.gemini/
+
+# Cache
+/backend/**/.cache/
+
+# Ignore IDE directories
+/backend/**/.idea/
+/backend/**/.vscode/
+
+# Deployment
+!/backend/deployments/**/*
+
+!/backend/web/**/*
+/backend/web/client/test-results/
+/backend/web/node_modules
+/backend/web/.next
+/backend/**/node_modules
+# Strategies
+!/backend/strategies/**/*
+
+!/backend/db/**/*
+# Allow sqlc query definitions to be committed
+!/backend/internal/infra/persistence/postgres/sql/**
+
+!/backend/**/sqlc.yaml
+!/backend/**/*.py
+
+!/backend/scripts/**/*
+
+# Merged from frontend/.gitignore
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+/frontend/**/.git
+# dependencies
+/frontend/node_modules
+/frontend/.pnp
+/frontend/**/.pnp.*
+/frontend/.yarn/*
+!/frontend/.yarn/patches
+!/frontend/.yarn/plugins
+!/frontend/.yarn/releases
+!/frontend/.yarn/versions
+
+# testing
+/frontend/coverage
+
+# next.js
+/frontend/.next/
+/frontend/out/
+
+# production
+/frontend/build
+
+# misc
+/frontend/**/.DS_Store
+/frontend/**/*.pem
+
+# debug
+/frontend/**/npm-debug.log*
+/frontend/**/yarn-debug.log*
+/frontend/**/yarn-error.log*
+/frontend/**/pnpm-debug.log*
+
+# env files
+/frontend/**/.env*.local
+/frontend/**/.env
+!/frontend/**/.env.example
+
+# vercel
+/frontend/**/.vercel
+
+# typescript
+/frontend/**/*.tsbuildinfo
+/frontend/**/next-env.d.ts
+
+# turbo
+/frontend/**/.turbo
+
+/frontend/**/.idea
+
+/frontend/**/test-results### VisualStudioCode template
+/frontend/.vscode/*
+!/frontend/.vscode/settings.json
+!/frontend/.vscode/tasks.json
+!/frontend/.vscode/launch.json
+!/frontend/.vscode/extensions.json
+!/frontend/.vscode/*.code-snippets
+
+# Local History for Visual Studio Code
+/frontend/**/.history/
+
+# Built Visual Studio Code Extensions
+/frontend/**/*.vsix
+
+### JetBrains template
+# Covers JetBrains IDEs: IntelliJ, RubyMine, PhpStorm, AppCode, PyCharm, CLion, Android Studio, WebStorm and Rider
+# Reference: https://intellij-support.jetbrains.com/hc/en-us/articles/206544839
+
+# User-specific stuff
+/frontend/.idea/**/workspace.xml
+/frontend/.idea/**/tasks.xml
+/frontend/.idea/**/usage.statistics.xml
+/frontend/.idea/**/dictionaries
+/frontend/.idea/**/shelf
+
+# AWS User-specific
+/frontend/.idea/**/aws.xml
+
+# Generated files
+/frontend/.idea/**/contentModel.xml
+
+# Sensitive or high-churn files
+/frontend/.idea/**/dataSources/
+/frontend/.idea/**/dataSources.ids
+/frontend/.idea/**/dataSources.local.xml
+/frontend/.idea/**/sqlDataSources.xml
+/frontend/.idea/**/dynamic.xml
+/frontend/.idea/**/uiDesigner.xml
+/frontend/.idea/**/dbnavigator.xml
+
+# Gradle
+/frontend/.idea/**/gradle.xml
+/frontend/.idea/**/libraries
+
+# Gradle and Maven with auto-import
+# When using Gradle or Maven with auto-import, you should exclude module files,
+# since they will be recreated, and may cause churn.  Uncomment if using
+# auto-import.
+# .idea/artifacts
+# .idea/compiler.xml
+# .idea/jarRepositories.xml
+# .idea/modules.xml
+# .idea/*.iml
+# .idea/modules
+# *.iml
+# *.ipr
+
+# CMake
+/frontend/**/cmake-build-*/
+
+# Mongo Explorer plugin
+/frontend/.idea/**/mongoSettings.xml
+
+# File-based project format
+/frontend/**/*.iws
+
+# IntelliJ
+/frontend/**/out/
+
+# mpeltonen/sbt-idea plugin
+/frontend/**/.idea_modules/
+
+# JIRA plugin
+/frontend/**/atlassian-ide-plugin.xml
+
+# Cursive Clojure plugin
+/frontend/.idea/replstate.xml
+
+# SonarLint plugin
+/frontend/.idea/sonarlint/
+
+# Crashlytics plugin (for Android Studio and IntelliJ)
+/frontend/**/com_crashlytics_export_strings.xml
+/frontend/**/crashlytics.properties
+/frontend/**/crashlytics-build.properties
+/frontend/**/fabric.properties
+
+# Editor-based Rest Client
+/frontend/.idea/httpRequests
+
+# Android studio 3.1+ serialized cache file
+/frontend/.idea/caches/build_file_checksums.ser
+
+### Example user template template
+### Example user template
+
+# IntelliJ project files
+/frontend/**/*.iml
+/frontend/**/out
+/frontend/**/gen
+### Node template
+# Logs
+/frontend/**/logs
+/frontend/**/*.log
+/frontend/**/lerna-debug.log*
+/frontend/**/.pnpm-debug.log*
+
+# Diagnostic reports (https://nodejs.org/api/report.html)
+/frontend/**/report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# Runtime data
+/frontend/**/pids
+/frontend/**/*.pid
+/frontend/**/*.seed
+/frontend/**/*.pid.lock
+
+# Directory for instrumented libs generated by jscoverage/JSCover
+/frontend/**/lib-cov
+
+# Coverage directory used by tools like istanbul
+/frontend/**/coverage
+/frontend/**/*.lcov
+
+# nyc test coverage
+/frontend/**/.nyc_output
+
+# Grunt intermediate storage (https://gruntjs.com/creating-plugins#storing-task-files)
+/frontend/**/.grunt
+
+# Bower dependency directory (https://bower.io/)
+/frontend/**/bower_components
+
+# node-waf configuration
+/frontend/**/.lock-wscript
+
+# Compiled binary addons (https://nodejs.org/api/addons.html)
+/frontend/build/Release
+
+# Dependency directories
+/frontend/**/node_modules/
+/frontend/**/jspm_packages/
+
+# Snowpack dependency directory (https://snowpack.dev/)
+/frontend/**/web_modules/
+
+# TypeScript cache
+
+# Optional npm cache directory
+/frontend/**/.npm
+
+# Optional eslint cache
+/frontend/**/.eslintcache
+
+# Optional stylelint cache
+/frontend/**/.stylelintcache
+
+# Microbundle cache
+/frontend/**/.rpt2_cache/
+/frontend/**/.rts2_cache_cjs/
+/frontend/**/.rts2_cache_es/
+/frontend/**/.rts2_cache_umd/
+
+# Optional REPL history
+/frontend/**/.node_repl_history
+
+# Output of 'npm pack'
+/frontend/**/*.tgz
+
+# Yarn Integrity file
+/frontend/**/.yarn-integrity
+
+# dotenv environment variable files
+/frontend/**/.env.development.local
+/frontend/**/.env.test.local
+/frontend/**/.env.production.local
+/frontend/**/.env.local
+
+# parcel-bundler cache (https://parceljs.org/)
+/frontend/**/.cache
+/frontend/**/.parcel-cache
+
+# Next.js build output
+/frontend/**/.next
+
+# Nuxt.js build / generate output
+/frontend/**/.nuxt
+/frontend/**/dist
+
+# Gatsby files
+/frontend/**/.cache/
+# Comment in the public line in if your project uses Gatsby and not Next.js
+# https://nextjs.org/blog/next-9-1#public-directory-support
+# public
+
+# vuepress build output
+/frontend/.vuepress/dist
+
+# vuepress v2.x temp and cache directory
+/frontend/**/.temp
+
+# Docusaurus cache and generated files
+/frontend/**/.docusaurus
+
+# Serverless directories
+/frontend/**/.serverless/
+
+# FuseBox cache
+/frontend/**/.fusebox/
+
+# DynamoDB Local files
+/frontend/**/.dynamodb/
+
+# TernJS port file
+/frontend/**/.tern-port
+
+# Stores VSCode versions used for testing VSCode extensions
+/frontend/**/.vscode-test
+
+# yarn v2
+/frontend/.yarn/cache
+/frontend/.yarn/unplugged
+/frontend/.yarn/build-state.yml
+/frontend/.yarn/install-state.gz
+
+### VisualStudio template
+## Ignore Visual Studio temporary files, build results, and
+## files generated by popular Visual Studio add-ons.
+##
+## Get latest from https://github.com/github/gitignore/blob/main/VisualStudio.gitignore
+
+# User-specific files
+/frontend/**/*.rsuser
+/frontend/**/*.suo
+/frontend/**/*.user
+/frontend/**/*.userosscache
+/frontend/**/*.sln.docstates
+
+# User-specific files (MonoDevelop/Xamarin Studio)
+/frontend/**/*.userprefs
+
+# Mono auto generated files
+/frontend/**/mono_crash.*
+
+# Build results
+/frontend/**/[Dd]ebug/
+/frontend/**/[Dd]ebugPublic/
+/frontend/**/[Rr]elease/
+/frontend/**/[Rr]eleases/
+/frontend/**/x64/
+/frontend/**/x86/
+/frontend/**/[Ww][Ii][Nn]32/
+/frontend/**/[Aa][Rr][Mm]/
+/frontend/**/[Aa][Rr][Mm]64/
+/frontend/**/bld/
+/frontend/**/[Bb]in/
+/frontend/**/[Oo]bj/
+/frontend/**/[Ll]og/
+/frontend/**/[Ll]ogs/
+
+# Visual Studio 2015/2017 cache/options directory
+/frontend/**/.vs/
+# Uncomment if you have tasks that create the project's static files in wwwroot
+#wwwroot/
+
+# Visual Studio 2017 auto generated files
+/frontend/**/Generated\ Files/
+
+# MSTest test Results
+/frontend/**/[Tt]est[Rr]esult*/
+/frontend/**/[Bb]uild[Ll]og.*
+
+# NUnit
+/frontend/**/*.VisualState.xml
+/frontend/**/TestResult.xml
+/frontend/**/nunit-*.xml
+
+# Build Results of an ATL Project
+/frontend/**/[Dd]ebugPS/
+/frontend/**/[Rr]eleasePS/
+/frontend/**/dlldata.c
+
+# Benchmark Results
+/frontend/**/BenchmarkDotNet.Artifacts/
+
+# .NET Core
+/frontend/**/project.lock.json
+/frontend/**/project.fragment.lock.json
+/frontend/**/artifacts/
+
+# ASP.NET Scaffolding
+/frontend/**/ScaffoldingReadMe.txt
+
+# StyleCop
+/frontend/**/StyleCopReport.xml
+
+# Files built by Visual Studio
+/frontend/**/*_i.c
+/frontend/**/*_p.c
+/frontend/**/*_h.h
+/frontend/**/*.ilk
+/frontend/**/*.meta
+/frontend/**/*.obj
+/frontend/**/*.iobj
+/frontend/**/*.pch
+/frontend/**/*.pdb
+/frontend/**/*.ipdb
+/frontend/**/*.pgc
+/frontend/**/*.pgd
+/frontend/**/*.rsp
+/frontend/**/*.sbr
+/frontend/**/*.tlb
+/frontend/**/*.tli
+/frontend/**/*.tlh
+/frontend/**/*.tmp
+/frontend/**/*.tmp_proj
+/frontend/**/*_wpftmp.csproj
+/frontend/**/*.tlog
+/frontend/**/*.vspscc
+/frontend/**/*.vssscc
+/frontend/**/.builds
+/frontend/**/*.pidb
+/frontend/**/*.svclog
+/frontend/**/*.scc
+
+# Chutzpah Test files
+/frontend/**/_Chutzpah*
+
+# Visual C++ cache files
+/frontend/**/ipch/
+/frontend/**/*.aps
+/frontend/**/*.ncb
+/frontend/**/*.opendb
+/frontend/**/*.opensdf
+/frontend/**/*.sdf
+/frontend/**/*.cachefile
+/frontend/**/*.VC.db
+/frontend/**/*.VC.VC.opendb
+
+# Visual Studio profiler
+/frontend/**/*.psess
+/frontend/**/*.vsp
+/frontend/**/*.vspx
+/frontend/**/*.sap
+
+# Visual Studio Trace Files
+/frontend/**/*.e2e
+
+# TFS 2012 Local Workspace
+/frontend/**/$tf/
+
+# Guidance Automation Toolkit
+/frontend/**/*.gpState
+
+# ReSharper is a .NET coding add-in
+/frontend/**/_ReSharper*/
+/frontend/**/*.[Rr]e[Ss]harper
+/frontend/**/*.DotSettings.user
+
+# TeamCity is a build add-in
+/frontend/**/_TeamCity*
+
+# DotCover is a Code Coverage Tool
+/frontend/**/*.dotCover
+
+# AxoCover is a Code Coverage Tool
+/frontend/.axoCover/*
+!/frontend/.axoCover/settings.json
+
+# Coverlet is a free, cross platform Code Coverage Tool
+/frontend/**/coverage*.json
+/frontend/**/coverage*.xml
+/frontend/**/coverage*.info
+
+# Visual Studio code coverage results
+/frontend/**/*.coverage
+/frontend/**/*.coveragexml
+
+# NCrunch
+/frontend/**/_NCrunch_*
+/frontend/**/.*crunch*.local.xml
+/frontend/**/nCrunchTemp_*
+
+# MightyMoose
+/frontend/**/*.mm.*
+/frontend/**/AutoTest.Net/
+
+# Web workbench (sass)
+/frontend/**/.sass-cache/
+
+# Installshield output folder
+/frontend/**/[Ee]xpress/
+
+# DocProject is a documentation generator add-in
+/frontend/DocProject/buildhelp/
+/frontend/DocProject/Help/*.HxT
+/frontend/DocProject/Help/*.HxC
+/frontend/DocProject/Help/*.hhc
+/frontend/DocProject/Help/*.hhk
+/frontend/DocProject/Help/*.hhp
+/frontend/DocProject/Help/Html2
+/frontend/DocProject/Help/html
+
+# Click-Once directory
+/frontend/**/publish/
+
+# Publish Web Output
+/frontend/**/*.[Pp]ublish.xml
+/frontend/**/*.azurePubxml
+# Note: Comment the next line if you want to checkin your web deploy settings,
+# but database connection strings (with potential passwords) will be unencrypted
+/frontend/**/*.pubxml
+/frontend/**/*.publishproj
+
+# Microsoft Azure Web App publish settings. Comment the next line if you want to
+# checkin your Azure Web App publish settings, but sensitive information contained
+# in these scripts will be unencrypted
+/frontend/**/PublishScripts/
+
+# NuGet Packages
+/frontend/**/*.nupkg
+# NuGet Symbol Packages
+/frontend/**/*.snupkg
+# The packages folder can be ignored because of Package Restore
+/frontend/**/[Pp]ackages/*
+# except build/, which is used as an MSBuild target.
+!/frontend/**/[Pp]ackages/build/
+# Uncomment if necessary however generally it will be regenerated when needed
+#!**/[Pp]ackages/repositories.config
+# NuGet v3's project.json files produces more ignorable files
+/frontend/**/*.nuget.props
+/frontend/**/*.nuget.targets
+
+# Microsoft Azure Build Output
+/frontend/**/csx/
+/frontend/**/*.build.csdef
+
+# Microsoft Azure Emulator
+/frontend/**/ecf/
+/frontend/**/rcf/
+
+# Windows Store app package directories and files
+/frontend/**/AppPackages/
+/frontend/**/BundleArtifacts/
+/frontend/**/Package.StoreAssociation.xml
+/frontend/**/_pkginfo.txt
+/frontend/**/*.appx
+/frontend/**/*.appxbundle
+/frontend/**/*.appxupload
+
+# Visual Studio cache files
+# files ending in .cache can be ignored
+/frontend/**/*.[Cc]ache
+# but keep track of directories ending in .cache
+!/frontend/**/?*.[Cc]ache/
+
+# Others
+/frontend/**/ClientBin/
+/frontend/**/~$*
+/frontend/**/*~
+/frontend/**/*.dbmdl
+/frontend/**/*.dbproj.schemaview
+/frontend/**/*.jfm
+/frontend/**/*.pfx
+/frontend/**/*.publishsettings
+/frontend/**/orleans.codegen.cs
+
+# Including strong name files can present a security risk
+# (https://github.com/github/gitignore/pull/2483#issue-259490424)
+#*.snk
+
+# Since there are multiple workflows, uncomment next line to ignore bower_components
+# (https://github.com/github/gitignore/pull/1529#issuecomment-104372622)
+#bower_components/
+
+# RIA/Silverlight projects
+/frontend/**/Generated_Code/
+
+# Backup & report files from converting an old project file
+# to a newer Visual Studio version. Backup files are not needed,
+# because we have git ;-)
+/frontend/**/_UpgradeReport_Files/
+/frontend/**/UpgradeLog*.XML
+/frontend/**/UpgradeLog*.htm
+/frontend/**/ServiceFabricBackup/
+/frontend/**/*.rptproj.bak
+
+# SQL Server files
+/frontend/**/*.mdf
+/frontend/**/*.ldf
+/frontend/**/*.ndf
+
+# Business Intelligence projects
+/frontend/**/*.rdl.data
+/frontend/**/*.bim.layout
+/frontend/**/*.bim_*.settings
+/frontend/**/*.rptproj.rsuser
+/frontend/**/*- [Bb]ackup.rdl
+/frontend/**/*- [Bb]ackup ([0-9]).rdl
+/frontend/**/*- [Bb]ackup ([0-9][0-9]).rdl
+
+# Microsoft Fakes
+/frontend/**/FakesAssemblies/
+
+# GhostDoc plugin setting file
+/frontend/**/*.GhostDoc.xml
+
+# Node.js Tools for Visual Studio
+/frontend/**/.ntvs_analysis.dat
+
+# Visual Studio 6 build log
+/frontend/**/*.plg
+
+# Visual Studio 6 workspace options file
+/frontend/**/*.opt
+
+# Visual Studio 6 auto-generated workspace file (contains which files were open etc.)
+/frontend/**/*.vbw
+
+# Visual Studio 6 auto-generated project file (contains which files were open etc.)
+/frontend/**/*.vbp
+
+# Visual Studio 6 workspace and project file (working project files containing files to include in project)
+/frontend/**/*.dsw
+/frontend/**/*.dsp
+
+# Visual Studio 6 technical files
+
+# Visual Studio LightSwitch build output
+/frontend/**/*.HTMLClient/GeneratedArtifacts
+/frontend/**/*.DesktopClient/GeneratedArtifacts
+/frontend/**/*.DesktopClient/ModelManifest.xml
+/frontend/**/*.Server/GeneratedArtifacts
+/frontend/**/*.Server/ModelManifest.xml
+/frontend/**/_Pvt_Extensions
+
+# Paket dependency manager
+/frontend/.paket/paket.exe
+/frontend/**/paket-files/
+
+# FAKE - F# Make
+/frontend/**/.fake/
+
+# CodeRush personal settings
+/frontend/.cr/personal
+
+# Python Tools for Visual Studio (PTVS)
+/frontend/**/__pycache__/
+/frontend/**/*.pyc
+
+# Cake - Uncomment if you are using it
+# tools/**
+# !tools/packages.config
+
+# Tabs Studio
+/frontend/**/*.tss
+
+# Telerik's JustMock configuration file
+/frontend/**/*.jmconfig
+
+# BizTalk build output
+/frontend/**/*.btp.cs
+/frontend/**/*.btm.cs
+/frontend/**/*.odx.cs
+/frontend/**/*.xsd.cs
+
+# OpenCover UI analysis results
+/frontend/**/OpenCover/
+
+# Azure Stream Analytics local run output
+/frontend/**/ASALocalRun/
+
+# MSBuild Binary and Structured Log
+/frontend/**/*.binlog
+
+# NVidia Nsight GPU debugger configuration file
+/frontend/**/*.nvuser
+
+# MFractors (Xamarin productivity tool) working folder
+/frontend/**/.mfractor/
+
+# Local History for Visual Studio
+/frontend/**/.localhistory/
+
+# Visual Studio History (VSHistory) files
+/frontend/**/.vshistory/
+
+# BeatPulse healthcheck temp database
+/frontend/**/healthchecksdb
+
+# Backup folder for Package Reference Convert tool in Visual Studio 2017
+/frontend/**/MigrationBackup/
+
+# Ionide (cross platform F# VS Code tools) working folder
+/frontend/**/.ionide/
+
+# Fody - auto-generated XML schema
+/frontend/**/FodyWeavers.xsd
+
+# VS Code files for those working on multiple tools
+/frontend/**/*.code-workspace
+
+# Local History for Visual Studio Code
+
+# Windows Installer files from build outputs
+/frontend/**/*.cab
+/frontend/**/*.msi
+/frontend/**/*.msix
+/frontend/**/*.msm
+/frontend/**/*.msp
+
+# JetBrains Rider
+/frontend/**/*.sln.iml
+
+### NextJS template
+# dependencies
+/frontend/**/.pnp.js
+
+# testing
+
+# next.js
+
+# production
+
+# misc
+
+# debug
+
+# local env files
+
+# vercel
+
+# typescript
+
+/frontend/**/test-results
