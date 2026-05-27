@@ -1,32 +1,23 @@
-# Repository Guidelines
+# Frontend Guidelines
 
-## Project Structure & Module Organization
-- `src/app` houses App Router routes (dashboard, instances, strategies, risk); default to server components and add `'use client'` only for interactive islands. `src/components` holds navigation, dialogs, and shadcn/ui wrappers—keep feature widgets in nested folders to keep imports flat.
-- `src/lib` groups REST helpers (`api/`), React Query hooks, shared types, and utilities; when `docs/frontend-api.yaml` shifts, run `pnpm generate:api-types` to refresh `src/lib/api-types.ts` and review dependent hooks.
-- `src/mocks` powers MSW stubs, `public/` stores static assets, and Playwright specs live in `tests/`; keep them aligned as workflows move.
+## Scope and Nearest Guidance
+This file applies to all of `frontend/`. More specific AGENTS files now live under maintained source subtrees in `src/app`, `src/components`, `src/lib`, `src/mocks`, and `tests`; follow the nearest file when it adds local rules.
 
-## Build, Test, and Development Commands
-- `pnpm install` – install dependencies pinned in `pnpm-lock.yaml`.
-- `pnpm dev` – serve the Next.js dev build (http://localhost:3000) with Turbopack reloads.
-- `pnpm build && pnpm start` – compile and run the production bundle.
-- `pnpm lint [--fix]` – enforce the Next.js + Tailwind ESLint stack.
-- `pnpm test` / `pnpm test:unit(:watch)` – execute the Vitest suite with MSW handlers.
-- `pnpm test:e2e` – run Playwright specs in `tests/` against a live frontend (override host via `PLAYWRIGHT_BASE_URL`).
+This repo has no external users yet, so clean architecture and current best practices beat compatibility shims or speculative legacy paths.
 
-## Coding Style & Naming Conventions
-- TypeScript + React 19 with 2-space indentation, single quotes, and trailing commas where valid.
-- Export components/hooks in PascalCase but keep filenames kebab-cased (`strategy-modules-panel.tsx` → `StrategyModulesPanel`).
-- Favor Tailwind utilities and shadcn/ui primitives; colocate React Query keys in `src/lib/react-query.ts` when introducing new hooks.
+## Project Structure
+`src/app` contains the Next.js App Router surface. `src/components` holds shared navigation, dialogs, code surfaces, providers, and shadcn/ui wrappers. `src/lib/api` is the REST boundary, `src/lib/hooks` wraps it with TanStack Query, and `src/mocks` mirrors the gateway API for tests.
 
-## Testing Guidelines
-- Keep unit tests beside the code (`*.test.tsx` or `__tests__`) and stub control-plane traffic through `src/mocks/handlers.ts`.
-- Cover new hooks, serializers, and forms with Vitest + Testing Library, asserting cache behavior, optimistic updates, and toast errors.
-- Maintain scenario-focused Playwright specs (`tests/*.spec.ts[x]`) and update them, Zod validators, and regenerated API types whenever schemas change.
+`frontend-api.yaml` is the source for `src/lib/api-types.ts`; regenerate types whenever the contract changes. The frontend talks to the gateway API only and never reads strategy files directly.
 
-## Commit & Pull Request Guidelines
-- Use short, imperative subjects with optional scopes, mirroring history (`docs: add Playwright manual testing log`, `original UI`); stay ≤72 characters.
-- Reference related issues (`Fixes #123`) and list verification steps (`pnpm lint`, `pnpm test`, `pnpm test:e2e`) in the PR body.
-- Attach screenshots or clips for UI work and note API/schema impacts plus whether types or mocks were refreshed.
+## Commands
+Use the frontend package scripts from this directory: `pnpm lint`, `pnpm test`, `pnpm test:e2e`, and `pnpm generate:api-types` when the touched area calls for them.
 
-## Security & Configuration Tips
-- Keep secrets out of Git; load `NEXT_PUBLIC_API_URL` via `.env.local`, update `frontend-api.yaml` when endpoints change, rerun the generator, and align MSW handlers so mocks match production contracts.
+## Coding Style
+TypeScript is strict, 2-space, single-quoted, and uses kebab-case filenames with PascalCase exports. Route code should go through `src/lib/api` and hooks rather than raw `fetch`. Favor Tailwind and shadcn/ui primitives, keep query keys centralized, and keep feature-only UI near its route.
+
+## Testing
+Keep unit tests beside code as `*.test.ts(x)` or under `__tests__/`. Keep Playwright scenarios in `tests/` with the existing `TC_###_*.test.ts` convention. API contract changes must update `frontend-api.yaml`, generated types, hooks, Zod validators, MSW handlers, and relevant Vitest or Playwright coverage together.
+
+## Security and Configuration
+Keep secrets out of Git and set `NEXT_PUBLIC_API_URL` via `.env.local`, Docker args, or runtime env. Don't hand-edit `src/lib/api-types.ts`; regenerate it.
