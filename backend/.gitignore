@@ -1,0 +1,73 @@
+coverage/
+# Allowlisting gitignore template for GO projects prevents us
+# from adding various unwanted local files, such as generated
+# files, developer configurations or IDE-specific files etc.
+#
+# Recommended: Go.AllowList.gitignore
+.DS_Store
+
+# Ignore everything
+*
+!.golangci.yml
+# But not these files...
+!/.gitignore
+
+#Config
+!config/*.yaml
+
+!*.go
+!go.sum
+!go.mod
+
+# Documentation
+!*.md
+!README.md
+!LICENSE
+!*.puml
+!docs/**/*
+
+# Makefile
+!Makefile
+
+# ...even if they are in subdirectories
+!*/
+
+# Testdata
+!*_snapshots.json
+
+# Github Actions
+!.github/workflows/*
+
+# Ignore AI assistant and tooling directories
+.claude/
+.factory/
+.cursor/
+.codex/
+.gemini/
+
+# Cache
+.cache/
+
+# Ignore IDE directories
+.idea/
+.vscode/
+
+# Deployment
+!deployments/**/*
+
+!web/**/*
+web/client/test-results/
+web/node_modules
+web/.next
+node_modules
+# Strategies
+!strategies/**/*
+
+!db/**/*
+# Allow sqlc query definitions to be committed
+!internal/infra/persistence/postgres/sql/**
+
+!sqlc.yaml
+!**/*.py
+
+!scripts/**/*

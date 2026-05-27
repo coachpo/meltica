@@ -1,0 +1,58 @@
+name: Cleanup
+
+on:
+  schedule:
+    # Run every day at 3:00 AM UTC
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+env:
+  WORKFLOW_RETENTION_DAYS: 7
+  MIN_WORKFLOW_RUNS: 5
+  ARTIFACT_RETENTION_DAYS: 14
+  RELEASE_KEEP_LATEST: 10
+  RELEASE_TAG_PATTERN: '^v.*'
+
+permissions:
+  contents: read
+  actions: write
+  packages: write
+
+jobs:
+  cleanup-workflow-runs:
+    needs: cleanup-artifacts
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Delete workflow runs
+        uses: Mattraks/delete-workflow-runs@v2.0.6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          retain_days: ${{ env.WORKFLOW_RETENTION_DAYS }}
+          keep_minimum_runs: ${{ env.MIN_WORKFLOW_RUNS }}
+
+  cleanup-artifacts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Remove stale workflow artifacts
+        uses: c-hive/gha-remove-artifacts@v1
+        with:
+          age: '${{ env.ARTIFACT_RETENTION_DAYS }} days'
+          skip-tags: true
+          skip-recent: 5
+
+  cleanup-releases:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Remove old Releases
+        uses: dev-drprasad/delete-older-releases@v0.3.4
+        with:
+          keep_latest: ${{ env.RELEASE_KEEP_LATEST }}
+          delete_tags: true
+          delete_tag_pattern: ${{ env.RELEASE_TAG_PATTERN }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,210 @@
+name: ci
+on: [ push, pull_request ]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      MELTICA_CONFIG_PATH: config/app.ci.yaml
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: meltica
+          POSTGRES_PASSWORD: root
+          POSTGRES_USER: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+      - run: go version
+      - run: go mod download
+
+      - name: Expose Go bin on PATH
+        run: echo "$HOME/go/bin" >> "$GITHUB_PATH"
+
+      - name: Install sqlc
+        run: |
+          go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.30.0
+
+      - name: Verify sqlc generation
+        run: |
+          make sqlc
+          git diff --quiet || (echo "::error::sqlc generated files are out-of-date"; git status -sb; exit 1)
+
+      - name: Install Postgres client tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Wait for Postgres service
+        run: |
+          for attempt in {1..30}; do
+            if pg_isready -h localhost -p 5432 -U postgres; then
+              exit 0
+            fi
+            echo "Postgres not ready yet (attempt ${attempt}), sleeping..."
+            sleep 2
+          done
+          echo "::error::Postgres service did not become ready in time"
+          exit 1
+        env:
+          PGPASSWORD: root
+
+      - name: Run migrations up/down
+        env:
+          DATABASE_URL: postgresql://postgres:root@localhost:5432/meltica?sslmode=disable
+        run: |
+          make migrate
+          make migrate-down
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: latest
+          only-new-issues: true
+
+      - run: make build
+
+      - name: Test with coverage and race detector
+        run: go test ./... -race -coverprofile=coverage.out -count=1 -timeout=5m
+
+      - name: Check coverage threshold
+        run: |
+          echo "Checking coverage threshold (≥70% required by TS-01)..."
+          COVERAGE=$(go tool cover -func=coverage.out | awk '/^total:/ {print $3}' | sed 's/%//')
+          echo "Total coverage: ${COVERAGE}%"
+          if (( $(echo "$COVERAGE < 70.0" | bc -l) )); then
+            echo "::warning::Coverage ${COVERAGE}% is below 70% threshold (TS-01)"
+          else
+            echo "✓ Coverage threshold satisfied: ${COVERAGE}% ≥ 70%"
+          fi
+
+      - name: Publish coverage to Job Summary
+        if: always()
+        run: |
+          {
+            echo "## Test Coverage"
+            echo
+
+            if [ ! -f coverage.out ]; then
+              echo "> ❗ No \`coverage.out\` found."
+              exit 0
+            fi
+
+            TOTAL=$(go tool cover -func=coverage.out | awk '/^total:/ {print $3}')
+            THRESH=70.0
+            below=$(awk -v t=$THRESH -v v=${TOTAL%\%} 'BEGIN{print (v+0<t)?"1":"0"}')
+
+            if [ "$below" -eq 1 ]; then
+              echo "⚠️ Coverage **$TOTAL** is below the 70% threshold (TS-01)."
+            else
+              echo "✅ Coverage **$TOTAL** meets the 70% threshold."
+            fi
+            echo
+
+            # Build per-file and per-package aggregates (average of function coverages).
+            # Note: this is an approximation (not stmt-weighted), but avoids duplication noise.
+            go tool cover -func=coverage.out \
+            | awk -F'\t' '
+              $1 ~ /\.go:/ {
+                # $1 looks like: github.com/mod/pkg/dir/file.go:FuncName
+                split($1, a, ":")
+                file=a[1]
+                pct=$3
+                gsub("%","",pct)
+
+                # per-file aggregates
+                file_sum[file]+=pct
+                file_cnt[file]++
+
+                # derive package (directory) from file path
+                pkg=file
+                sub(/\/[^\/]+$/, "", pkg)   # strip /file.go
+                pkg_sum[pkg]+=pct
+                pkg_cnt[pkg]++
+              }
+              END {
+                # Emit per-file table rows: file<TAB>avg
+                for (f in file_sum) {
+                  printf("F\t%s\t%.2f\n", f, file_sum[f]/file_cnt[f])
+                }
+                # Emit per-package table rows: pkg<TAB>avg
+                for (p in pkg_sum) {
+                  printf("P\t%s\t%.2f\n", p, pkg_sum[p]/pkg_cnt[p])
+                }
+              }' \
+            | tee /tmp/coverage_agg.tsv >/dev/null
+
+            # Top 20 worst packages
+            echo "### Lowest-covered packages (top 20)"
+            echo
+            echo "| Package | Avg Coverage |"
+            echo "|---|---:|"
+            awk -F'\t' '$1=="P"{print $2"\t"$3}' /tmp/coverage_agg.tsv \
+              | sort -k2,2g \
+              | head -20 \
+              | awk -F'\t' '{printf("| `%s` | %.2f%% |\n", $1, $2)}'
+            echo
+
+            # Top 20 worst files
+            echo "### Lowest-covered files (top 20)"
+            echo
+            echo "| File | Avg Coverage |"
+            echo "|---|---:|"
+            awk -F'\t' '$1=="F"{print $2"\t"$3}' /tmp/coverage_agg.tsv \
+              | sort -k2,2g \
+              | head -20 \
+              | awk -F'\t' '{printf("| `%s` | %.2f%% |\n", $1, $2)}'
+            echo
+
+            # Full tables in collapsible details
+            echo "<details><summary>Full package coverage</summary>"
+            echo
+            echo "| Package | Avg Coverage |"
+            echo "|---|---:|"
+            awk -F'\t' '$1=="P"{print $2"\t"$3}' /tmp/coverage_agg.tsv \
+              | sort -k1,1 \
+              | awk -F'\t' '{printf("| `%s` | %.2f%% |\n", $1, $2)}'
+            echo
+            echo "</details>"
+            echo
+
+            echo "<details><summary>Full file coverage</summary>"
+            echo
+            echo "| File | Avg Coverage |"
+            echo "|---|---:|"
+            awk -F'\t' '$1=="F"{print $2"\t"$3}' /tmp/coverage_agg.tsv \
+              | sort -k1,1 \
+              | awk -F'\t' '{printf("| `%s` | %.2f%% |\n", $1, $2)}'
+            echo
+            echo "</details>"
+            echo
+            echo "_Raw \`coverage.out\` is attached as an artifact._"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Also attach HTML coverage (nice to view)
+        if: always()
+        run: |
+          go tool cover -html=coverage.out -o coverage.html || true
+        continue-on-error: true
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            coverage.out
+            coverage.html

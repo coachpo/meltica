@@ -1,0 +1,41 @@
+# environment: deployment environment (dev | staging | prod)
+environment: dev
+
+# database: PostgreSQL connection details
+database:
+  dsn: postgresql://postgres:root@localhost:5432/meltica?sslmode=require
+  maxConns: 16
+  minConns: 1
+  maxConnLifetime: 30m
+  maxConnIdleTime: 5m
+  healthCheckPeriod: 30s
+  runMigrations: true
+
+# eventbus: in-memory event bus sizing
+eventbus:
+  bufferSize: 8192
+  fanoutWorkers: 8
+  extensionPayloadCapBytes: 102400
+
+# pools: object pool capacities
+pools:
+  event:
+    size: 8192
+    waitQueueSize: 8192
+  orderRequest:
+    size: 4096
+    waitQueueSize: 4096
+
+# apiServer: control API bind address (host:port or :port)
+apiServer:
+  addr: ":8880"
+
+# telemetry: OTLP exporter configuration
+telemetry:
+  otlpEndpoint: http://localhost:4318
+  serviceName: meltica-gateway
+  otlpInsecure: true
+  enableMetrics: false
+
+strategies:
+  directory: strategies
