@@ -163,8 +163,8 @@ paths:
       description: |
         Deletes only registered selectors. Requests that reference a selector absent from
         `registry.json` return HTTP 404. When a revision is still pinned by running instances, the
-        server responds with HTTP 409 and includes `details.usage` in the error payload to explain
-        which hashes or instances are blocking deletion.
+        current handlers return a generic HTTP 400 strategy-module error, so clients should query
+        `/strategies/modules/{selector}/usage` first when they need runtime pin details.
       operationId: deleteStrategyModule
       responses:
         "204":
@@ -172,8 +172,8 @@ paths:
         "404":
           description: Selector not registered in manifest
           $ref: "#/components/responses/Error"
-        "409":
-          description: Revision is pinned by running instances (error payload exposes `details.usage`)
+        "400":
+          description: Strategy-module operation rejected (for example, revision still in use)
           $ref: "#/components/responses/Error"
         default:
           $ref: "#/components/responses/Error"
@@ -250,9 +250,9 @@ paths:
       tags: [Strategy Modules]
       summary: Reassign a tag alias to a different hash
       description: |
-        Updates `registry.json` to point the tag at a new hash. When the target hash is still pinned
-        by running instances, the server replies with HTTP 409 and includes `details.usage` in the
-        error payload. Registry read/write failures surface as HTTP 500.
+        Updates `registry.json` to point the tag at a new hash. Clients that need runtime pin
+        details should inspect `/strategies/modules/{selector}/usage` before mutating tags; the
+        current handlers return 404 for missing selectors and 400 for other strategy-module errors.
       operationId: assignStrategyModuleTag
       requestBody:
         required: true
@@ -267,11 +267,11 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/StrategyTagMutationResponse"
-        "409":
-          description: Hash is pinned by running instances (error payload exposes `details.usage`)
+        "404":
+          description: Tag target or selector not registered
           $ref: "#/components/responses/Error"
-        "500":
-          description: Registry missing or unreadable
+        "400":
+          description: Strategy-module operation rejected
           $ref: "#/components/responses/Error"
         default:
           $ref: "#/components/responses/Error"
@@ -279,9 +279,9 @@ paths:
       tags: [Strategy Modules]
       summary: Remove a tag alias from the registry
       description: |
-        Deletes the alias from `registry.json`. When the alias is the final pointer to a hash that is
-        still in use, the server responds with HTTP 409 and includes `details.usage` describing the
-        blocking instances. Absent aliases return HTTP 404; registry read/write failures return 500.
+        Deletes the alias from `registry.json`. Clients that need runtime pin details should inspect
+        `/strategies/modules/{selector}/usage` before deleting tags; the current handlers return 404
+        for missing selectors and 400 for other strategy-module errors.
       operationId: deleteStrategyModuleTag
       parameters:
         - in: query
@@ -299,11 +299,8 @@ paths:
         "404":
           description: Tag alias not registered
           $ref: "#/components/responses/Error"
-        "409":
-          description: Hash is pinned by running instances (error payload exposes `details.usage`)
-          $ref: "#/components/responses/Error"
-        "500":
-          description: Registry missing or unreadable
+        "400":
+          description: Strategy-module operation rejected
           $ref: "#/components/responses/Error"
         default:
           $ref: "#/components/responses/Error"

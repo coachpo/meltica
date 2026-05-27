@@ -79,8 +79,8 @@ export interface paths {
          * Remove a module revision
          * @description Deletes only registered selectors. Requests that reference a selector absent from
          *     `registry.json` return HTTP 404. When a revision is still pinned by running instances, the
-         *     server responds with HTTP 409 and includes `details.usage` in the error payload to explain
-         *     which hashes or instances are blocking deletion.
+         *     current handlers return a generic HTTP 400 strategy-module error, so clients should query
+         *     `/strategies/modules/{selector}/usage` first when they need runtime pin details.
          */
         delete: operations["deleteStrategyModule"];
         options?: never;
@@ -137,17 +137,17 @@ export interface paths {
         get?: never;
         /**
          * Reassign a tag alias to a different hash
-         * @description Updates `registry.json` to point the tag at a new hash. When the target hash is still pinned
-         *     by running instances, the server replies with HTTP 409 and includes `details.usage` in the
-         *     error payload. Registry read/write failures surface as HTTP 500.
+         * @description Updates `registry.json` to point the tag at a new hash. Clients that need runtime pin
+         *     details should inspect `/strategies/modules/{selector}/usage` before mutating tags; the
+         *     current handlers return 404 for missing selectors and 400 for other strategy-module errors.
          */
         put: operations["assignStrategyModuleTag"];
         post?: never;
         /**
          * Remove a tag alias from the registry
-         * @description Deletes the alias from `registry.json`. When the alias is the final pointer to a hash that is
-         *     still in use, the server responds with HTTP 409 and includes `details.usage` describing the
-         *     blocking instances. Absent aliases return HTTP 404; registry read/write failures return 500.
+         * @description Deletes the alias from `registry.json`. Clients that need runtime pin details should inspect
+         *     `/strategies/modules/{selector}/usage` before deleting tags; the current handlers return 404
+         *     for missing selectors and 400 for other strategy-module errors.
          */
         delete: operations["deleteStrategyModuleTag"];
         options?: never;
@@ -996,10 +996,10 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Strategy-module operation rejected (for example, revision still in use) */
+            400: components["responses"]["Error"];
             /** @description Selector not registered in manifest */
             404: components["responses"]["Error"];
-            /** @description Revision is pinned by running instances (error payload exposes `details.usage`) */
-            409: components["responses"]["Error"];
             default: components["responses"]["Error"];
         };
     };
@@ -1081,10 +1081,10 @@ export interface operations {
                     "application/json": components["schemas"]["StrategyTagMutationResponse"];
                 };
             };
-            /** @description Hash is pinned by running instances (error payload exposes `details.usage`) */
-            409: components["responses"]["Error"];
-            /** @description Registry missing or unreadable */
-            500: components["responses"]["Error"];
+            /** @description Strategy-module operation rejected */
+            400: components["responses"]["Error"];
+            /** @description Tag target or selector not registered */
+            404: components["responses"]["Error"];
             default: components["responses"]["Error"];
         };
     };
@@ -1114,12 +1114,10 @@ export interface operations {
                     "application/json": components["schemas"]["StrategyTagMutationResponse"];
                 };
             };
+            /** @description Strategy-module operation rejected */
+            400: components["responses"]["Error"];
             /** @description Tag alias not registered */
             404: components["responses"]["Error"];
-            /** @description Hash is pinned by running instances (error payload exposes `details.usage`) */
-            409: components["responses"]["Error"];
-            /** @description Registry missing or unreadable */
-            500: components["responses"]["Error"];
             default: components["responses"]["Error"];
         };
     };
