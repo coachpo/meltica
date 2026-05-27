@@ -122,7 +122,8 @@ func (c ObjectPoolConfig) QueueSize() int {
 
 // APIServerConfig configures the gateway's HTTP control surface.
 type APIServerConfig struct {
-	Addr string `yaml:"addr"`
+	Addr      string `yaml:"addr"`
+	AuthToken string `yaml:"authToken"`
 }
 
 // RiskConfig defines risk parameters for a single strategy.
@@ -326,6 +327,7 @@ func (c *AppConfig) normalise() error {
 
 	c.Environment = Environment(strings.ToLower(strings.TrimSpace(string(c.Environment))))
 	c.APIServer.Addr = strings.TrimSpace(c.APIServer.Addr)
+	c.APIServer.AuthToken = strings.TrimSpace(c.APIServer.AuthToken)
 	c.Telemetry.OTLPEndpoint = strings.TrimSpace(c.Telemetry.OTLPEndpoint)
 	c.Telemetry.ServiceName = strings.TrimSpace(c.Telemetry.ServiceName)
 
@@ -339,15 +341,6 @@ func (c *AppConfig) normalise() error {
 	}
 	c.Strategies.Directory = filepath.Clean(strategyDir)
 
-	if c.Risk.OrderBurst <= 0 {
-		c.Risk.OrderBurst = 1
-	}
-	if c.Risk.MaxRiskBreaches < 0 {
-		c.Risk.MaxRiskBreaches = 0
-	}
-	if c.Risk.CircuitBreaker.Threshold < 0 {
-		c.Risk.CircuitBreaker.Threshold = 0
-	}
 	if len(c.Risk.AllowedOrderTypes) > 0 {
 		normalized := make([]string, 0, len(c.Risk.AllowedOrderTypes))
 		seen := make(map[string]struct{}, len(c.Risk.AllowedOrderTypes))
@@ -374,9 +367,9 @@ func (c *AppConfig) normalise() error {
 // Validate performs semantic validation on the configuration.
 func (c AppConfig) Validate() error {
 	switch c.Environment {
-	case EnvDev, EnvStaging, EnvProd:
+	case EnvDev, EnvStaging, EnvProd, EnvCI:
 	default:
-		return fmt.Errorf("environment must be one of dev, staging, prod")
+		return fmt.Errorf("environment must be one of dev, staging, prod, ci")
 	}
 
 	if c.Eventbus.BufferSize <= 0 {
@@ -404,6 +397,9 @@ func (c AppConfig) Validate() error {
 
 	if strings.TrimSpace(c.APIServer.Addr) == "" {
 		return fmt.Errorf("apiServer addr required")
+	}
+	if requiresAPIServerAuthToken(c.Environment) && strings.TrimSpace(c.APIServer.AuthToken) == "" {
+		return fmt.Errorf("apiServer authToken required for %s environment", c.Environment)
 	}
 
 	if c.Risk.MaxPositionSize == "" {
@@ -449,6 +445,17 @@ func (c AppConfig) Validate() error {
 	}
 
 	return nil
+}
+
+func requiresAPIServerAuthToken(env Environment) bool {
+	switch env {
+	case EnvDev:
+		return false
+	case EnvStaging, EnvProd, EnvCI:
+		return true
+	default:
+		return false
+	}
 }
 
 func openConfigFile(path string) (io.Reader, func(), error) {

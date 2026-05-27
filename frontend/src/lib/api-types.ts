@@ -802,6 +802,26 @@ export interface components {
         };
     };
     responses: {
+        /** @description Missing or invalid bearer token. */
+        Unauthorized: {
+            headers: {
+                /** @description Bearer challenge for the control-plane realm. */
+                "WWW-Authenticate"?: string;
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ApiErrorPayload"];
+            };
+        };
+        /** @description Valid credentials are authenticated but insufficient for this operation. */
+        Forbidden: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ApiErrorPayload"];
+            };
+        };
         /** @description Error response */
         Error: {
             headers: {
@@ -922,6 +942,8 @@ export interface operations {
                     "application/json": components["schemas"]["StrategyModuleOperationResponse"];
                 };
             };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             default: components["responses"]["Error"];
         };
     };
@@ -974,6 +996,8 @@ export interface operations {
                     "application/json": components["schemas"]["StrategyModuleOperationResponse"];
                 };
             };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             default: components["responses"]["Error"];
         };
     };
@@ -998,6 +1022,8 @@ export interface operations {
             };
             /** @description Strategy-module operation rejected (for example, revision still in use) */
             400: components["responses"]["Error"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             /** @description Selector not registered in manifest */
             404: components["responses"]["Error"];
             default: components["responses"]["Error"];
@@ -1083,6 +1109,8 @@ export interface operations {
             };
             /** @description Strategy-module operation rejected */
             400: components["responses"]["Error"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             /** @description Tag target or selector not registered */
             404: components["responses"]["Error"];
             default: components["responses"]["Error"];
@@ -1116,6 +1144,8 @@ export interface operations {
             };
             /** @description Strategy-module operation rejected */
             400: components["responses"]["Error"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             /** @description Tag alias not registered */
             404: components["responses"]["Error"];
             default: components["responses"]["Error"];
@@ -1143,6 +1173,8 @@ export interface operations {
                     "application/json": components["schemas"]["StrategyRefreshResponse"];
                 };
             };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             default: components["responses"]["Error"];
         };
     };
@@ -1210,6 +1242,8 @@ export interface operations {
                     "application/json": components["schemas"]["ProviderDetail"];
                 };
             };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             default: components["responses"]["Error"];
         };
     };
@@ -1260,6 +1294,8 @@ export interface operations {
                     "application/json": components["schemas"]["ProviderDetail"];
                 };
             };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             default: components["responses"]["Error"];
         };
     };
@@ -1286,6 +1322,8 @@ export interface operations {
                     };
                 };
             };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             default: components["responses"]["Error"];
         };
     };
@@ -1309,6 +1347,8 @@ export interface operations {
                     "application/json": components["schemas"]["ProviderDetail"];
                 };
             };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             default: components["responses"]["Error"];
         };
     };
@@ -1332,6 +1372,8 @@ export interface operations {
                     "application/json": components["schemas"]["ProviderDetail"];
                 };
             };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             default: components["responses"]["Error"];
         };
     };
@@ -1450,6 +1492,8 @@ export interface operations {
                     "application/json": components["schemas"]["InstanceSnapshotResponse"];
                 };
             };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             default: components["responses"]["Error"];
         };
     };
@@ -1500,6 +1544,8 @@ export interface operations {
                     "application/json": components["schemas"]["InstanceSnapshotResponse"];
                 };
             };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             default: components["responses"]["Error"];
         };
     };
@@ -1526,6 +1572,8 @@ export interface operations {
                     };
                 };
             };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             default: components["responses"]["Error"];
         };
     };
@@ -1549,6 +1597,8 @@ export interface operations {
                     "application/json": components["schemas"]["InstanceActionResponse"];
                 };
             };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             default: components["responses"]["Error"];
         };
     };
@@ -1572,6 +1622,8 @@ export interface operations {
                     "application/json": components["schemas"]["InstanceActionResponse"];
                 };
             };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             default: components["responses"]["Error"];
         };
     };
@@ -1677,6 +1729,8 @@ export interface operations {
                     };
                 };
             };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             default: components["responses"]["Error"];
         };
     };
@@ -1723,6 +1777,8 @@ export interface operations {
                     "application/json": components["schemas"]["RestoreContextResponse"];
                 };
             };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             default: components["responses"]["Error"];
         };
     };

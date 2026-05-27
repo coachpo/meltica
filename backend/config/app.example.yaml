@@ -1,4 +1,4 @@
-# environment: deployment environment (dev | staging | prod)
+# environment: deployment environment (dev | staging | prod | ci)
 environment: dev
 
 # database: PostgreSQL connection details
@@ -26,9 +26,11 @@ pools:
     size: 4096
     waitQueueSize: 4096
 
-# apiServer: control API bind address (host:port or :port)
+# apiServer: control API bind address and optional bearer token.
+# authToken is required for staging, prod, and ci; keep real values in local env-specific files.
 apiServer:
   addr: ":8880"
+  authToken: ""
 
 # telemetry: OTLP exporter configuration
 telemetry:

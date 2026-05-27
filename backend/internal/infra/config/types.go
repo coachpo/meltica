@@ -18,6 +18,8 @@ const (
 	EnvStaging Environment = "staging"
 	// EnvProd marks the production environment.
 	EnvProd Environment = "prod"
+	// EnvCI marks the continuous integration environment.
+	EnvCI Environment = "ci"
 )
 
 func normalizeAdapterIdentifier(name string) string {

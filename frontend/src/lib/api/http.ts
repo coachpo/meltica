@@ -8,6 +8,7 @@ import { ApiError, StrategyValidationError } from './errors';
 
 const DEFAULT_TIMEOUT_MS = 8000;
 const DEFAULT_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8880';
+const DEFAULT_AUTH_TOKEN = process.env.NEXT_PUBLIC_API_AUTH_TOKEN?.trim() ?? '';
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'HEAD';
 
@@ -59,6 +60,7 @@ export interface HttpClientConfig {
   baseURL?: string;
   timeoutMs?: number;
   defaultHeaders?: HeadersInit;
+  authToken?: string | null;
   telemetryHeaders?: TelemetryHeadersProvider;
   fetchImplementation?: typeof fetch;
 }
@@ -74,6 +76,10 @@ export function createHttpClient(config: HttpClientConfig = {}): HttpClient {
   const timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const fetchImpl = config.fetchImplementation ?? fetch;
   const defaultHeaders = new Headers(config.defaultHeaders);
+  const authToken = (config.authToken ?? DEFAULT_AUTH_TOKEN).trim();
+  if (authToken !== '' && !defaultHeaders.has('Authorization')) {
+    defaultHeaders.set('Authorization', `Bearer ${authToken}`);
+  }
   const telemetryProvider = config.telemetryHeaders ?? defaultTelemetryHeaders;
 
   async function sendRequest(options: BaseRequestOptions & { body?: unknown }): Promise<Response> {

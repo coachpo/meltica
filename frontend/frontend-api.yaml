@@ -102,6 +102,8 @@ paths:
       tags: [Strategy Modules]
       summary: Upload or register a new strategy module revision
       operationId: createStrategyModule
+      security:
+        - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -115,6 +117,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/StrategyModuleOperationResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         default:
           $ref: "#/components/responses/Error"
   /strategies/modules/{selector}:
@@ -142,6 +148,8 @@ paths:
       tags: [Strategy Modules]
       summary: Update an existing module revision
       operationId: updateStrategyModule
+      security:
+        - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -155,6 +163,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/StrategyModuleOperationResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         default:
           $ref: "#/components/responses/Error"
     delete:
@@ -166,6 +178,8 @@ paths:
         current handlers return a generic HTTP 400 strategy-module error, so clients should query
         `/strategies/modules/{selector}/usage` first when they need runtime pin details.
       operationId: deleteStrategyModule
+      security:
+        - BearerAuth: []
       responses:
         "204":
           description: Module removed
@@ -175,6 +189,10 @@ paths:
         "400":
           description: Strategy-module operation rejected (for example, revision still in use)
           $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         default:
           $ref: "#/components/responses/Error"
   /strategies/modules/{selector}/source:
@@ -254,6 +272,8 @@ paths:
         details should inspect `/strategies/modules/{selector}/usage` before mutating tags; the
         current handlers return 404 for missing selectors and 400 for other strategy-module errors.
       operationId: assignStrategyModuleTag
+      security:
+        - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -273,6 +293,10 @@ paths:
         "400":
           description: Strategy-module operation rejected
           $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         default:
           $ref: "#/components/responses/Error"
     delete:
@@ -283,6 +307,8 @@ paths:
         `/strategies/modules/{selector}/usage` before deleting tags; the current handlers return 404
         for missing selectors and 400 for other strategy-module errors.
       operationId: deleteStrategyModuleTag
+      security:
+        - BearerAuth: []
       parameters:
         - in: query
           name: allowOrphan
@@ -302,6 +328,10 @@ paths:
         "400":
           description: Strategy-module operation rejected
           $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         default:
           $ref: "#/components/responses/Error"
   /strategies/refresh:
@@ -309,6 +339,8 @@ paths:
       tags: [Strategies]
       summary: Reload strategies from disk, optionally targeting specific hashes
       operationId: refreshStrategies
+      security:
+        - BearerAuth: []
       requestBody:
         required: false
         content:
@@ -322,6 +354,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/StrategyRefreshResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         default:
           $ref: "#/components/responses/Error"
   /strategies/registry:
@@ -356,6 +392,8 @@ paths:
       tags: [Providers]
       summary: Create a provider
       operationId: createProvider
+      security:
+        - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -369,6 +407,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProviderDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         default:
           $ref: "#/components/responses/Error"
   /providers/{name}:
@@ -395,6 +437,8 @@ paths:
       tags: [Providers]
       summary: Update a provider
       operationId: updateProvider
+      security:
+        - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -408,12 +452,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProviderDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         default:
           $ref: "#/components/responses/Error"
     delete:
       tags: [Providers]
       summary: Remove a provider
       operationId: deleteProvider
+      security:
+        - BearerAuth: []
       responses:
         "200":
           description: Provider removed
@@ -426,6 +476,10 @@ paths:
                     type: string
                   name:
                     type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         default:
           $ref: "#/components/responses/Error"
   /providers/{name}/start:
@@ -433,6 +487,8 @@ paths:
       tags: [Providers]
       summary: Start a provider asynchronously
       operationId: startProvider
+      security:
+        - BearerAuth: []
       parameters:
         - in: path
           name: name
@@ -446,6 +502,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProviderDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         default:
           $ref: "#/components/responses/Error"
   /providers/{name}/stop:
@@ -453,6 +513,8 @@ paths:
       tags: [Providers]
       summary: Stop a provider
       operationId: stopProvider
+      security:
+        - BearerAuth: []
       parameters:
         - $ref: "#/components/parameters/ProviderName"
       responses:
@@ -462,6 +524,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProviderDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         default:
           $ref: "#/components/responses/Error"
   /providers/{name}/balances:
@@ -543,6 +609,8 @@ paths:
       tags: [Instances]
       summary: Create a strategy instance
       operationId: createInstance
+      security:
+        - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -556,6 +624,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/InstanceSnapshotResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         default:
           $ref: "#/components/responses/Error"
   /strategy/instances/{id}:
@@ -582,6 +654,8 @@ paths:
       tags: [Instances]
       summary: Update an instance
       operationId: updateInstance
+      security:
+        - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -595,12 +669,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/InstanceSnapshotResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         default:
           $ref: "#/components/responses/Error"
     delete:
       tags: [Instances]
       summary: Delete an instance
       operationId: deleteInstance
+      security:
+        - BearerAuth: []
       responses:
         "200":
           description: Instance removed
@@ -613,6 +693,10 @@ paths:
                     type: string
                   id:
                     type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         default:
           $ref: "#/components/responses/Error"
   /strategy/instances/{id}/start:
@@ -620,6 +704,8 @@ paths:
       tags: [Instances]
       summary: Start an instance
       operationId: startInstance
+      security:
+        - BearerAuth: []
       parameters:
         - $ref: "#/components/parameters/InstanceId"
       responses:
@@ -629,6 +715,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/InstanceActionResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         default:
           $ref: "#/components/responses/Error"
   /strategy/instances/{id}/stop:
@@ -636,6 +726,8 @@ paths:
       tags: [Instances]
       summary: Stop an instance
       operationId: stopInstance
+      security:
+        - BearerAuth: []
       parameters:
         - $ref: "#/components/parameters/InstanceId"
       responses:
@@ -645,6 +737,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/InstanceActionResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         default:
           $ref: "#/components/responses/Error"
   /strategy/instances/{id}/orders:
@@ -731,6 +827,8 @@ paths:
       tags: [Risk]
       summary: Apply runtime risk limits
       operationId: updateRiskLimits
+      security:
+        - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -749,6 +847,10 @@ paths:
                     type: string
                   limits:
                     $ref: "#/components/schemas/RiskConfig"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         default:
           $ref: "#/components/responses/Error"
   /context/backup:
@@ -769,6 +871,8 @@ paths:
       tags: [Context]
       summary: Restore providers, lambdas, and risk config from a backup
       operationId: restoreContext
+      security:
+        - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -782,9 +886,19 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/RestoreContextResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         default:
           $ref: "#/components/responses/Error"
 components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque-token
+      description: Bearer token configured by `apiServer.authToken`; required for mutable control-plane routes.
   parameters:
     InstanceId:
       in: path
@@ -799,6 +913,23 @@ components:
       schema:
         type: string
   responses:
+    Unauthorized:
+      description: Missing or invalid bearer token.
+      headers:
+        WWW-Authenticate:
+          schema:
+            type: string
+          description: Bearer challenge for the control-plane realm.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiErrorPayload"
+    Forbidden:
+      description: Valid credentials are authenticated but insufficient for this operation.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiErrorPayload"
     Error:
       description: Error response
       content:

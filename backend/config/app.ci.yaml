@@ -24,6 +24,7 @@ pools:
 
 apiServer:
   addr: ":8880"
+  authToken: ci-placeholder-token
 
 telemetry:
   otlpEndpoint: ""

@@ -43,6 +43,69 @@ providers:
 	}
 }
 
+func TestLoadCIConfig(t *testing.T) {
+	cfg, err := Load(context.Background(), filepath.Join("..", "..", "..", "config", "app.ci.yaml"))
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	if cfg.Environment != EnvCI {
+		t.Fatalf("expected environment %s, got %s", EnvCI, cfg.Environment)
+	}
+	if cfg.APIServer.AuthToken != "ci-placeholder-token" {
+		t.Fatalf("expected CI auth token placeholder to load, got %q", cfg.APIServer.AuthToken)
+	}
+}
+
+func TestValidateEnvironment(t *testing.T) {
+	cfg := validBaseConfig()
+	cfg.Environment = EnvCI
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected ci environment to validate, got %v", err)
+	}
+}
+
+func TestValidateEnvironmentRejectsUnknown(t *testing.T) {
+	cfg := validBaseConfig()
+	cfg.Environment = Environment("qa")
+	if err := cfg.Validate(); err == nil {
+		t.Fatalf("expected unknown environment to fail validation")
+	}
+}
+
+func TestAPIServerAuthTokenValidation(t *testing.T) {
+	for _, env := range []Environment{EnvStaging, EnvProd, EnvCI} {
+		t.Run(string(env)+" requires token", func(t *testing.T) {
+			cfg := validBaseConfig()
+			cfg.Environment = env
+			cfg.APIServer.AuthToken = ""
+			err := cfg.Validate()
+			if err == nil {
+				t.Fatalf("expected %s to require apiServer authToken", env)
+			}
+			if !strings.Contains(err.Error(), "apiServer authToken required") {
+				t.Fatalf("expected authToken validation error, got %v", err)
+			}
+		})
+
+		t.Run(string(env)+" accepts token", func(t *testing.T) {
+			cfg := validBaseConfig()
+			cfg.Environment = env
+			cfg.APIServer.AuthToken = "safe-test-token"
+			if err := cfg.Validate(); err != nil {
+				t.Fatalf("expected %s with token to validate, got %v", env, err)
+			}
+		})
+	}
+
+	cfg := validBaseConfig()
+	cfg.Environment = EnvDev
+	cfg.APIServer.AuthToken = ""
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected dev without token to validate, got %v", err)
+	}
+}
+
 func TestLoadFromYAML(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "app.yaml")
@@ -69,6 +132,7 @@ risk:
   maxNotionalValue: "1000"
   notionalCurrency: "USD"
   orderThrottle: 5
+  orderBurst: 1
 
 apiServer:
   addr: ":9999"
@@ -159,7 +223,7 @@ database:
 	}
 
 	if cfg.Risk.OrderBurst != 1 {
-		t.Fatalf("expected default order burst 1, got %d", cfg.Risk.OrderBurst)
+		t.Fatalf("expected order burst 1, got %d", cfg.Risk.OrderBurst)
 	}
 	if cfg.Risk.MaxConcurrentOrders != 0 {
 		t.Fatalf("expected default max concurrent orders 0, got %d", cfg.Risk.MaxConcurrentOrders)
@@ -231,6 +295,7 @@ risk:
   maxNotionalValue: "10"
   notionalCurrency: USD
   orderThrottle: 1
+  orderBurst: 1
 apiServer:
   addr: ":1234"
 telemetry:
@@ -325,6 +390,7 @@ risk:
   maxNotionalValue: "10"
   notionalCurrency: USD
   orderThrottle: 1
+  orderBurst: 1
 apiServer:
   addr: ":8080"
 telemetry:
@@ -362,6 +428,7 @@ risk:
   maxNotionalValue: "10"
   notionalCurrency: USD
   orderThrottle: 1
+  orderBurst: 1
 apiServer:
   addr: ":8080"
 telemetry:
@@ -380,6 +447,34 @@ telemetry:
 	}
 	if !strings.Contains(err.Error(), "extensionPayloadCapBytes") {
 		t.Fatalf("expected extension payload cap validation error, got %v", err)
+	}
+}
+
+func validBaseConfig() AppConfig {
+	return AppConfig{
+		Environment: EnvDev,
+		Providers:   map[Provider]map[string]any{},
+		Eventbus: EventbusConfig{
+			BufferSize:               128,
+			FanoutWorkers:            FanoutWorkerSetting{kind: fanoutWorkerExplicit, value: 4},
+			ExtensionPayloadCapBytes: eventbus.DefaultExtensionPayloadCapBytes,
+		},
+		Pools: PoolConfig{
+			Event:        ObjectPoolConfig{Size: 100},
+			OrderRequest: ObjectPoolConfig{Size: 50},
+		},
+		Risk:       defaultRiskConfig(),
+		APIServer:  APIServerConfig{Addr: ":9999", AuthToken: "safe-test-token"},
+		Telemetry:  TelemetryConfig{ServiceName: "test-service"},
+		Strategies: StrategiesConfig{Directory: "strategies"},
+		Database: DatabaseConfig{
+			DSN:               "postgresql://localhost:5432/meltica",
+			MaxConns:          16,
+			MinConns:          1,
+			MaxConnLifetime:   30 * time.Minute,
+			MaxConnIdleTime:   5 * time.Minute,
+			HealthCheckPeriod: 30 * time.Second,
+		},
 	}
 }
 
@@ -407,6 +502,7 @@ risk:
   maxNotionalValue: "1000"
   notionalCurrency: "USD"
   orderThrottle: 5
+  orderBurst: 1
 
 apiServer:
   addr: ":9999"
@@ -435,4 +531,78 @@ lambdaManifest:
 		t.Fatalf("Load failed: %v", err)
 	}
 	return cfg
+}
+
+func TestGatewayRejectsInvalidRiskConfigFromLoad(t *testing.T) {
+	tests := []struct {
+		name             string
+		orderBurst       int
+		maxRiskBreaches  int
+		breakerThreshold int
+		wantErr          string
+	}{
+		{
+			name:             "non-positive order burst",
+			orderBurst:       0,
+			maxRiskBreaches:  0,
+			breakerThreshold: 0,
+			wantErr:          "risk orderBurst",
+		},
+		{
+			name:             "negative risk breaches",
+			orderBurst:       1,
+			maxRiskBreaches:  -1,
+			breakerThreshold: 0,
+			wantErr:          "risk maxRiskBreaches",
+		},
+		{
+			name:             "negative circuit breaker threshold",
+			orderBurst:       1,
+			maxRiskBreaches:  0,
+			breakerThreshold: -1,
+			wantErr:          "risk circuitBreaker threshold",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "app.yaml")
+			yaml := fmt.Sprintf(`environment: dev
+eventbus:
+  bufferSize: 16
+  fanoutWorkers: 1
+pools:
+  event:
+    size: 1
+  orderRequest:
+    size: 1
+risk:
+  maxPositionSize: "10"
+  maxNotionalValue: "1000"
+  notionalCurrency: USD
+  orderThrottle: 5
+  orderBurst: %d
+  maxRiskBreaches: %d
+  circuitBreaker:
+    enabled: false
+    threshold: %d
+apiServer:
+  addr: ":0"
+telemetry:
+  serviceName: test-service
+`, tt.orderBurst, tt.maxRiskBreaches, tt.breakerThreshold)
+			if err := os.WriteFile(path, []byte(yaml), 0o600); err != nil {
+				t.Fatalf("write config: %v", err)
+			}
+
+			_, err := Load(context.Background(), path)
+			if err == nil {
+				t.Fatal("expected Load to reject invalid risk config")
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("expected error containing %q, got %v", tt.wantErr, err)
+			}
+		})
+	}
 }
