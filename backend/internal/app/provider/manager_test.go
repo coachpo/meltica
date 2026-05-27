@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -61,6 +62,20 @@ func TestSanitizedProviderSpecsRemovesSensitiveFields(t *testing.T) {
 	if nested["rest_timeout"] != "1s" {
 		t.Fatalf("expected rest_timeout to be retained, got %v", nested["rest_timeout"])
 	}
+
+	metadata, ok := manager.ProviderMetadataFor("binance")
+	if !ok {
+		t.Fatal("expected provider metadata")
+	}
+	if _, ok := metadata.Settings["api_key"]; ok {
+		t.Fatal("expected api_key to be removed from provider metadata settings")
+	}
+	if _, ok := metadata.Settings["token"]; ok {
+		t.Fatal("expected token to be removed from provider metadata settings")
+	}
+	if metadata.Settings["rest_timeout"] != "1s" {
+		t.Fatalf("expected rest_timeout to remain in metadata settings, got %v", metadata.Settings["rest_timeout"])
+	}
 }
 
 func TestCreatePersistsProviderSnapshot(t *testing.T) {
@@ -95,6 +110,65 @@ func TestCreatePersistsProviderSnapshot(t *testing.T) {
 	}
 	if len(store.deleted) == 0 || store.deleted[len(store.deleted)-1] != "binance" {
 		t.Fatalf("expected delete call for binance, got %v", store.deleted)
+	}
+}
+
+func TestManagerWarnsWhenPersistingRawSecretConfig(t *testing.T) {
+	store := &recordingStore{}
+	var logs bytes.Buffer
+	logger := log.New(&logs, "", 0)
+	manager := NewManager(nil, nil, nil, nil, logger, WithPersistence(store))
+
+	spec := config.ProviderSpec{
+		Name:    "binance",
+		Adapter: "binance",
+		Config: map[string]any{
+			"identifier":    "binance",
+			"provider_name": "binance",
+			"api_key":       "raw-api-key-value",
+			"config": map[string]any{
+				"api_secret": "raw-api-secret-value",
+				"depth":      100,
+			},
+		},
+	}
+
+	if _, err := manager.Create(context.Background(), spec, false); err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	if len(store.saved) != 1 {
+		t.Fatalf("expected 1 persisted snapshot, got %d", len(store.saved))
+	}
+	if store.saved[0].Config["api_key"] != "raw-api-key-value" {
+		t.Fatalf("expected persisted snapshot to preserve raw config for restore/start semantics, got %#v", store.saved[0].Config)
+	}
+
+	output := logs.String()
+	if !strings.Contains(output, "provider_config_raw_secret_persisted") {
+		t.Fatalf("expected warning event key in logs, got %q", output)
+	}
+	for _, secret := range []string{"raw-api-key-value", "raw-api-secret-value"} {
+		if strings.Contains(output, secret) {
+			t.Fatalf("expected warning log not to contain raw secret %q, got %q", secret, output)
+		}
+	}
+
+	logs.Reset()
+	if _, err := manager.Update(context.Background(), config.ProviderSpec{
+		Name:    "binance",
+		Adapter: "binance",
+		Config: map[string]any{
+			"identifier":    "binance",
+			"provider_name": "binance",
+			"config": map[string]any{
+				"depth": 100,
+			},
+		},
+	}, false); err != nil {
+		t.Fatalf("update provider: %v", err)
+	}
+	if strings.Contains(logs.String(), "provider_config_raw_secret_persisted") {
+		t.Fatalf("did not expect warning for non-sensitive config, got %q", logs.String())
 	}
 }
 

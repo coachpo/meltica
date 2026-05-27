@@ -52,7 +52,7 @@ func sanitizeProviderSettingsMap(cfg map[string]any) map[string]any {
 	}
 	clean := make(map[string]any)
 	for key, value := range cfg {
-		if shouldOmitProviderSettingKey(key) {
+		if IsSensitiveProviderConfigKey(key) {
 			continue
 		}
 		sanitized := sanitizeProviderSettingValue(value)
@@ -109,7 +109,8 @@ func sanitizeProviderSettingValue(value any) any {
 	}
 }
 
-func shouldOmitProviderSettingKey(key string) bool {
+// IsSensitiveProviderConfigKey reports whether a provider config key is sensitive.
+func IsSensitiveProviderConfigKey(key string) bool {
 	trimmed := strings.TrimSpace(key)
 	if trimmed == "" {
 		return false
@@ -119,6 +120,35 @@ func shouldOmitProviderSettingKey(key string) bool {
 	for _, fragment := range providerSensitiveFragments {
 		if strings.Contains(normalized, providerSettingReplacer.Replace(fragment)) {
 			return true
+		}
+	}
+	return false
+}
+
+func providerConfigContainsSensitiveKey(cfg map[string]any) bool {
+	if len(cfg) == 0 {
+		return false
+	}
+	for key, value := range cfg {
+		if IsSensitiveProviderConfigKey(key) {
+			return true
+		}
+		if providerConfigValueContainsSensitiveKey(value) {
+			return true
+		}
+	}
+	return false
+}
+
+func providerConfigValueContainsSensitiveKey(value any) bool {
+	switch v := value.(type) {
+	case map[string]any:
+		return providerConfigContainsSensitiveKey(v)
+	case []any:
+		for _, item := range v {
+			if providerConfigValueContainsSensitiveKey(item) {
+				return true
+			}
 		}
 	}
 	return false

@@ -625,10 +625,18 @@ func (m *Manager) persistSnapshot(name string) {
 	if !ok {
 		return
 	}
+	m.warnRawSecretProviderConfigPersisted(snapshot)
 	ctx := m.parentContext()
 	if err := m.persistence.SaveProvider(ctx, snapshot); err != nil && m.logger != nil {
 		m.logger.Printf("provider/%s: persist state failed: %v", name, err)
 	}
+}
+
+func (m *Manager) warnRawSecretProviderConfigPersisted(snapshot providerstore.Snapshot) {
+	if m.logger == nil || !providerConfigContainsSensitiveKey(snapshot.Config) {
+		return
+	}
+	m.logger.Printf("event=provider_config_raw_secret_persisted level=warn provider=%q adapter=%q", snapshot.Name, snapshot.Adapter)
 }
 
 func (m *Manager) deleteSnapshot(name string) {
@@ -955,10 +963,24 @@ func extractProviderSettings(cfg map[string]any) map[string]any {
 				continue
 			}
 			for nk, nv := range nested {
-				settings[nk] = nv
+				if IsSensitiveProviderConfigKey(nk) {
+					continue
+				}
+				sanitized := sanitizeProviderSettingValue(nv)
+				if sanitized == nil {
+					continue
+				}
+				settings[nk] = sanitized
 			}
 		default:
-			settings[key] = value
+			if IsSensitiveProviderConfigKey(key) {
+				continue
+			}
+			sanitized := sanitizeProviderSettingValue(value)
+			if sanitized == nil {
+				continue
+			}
+			settings[key] = sanitized
 		}
 	}
 	if len(settings) == 0 {
