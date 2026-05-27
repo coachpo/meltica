@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -91,23 +92,110 @@ func TestBaseLambdaHandlesExtensionEvents(t *testing.T) {
 	}
 }
 
+func TestRiskControlEventPublishFailureOwnership(t *testing.T) {
+	ctx := context.Background()
+	poolMgr := pool.NewPoolManager()
+	if err := poolMgr.RegisterPool("Event", 1, 0, func() any { return new(schema.Event) }); err != nil {
+		t.Fatalf("register pool: %v", err)
+	}
+
+	publishErr := errors.New("publish failed after taking ownership")
+	bus := &reclaimingFailureBus{pools: poolMgr, err: publishErr}
+	cfg := Config{
+		Providers:       []string{"okx"},
+		ProviderSymbols: map[string][]string{"okx": []string{"BTC-USDT"}},
+	}
+	lambda := NewBaseLambda("lambda-risk", cfg, bus, nil, poolMgr, nil, nil, nil)
+	payload := schema.RiskControlPayload{
+		StrategyID: "lambda-risk",
+		Provider:   "okx",
+		Symbol:     "BTC-USDT",
+		Status:     schema.RiskControlStatusTriggered,
+		Reason:     "risk limit breached",
+		Timestamp:  time.Unix(1, 0).UTC(),
+	}
+
+	func() {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				t.Fatalf("BaseLambda must not reclaim event after Bus.Publish takes ownership: %v", recovered)
+			}
+		}()
+		lambda.emitRiskControlEvent(ctx, payload)
+	}()
+
+	if !bus.published {
+		t.Fatal("expected risk-control event to be published")
+	}
+	if bus.captured.Type != schema.EventTypeRiskControl {
+		t.Fatalf("expected risk-control event type, got %s", bus.captured.Type)
+	}
+	reclaimed, ok, err := poolMgr.TryBorrowEventInst()
+	if err != nil {
+		t.Fatalf("try borrow reclaimed event: %v", err)
+	}
+	if !ok || reclaimed == nil {
+		t.Fatalf("expected bus-owned publish failure to return the event exactly once, ok=%t reclaimed=%v", ok, reclaimed)
+	}
+	poolMgr.ReturnEventInst(reclaimed)
+	if err := poolMgr.Shutdown(ctx); err != nil {
+		t.Fatalf("pool shutdown: %v", err)
+	}
+}
+
+type reclaimingFailureBus struct {
+	pools     *pool.PoolManager
+	err       error
+	published bool
+	captured  schema.Event
+}
+
+func (b *reclaimingFailureBus) Publish(_ context.Context, evt *schema.Event) error {
+	b.published = true
+	schema.CopyEvent(&b.captured, evt)
+	if b.pools != nil {
+		b.pools.ReturnEventInst(evt)
+	}
+	return b.err
+}
+
+func (*reclaimingFailureBus) Subscribe(context.Context, schema.EventType) (eventbus.SubscriptionID, <-chan *schema.Event, error) {
+	return "", nil, errors.New("reclaiming failure bus does not support subscriptions")
+}
+
+func (*reclaimingFailureBus) Unsubscribe(eventbus.SubscriptionID) {}
+
+func (*reclaimingFailureBus) Close() {}
+
 type testExtensionStrategy struct {
 	received []any
 }
 
-func (s *testExtensionStrategy) OnTrade(context.Context, *schema.Event, schema.TradePayload, float64) {}
+func (s *testExtensionStrategy) OnTrade(context.Context, *schema.Event, schema.TradePayload, float64) {
+}
 func (s *testExtensionStrategy) OnTicker(context.Context, *schema.Event, schema.TickerPayload) {}
-func (s *testExtensionStrategy) OnBookSnapshot(context.Context, *schema.Event, schema.BookSnapshotPayload) {}
-func (s *testExtensionStrategy) OnKlineSummary(context.Context, *schema.Event, schema.KlineSummaryPayload) {}
-func (s *testExtensionStrategy) OnInstrumentUpdate(context.Context, *schema.Event, schema.InstrumentUpdatePayload) {}
-func (s *testExtensionStrategy) OnBalanceUpdate(context.Context, *schema.Event, schema.BalanceUpdatePayload) {}
-func (s *testExtensionStrategy) OnOrderFilled(context.Context, *schema.Event, schema.ExecReportPayload) {}
-func (s *testExtensionStrategy) OnOrderRejected(context.Context, *schema.Event, schema.ExecReportPayload, string) {}
-func (s *testExtensionStrategy) OnOrderPartialFill(context.Context, *schema.Event, schema.ExecReportPayload) {}
-func (s *testExtensionStrategy) OnOrderCancelled(context.Context, *schema.Event, schema.ExecReportPayload) {}
-func (s *testExtensionStrategy) OnOrderAcknowledged(context.Context, *schema.Event, schema.ExecReportPayload) {}
-func (s *testExtensionStrategy) OnOrderExpired(context.Context, *schema.Event, schema.ExecReportPayload) {}
-func (s *testExtensionStrategy) OnRiskControl(context.Context, *schema.Event, schema.RiskControlPayload) {}
+func (s *testExtensionStrategy) OnBookSnapshot(context.Context, *schema.Event, schema.BookSnapshotPayload) {
+}
+func (s *testExtensionStrategy) OnKlineSummary(context.Context, *schema.Event, schema.KlineSummaryPayload) {
+}
+func (s *testExtensionStrategy) OnInstrumentUpdate(context.Context, *schema.Event, schema.InstrumentUpdatePayload) {
+}
+func (s *testExtensionStrategy) OnBalanceUpdate(context.Context, *schema.Event, schema.BalanceUpdatePayload) {
+}
+func (s *testExtensionStrategy) OnOrderFilled(context.Context, *schema.Event, schema.ExecReportPayload) {
+}
+func (s *testExtensionStrategy) OnOrderRejected(context.Context, *schema.Event, schema.ExecReportPayload, string) {
+}
+func (s *testExtensionStrategy) OnOrderPartialFill(context.Context, *schema.Event, schema.ExecReportPayload) {
+}
+func (s *testExtensionStrategy) OnOrderCancelled(context.Context, *schema.Event, schema.ExecReportPayload) {
+}
+func (s *testExtensionStrategy) OnOrderAcknowledged(context.Context, *schema.Event, schema.ExecReportPayload) {
+}
+func (s *testExtensionStrategy) OnOrderExpired(context.Context, *schema.Event, schema.ExecReportPayload) {
+}
+func (s *testExtensionStrategy) OnRiskControl(context.Context, *schema.Event, schema.RiskControlPayload) {
+}
 func (s *testExtensionStrategy) OnExtensionEvent(_ context.Context, _ *schema.Event, payload any) {
 	s.received = append(s.received, payload)
 }

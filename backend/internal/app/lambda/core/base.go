@@ -1288,10 +1288,8 @@ func (l *BaseLambda) emitRiskControlEvent(ctx context.Context, payload schema.Ri
 	evt.EmitTS = payload.Timestamp
 	evt.Payload = payload
 
+	// Publish takes ownership of pooled event reclamation, including failure paths.
 	if err := l.bus.Publish(ctx, evt); err != nil {
 		l.logger.Printf("[%s] publish risk control event: %v", l.id, err)
-		if l.pools != nil {
-			l.pools.ReturnEventInst(evt)
-		}
 	}
 }

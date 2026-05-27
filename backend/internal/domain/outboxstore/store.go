@@ -28,8 +28,10 @@ type EventRecord struct {
 	Headers       map[string]any
 	AvailableAt   time.Time
 	PublishedAt   *time.Time
+	ClaimedAt     *time.Time
 	Attempts      int
 	LastError     string
+	Status        string
 	Delivered     bool
 	CreatedAt     time.Time
 }
@@ -37,7 +39,7 @@ type EventRecord struct {
 // Store abstracts persistence operations for the outbox.
 type Store interface {
 	Enqueue(ctx context.Context, evt Event) (EventRecord, error)
-	ListPending(ctx context.Context, limit int) ([]EventRecord, error)
+	ClaimPending(ctx context.Context, limit int, lease time.Duration) ([]EventRecord, error)
 	MarkDelivered(ctx context.Context, id int64) error
 	MarkFailed(ctx context.Context, id int64, lastError string) error
 	Delete(ctx context.Context, id int64) error

@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/coachpo/meltica/internal/domain/outboxstore"
 	"github.com/coachpo/meltica/internal/infra/persistence/postgres/sqlc"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -95,10 +97,9 @@ func (s *OutboxStore) Enqueue(ctx context.Context, evt outboxstore.Event) (outbo
 	return convertOutboxRecord(record)
 }
 
-// ListPending returns undelivered events that are ready for replay.
-func (s *OutboxStore) ListPending(ctx context.Context, limit int) ([]outboxstore.EventRecord, error) {
-	q, err := s.ensureQueries()
-	if err != nil {
+// ClaimPending atomically claims replay-ready events for one replay worker lease.
+func (s *OutboxStore) ClaimPending(ctx context.Context, limit int, lease time.Duration) ([]outboxstore.EventRecord, error) {
+	if _, err := s.ensureQueries(); err != nil {
 		return nil, err
 	}
 	if limit <= 0 {
@@ -106,11 +107,33 @@ func (s *OutboxStore) ListPending(ctx context.Context, limit int) ([]outboxstore
 	} else if limit > maxOutboxLimit {
 		limit = maxOutboxLimit
 	}
-	rows, err := q.DequeuePendingEvents(ctx, boundedInt32(limit))
-	if err != nil {
-		return nil, fmt.Errorf("outbox store: list pending: %w", err)
+	if lease <= 0 {
+		lease = time.Minute
 	}
+	var txOpts pgx.TxOptions
+	txOpts.IsoLevel = pgx.ReadCommitted
+	txOpts.AccessMode = pgx.ReadWrite
+	txOpts.DeferrableMode = pgx.NotDeferrable
+	txOpts.BeginQuery = ""
+	txOpts.CommitQuery = ""
+	tx, err := s.pool.BeginTx(ctx, txOpts)
+	if err != nil {
+		return nil, fmt.Errorf("outbox store: begin claim transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
 
+	var leaseInterval pgtype.Interval
+	leaseInterval.Microseconds = lease.Microseconds()
+	leaseInterval.Valid = true
+	leaseInterval.Days = 0
+	leaseInterval.Months = 0
+	rows, err := s.queries.WithTx(tx).ClaimPendingEvents(ctx, sqlc.ClaimPendingEventsParams{
+		Lease: leaseInterval,
+		Limit: boundedInt32(limit),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("outbox store: claim pending: %w", err)
+	}
 	records := make([]outboxstore.EventRecord, 0, len(rows))
 	for _, row := range rows {
 		record, err := convertOutboxRecord(row)
@@ -118,6 +141,9 @@ func (s *OutboxStore) ListPending(ctx context.Context, limit int) ([]outboxstore
 			return nil, err
 		}
 		records = append(records, record)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("outbox store: commit claim transaction: %w", err)
 	}
 	return records, nil
 }
@@ -140,10 +166,13 @@ func (s *OutboxStore) MarkFailed(ctx context.Context, id int64, lastError string
 	if err != nil {
 		return err
 	}
-	if _, err := q.IncrementEventAttempt(ctx, sqlc.IncrementEventAttemptParams{
+	if _, err := q.ResetEventForRetry(ctx, sqlc.ResetEventForRetryParams{
 		LastError: strings.TrimSpace(lastError),
 		ID:        id,
 	}); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
 		return fmt.Errorf("outbox store: mark failed: %w", err)
 	}
 	return nil
@@ -174,11 +203,16 @@ func convertOutboxRecord(row sqlc.EventsOutbox) (outboxstore.EventRecord, error)
 	record.Payload = json.RawMessage(payloadJSON)
 	record.AvailableAt = row.AvailableAt.Time
 	record.Attempts = int(row.Attempts)
+	record.Status = row.Status
 	record.Delivered = row.Delivered
 	record.CreatedAt = row.CreatedAt.Time
 	if row.PublishedAt.Valid {
 		t := row.PublishedAt.Time
 		record.PublishedAt = &t
+	}
+	if row.ClaimedAt.Valid {
+		t := row.ClaimedAt.Time
+		record.ClaimedAt = &t
 	}
 	if row.LastError.Valid {
 		record.LastError = row.LastError.String

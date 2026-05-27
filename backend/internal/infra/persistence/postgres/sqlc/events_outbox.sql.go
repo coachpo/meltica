@@ -11,27 +11,36 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const deleteEvent = `-- name: DeleteEvent :exec
-DELETE FROM events_outbox
-WHERE id = $1::bigint
+const claimPendingEvents = `-- name: ClaimPendingEvents :many
+WITH claimable AS (
+    SELECT id
+    FROM events_outbox
+    WHERE (
+        status = 'pending'
+        OR (status = 'processing' AND claimed_at < NOW() - $1::interval)
+    )
+      AND available_at <= NOW()
+    ORDER BY available_at ASC
+    LIMIT $2::int
+    FOR UPDATE SKIP LOCKED
+)
+UPDATE events_outbox AS outbox
+SET
+    status = 'processing',
+    claimed_at = NOW(),
+    attempts = attempts + 1
+FROM claimable
+WHERE outbox.id = claimable.id
+RETURNING outbox.id, outbox.aggregate_type, outbox.aggregate_id, outbox.event_type, outbox.payload, outbox.headers, outbox.available_at, outbox.published_at, outbox.attempts, outbox.last_error, outbox.delivered, outbox.created_at, outbox.status, outbox.claimed_at
 `
 
-func (q *Queries) DeleteEvent(ctx context.Context, id int64) error {
-	_, err := q.db.Exec(ctx, deleteEvent, id)
-	return err
+type ClaimPendingEventsParams struct {
+	Lease pgtype.Interval `db:"lease" json:"lease"`
+	Limit int32           `db:"limit" json:"limit"`
 }
 
-const dequeuePendingEvents = `-- name: DequeuePendingEvents :many
-SELECT id, aggregate_type, aggregate_id, event_type, payload, headers, available_at, published_at, attempts, last_error, delivered, created_at
-FROM events_outbox
-WHERE delivered = FALSE
-  AND available_at <= NOW()
-ORDER BY available_at ASC
-LIMIT $1::int
-`
-
-func (q *Queries) DequeuePendingEvents(ctx context.Context, limit int32) ([]EventsOutbox, error) {
-	rows, err := q.db.Query(ctx, dequeuePendingEvents, limit)
+func (q *Queries) ClaimPendingEvents(ctx context.Context, arg ClaimPendingEventsParams) ([]EventsOutbox, error) {
+	rows, err := q.db.Query(ctx, claimPendingEvents, arg.Lease, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -52,6 +61,8 @@ func (q *Queries) DequeuePendingEvents(ctx context.Context, limit int32) ([]Even
 			&i.LastError,
 			&i.Delivered,
 			&i.CreatedAt,
+			&i.Status,
+			&i.ClaimedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -63,6 +74,16 @@ func (q *Queries) DequeuePendingEvents(ctx context.Context, limit int32) ([]Even
 	return items, nil
 }
 
+const deleteEvent = `-- name: DeleteEvent :exec
+DELETE FROM events_outbox
+WHERE id = $1::bigint
+`
+
+func (q *Queries) DeleteEvent(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, deleteEvent, id)
+	return err
+}
+
 const enqueueEvent = `-- name: EnqueueEvent :one
 INSERT INTO events_outbox (
     aggregate_type,
@@ -70,7 +91,9 @@ INSERT INTO events_outbox (
     event_type,
     payload,
     headers,
-    available_at
+    available_at,
+    status,
+    claimed_at
 )
 VALUES (
     $1::text,
@@ -78,9 +101,11 @@ VALUES (
     $3::text,
     COALESCE($4::jsonb, '{}'::jsonb),
     COALESCE($5::jsonb, '{}'::jsonb),
-    COALESCE($6::timestamptz, NOW())
+    COALESCE($6::timestamptz, NOW()),
+    'pending',
+    NULL
 )
-RETURNING id, aggregate_type, aggregate_id, event_type, payload, headers, available_at, published_at, attempts, last_error, delivered, created_at
+RETURNING id, aggregate_type, aggregate_id, event_type, payload, headers, available_at, published_at, attempts, last_error, delivered, created_at, status, claimed_at
 `
 
 type EnqueueEventParams struct {
@@ -115,41 +140,8 @@ func (q *Queries) EnqueueEvent(ctx context.Context, arg EnqueueEventParams) (Eve
 		&i.LastError,
 		&i.Delivered,
 		&i.CreatedAt,
-	)
-	return i, err
-}
-
-const incrementEventAttempt = `-- name: IncrementEventAttempt :one
-UPDATE events_outbox
-SET
-    attempts = attempts + 1,
-    last_error = $1::text,
-    available_at = NOW() + INTERVAL '30 seconds'
-WHERE id = $2::bigint
-RETURNING id, aggregate_type, aggregate_id, event_type, payload, headers, available_at, published_at, attempts, last_error, delivered, created_at
-`
-
-type IncrementEventAttemptParams struct {
-	LastError string `db:"last_error" json:"last_error"`
-	ID        int64  `db:"id" json:"id"`
-}
-
-func (q *Queries) IncrementEventAttempt(ctx context.Context, arg IncrementEventAttemptParams) (EventsOutbox, error) {
-	row := q.db.QueryRow(ctx, incrementEventAttempt, arg.LastError, arg.ID)
-	var i EventsOutbox
-	err := row.Scan(
-		&i.ID,
-		&i.AggregateType,
-		&i.AggregateID,
-		&i.EventType,
-		&i.Payload,
-		&i.Headers,
-		&i.AvailableAt,
-		&i.PublishedAt,
-		&i.Attempts,
-		&i.LastError,
-		&i.Delivered,
-		&i.CreatedAt,
+		&i.Status,
+		&i.ClaimedAt,
 	)
 	return i, err
 }
@@ -157,11 +149,13 @@ func (q *Queries) IncrementEventAttempt(ctx context.Context, arg IncrementEventA
 const markEventDelivered = `-- name: MarkEventDelivered :one
 UPDATE events_outbox
 SET
+    status = 'delivered',
     delivered = TRUE,
     published_at = NOW(),
-    attempts = attempts + 1
+    claimed_at = NULL,
+    last_error = NULL
 WHERE id = $1::bigint
-RETURNING id, aggregate_type, aggregate_id, event_type, payload, headers, available_at, published_at, attempts, last_error, delivered, created_at
+RETURNING id, aggregate_type, aggregate_id, event_type, payload, headers, available_at, published_at, attempts, last_error, delivered, created_at, status, claimed_at
 `
 
 func (q *Queries) MarkEventDelivered(ctx context.Context, id int64) (EventsOutbox, error) {
@@ -180,6 +174,48 @@ func (q *Queries) MarkEventDelivered(ctx context.Context, id int64) (EventsOutbo
 		&i.LastError,
 		&i.Delivered,
 		&i.CreatedAt,
+		&i.Status,
+		&i.ClaimedAt,
+	)
+	return i, err
+}
+
+const resetEventForRetry = `-- name: ResetEventForRetry :one
+UPDATE events_outbox
+SET
+    status = 'pending',
+    delivered = FALSE,
+    claimed_at = NULL,
+    last_error = $1::text,
+    available_at = NOW() + INTERVAL '30 seconds'
+WHERE id = $2::bigint
+  AND status IN ('pending', 'processing')
+RETURNING id, aggregate_type, aggregate_id, event_type, payload, headers, available_at, published_at, attempts, last_error, delivered, created_at, status, claimed_at
+`
+
+type ResetEventForRetryParams struct {
+	LastError string `db:"last_error" json:"last_error"`
+	ID        int64  `db:"id" json:"id"`
+}
+
+func (q *Queries) ResetEventForRetry(ctx context.Context, arg ResetEventForRetryParams) (EventsOutbox, error) {
+	row := q.db.QueryRow(ctx, resetEventForRetry, arg.LastError, arg.ID)
+	var i EventsOutbox
+	err := row.Scan(
+		&i.ID,
+		&i.AggregateType,
+		&i.AggregateID,
+		&i.EventType,
+		&i.Payload,
+		&i.Headers,
+		&i.AvailableAt,
+		&i.PublishedAt,
+		&i.Attempts,
+		&i.LastError,
+		&i.Delivered,
+		&i.CreatedAt,
+		&i.Status,
+		&i.ClaimedAt,
 	)
 	return i, err
 }

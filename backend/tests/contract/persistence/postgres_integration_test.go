@@ -488,9 +488,9 @@ func TestPostgresPersistenceStores(t *testing.T) {
 		t.Fatalf("mark delivered: %v", err)
 	}
 
-	pendingAfterDelivery, err := outboxStore.ListPending(ctx, 10)
+	pendingAfterDelivery, err := outboxStore.ClaimPending(ctx, 10, time.Minute)
 	if err != nil {
-		t.Fatalf("list pending after delivery: %v", err)
+		t.Fatalf("claim pending after delivery: %v", err)
 	}
 	if len(pendingAfterDelivery) != 0 {
 		t.Fatalf("expected 0 pending events after delivery, got %d", len(pendingAfterDelivery))
@@ -521,9 +521,9 @@ func waitForPending(t *testing.T, ctx context.Context, store outboxstore.Store, 
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
 	for {
-		rows, err := store.ListPending(ctx, limit)
+		rows, err := store.ClaimPending(ctx, limit, time.Minute)
 		if err != nil {
-			t.Fatalf("list pending: %v", err)
+			t.Fatalf("claim pending: %v", err)
 		}
 		if len(rows) >= expected {
 			return rows

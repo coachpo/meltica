@@ -15,7 +15,7 @@ func setupTestBus(t *testing.T) (Bus, *pool.PoolManager) {
 	t.Helper()
 
 	poolMgr := pool.NewPoolManager()
-	err := poolMgr.RegisterPool("Event", 100, 0, func() interface{} {
+	err := poolMgr.RegisterPool("Event", 100, 0, func() any {
 		return new(schema.Event)
 	})
 	if err != nil {
@@ -78,18 +78,29 @@ func TestMemoryBusPublishNilEvent(t *testing.T) {
 }
 
 func TestMemoryBusPublishEmptyType(t *testing.T) {
-	bus := NewMemoryBus(MemoryConfig{BufferSize: 10})
+	poolMgr := pool.NewPoolManager()
+	if err := poolMgr.RegisterPool("Event", 1, 0, func() any { return new(schema.Event) }); err != nil {
+		t.Fatalf("register pool: %v", err)
+	}
+	bus := NewMemoryBus(MemoryConfig{BufferSize: 10, Pools: poolMgr})
 	defer bus.Close()
 
 	ctx := context.Background()
-	evt := &schema.Event{
-		EventID: "test-1",
-		Type:    "", // Empty type
+	evt, err := poolMgr.BorrowEventInst(ctx)
+	if err != nil {
+		t.Fatalf("borrow event: %v", err)
 	}
+	evt.EventID = "test-1"
+	evt.Type = "" // Empty type
 
-	err := bus.Publish(ctx, evt)
+	err = bus.Publish(ctx, evt)
 	if err == nil {
 		t.Error("expected error for empty event type")
+	}
+	shutdownCtx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+	defer cancel()
+	if err := poolMgr.Shutdown(shutdownCtx); err != nil {
+		t.Fatalf("expected MemoryBus to reclaim invalid-type source event before shutdown: %v", err)
 	}
 }
 
@@ -186,14 +197,83 @@ func TestMemoryBusClose(t *testing.T) {
 
 	bus.Close()
 
-	// Channel should be closed
 	select {
 	case _, ok := <-eventsCh:
 		if ok {
-			t.Error("expected channel to be closed after bus close")
+			t.Fatal("expected channel to be closed after bus close")
 		}
 	case <-time.After(100 * time.Millisecond):
-		// Expected - channel closed
+		t.Fatal("timeout waiting for channel close after bus close")
+	}
+}
+
+func TestMemoryBusBackpressureDropsOldestEvent(t *testing.T) {
+	// MemoryBus subscriber delivery is intentionally best-effort: under
+	// backpressure it drops the oldest buffered event and keeps the newest one.
+	poolMgr := pool.NewPoolManager()
+	if err := poolMgr.RegisterPool("Event", 10, 0, func() any {
+		return new(schema.Event)
+	}); err != nil {
+		t.Fatalf("failed to register pool: %v", err)
+	}
+
+	bus := NewMemoryBus(MemoryConfig{
+		BufferSize:    1,
+		FanoutWorkers: 1,
+		Pools:         poolMgr,
+	})
+	defer bus.Close()
+	defer func() {
+		if err := poolMgr.Shutdown(context.Background()); err != nil {
+			t.Fatalf("pool shutdown: %v", err)
+		}
+	}()
+
+	ctx := context.Background()
+	subID, eventsCh, err := bus.Subscribe(ctx, schema.EventTypeTrade)
+	if err != nil {
+		t.Fatalf("Subscribe() error = %v", err)
+	}
+	defer bus.Unsubscribe(subID)
+
+	for _, eventID := range []string{"oldest", "middle", "newest"} {
+		evt, err := poolMgr.BorrowEventInst(ctx)
+		if err != nil {
+			t.Fatalf("BorrowEventInst() error = %v", err)
+		}
+		evt.EventID = eventID
+		evt.Provider = "test"
+		evt.Type = schema.EventTypeTrade
+		evt.Symbol = "BTC-USD"
+
+		if err := bus.Publish(ctx, evt); err != nil {
+			t.Fatalf("Publish(%s) error = %v", eventID, err)
+		}
+	}
+
+	select {
+	case received, ok := <-eventsCh:
+		if !ok {
+			t.Fatal("subscription closed before receiving backpressure survivor")
+		}
+		if received.EventID != "newest" {
+			t.Fatalf("expected newest event to survive backpressure, got %s", received.EventID)
+		}
+		poolMgr.ReturnEventInst(received)
+	case <-time.After(1 * time.Second):
+		t.Fatal("timeout waiting for backpressure survivor")
+	}
+
+	select {
+	case unexpected, ok := <-eventsCh:
+		if ok {
+			if unexpected != nil {
+				poolMgr.ReturnEventInst(unexpected)
+			}
+			t.Fatal("expected drop-oldest policy to leave only the newest event buffered")
+		}
+		t.Fatal("subscription closed unexpectedly after backpressure assertion")
+	default:
 	}
 }
 
@@ -311,7 +391,7 @@ func TestMemoryBusPublishExtensionPayloadWithinCap(t *testing.T) {
 
 func TestMemoryBusPublishExtensionPayloadOverCap(t *testing.T) {
 	poolMgr := pool.NewPoolManager()
-	if err := poolMgr.RegisterPool("Event", 10, 0, func() any { return new(schema.Event) }); err != nil {
+	if err := poolMgr.RegisterPool("Event", 1, 0, func() any { return new(schema.Event) }); err != nil {
 		t.Fatalf("register pool: %v", err)
 	}
 	bus := NewMemoryBus(MemoryConfig{
@@ -335,6 +415,14 @@ func TestMemoryBusPublishExtensionPayloadOverCap(t *testing.T) {
 	if err := bus.Publish(ctx, evt); err == nil {
 		t.Fatal("expected error for payload exceeding cap")
 	}
+	reclaimed, ok, err := poolMgr.TryBorrowEventInst()
+	if err != nil {
+		t.Fatalf("try borrow event: %v", err)
+	}
+	if !ok || reclaimed == nil {
+		t.Fatalf("expected MemoryBus to reclaim source event on publish failure, ok=%t reclaimed=%v", ok, reclaimed)
+	}
+	poolMgr.ReturnEventInst(reclaimed)
 	if err := poolMgr.Shutdown(ctx); err != nil {
 		t.Fatalf("pool shutdown: %v", err)
 	}

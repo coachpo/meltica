@@ -85,6 +85,7 @@ func NewMemoryBus(cfg MemoryConfig) *MemoryBus {
 
 // Publish fan-outs the event to all subscribers of its type.
 // Route-first: counts subscribers before any pool work, short-circuits when n==0.
+// Once called, MemoryBus owns source-event reclamation on success and failure.
 func (b *MemoryBus) Publish(ctx context.Context, evt *schema.Event) error {
 	if ctx == nil {
 		ctx = context.Background()
@@ -114,6 +115,7 @@ func (b *MemoryBus) Publish(ctx context.Context, evt *schema.Event) error {
 
 	if evt.Type == "" {
 		result = "invalid_event_type"
+		b.recycle(evt)
 		return errs.New("eventbus/publish", errs.CodeInvalid, errs.WithMessage("event type required"))
 	}
 
@@ -290,7 +292,9 @@ func (b *MemoryBus) observe(typ schema.EventType, id SubscriptionID, sub *subscr
 }
 
 // deliverWithRecycle delivers an event and recycles it only on failure paths.
-// On success ownership transfers to the subscriber.
+// On success ownership transfers to the subscriber. Subscriber delivery is
+// best-effort: when a subscriber buffer is full, MemoryBus preserves the
+// existing drop-oldest policy instead of providing per-subscriber durability.
 func (b *MemoryBus) deliverWithRecycle(ctx context.Context, sub *subscriber, evt *schema.Event) error {
 	if err := sub.ctx.Err(); err != nil {
 		b.recycle(evt)

@@ -36,11 +36,20 @@ func WithReplayInterval(interval time.Duration) DurableOption {
 	}
 }
 
-// WithReplayBatchSize configures the number of rows fetched per replay tick.
+// WithReplayBatchSize configures the number of rows claimed per replay tick.
 func WithReplayBatchSize(size int) DurableOption {
 	return func(b *DurableBus) {
 		if size > 0 {
 			b.replayBatchSize = size
+		}
+	}
+}
+
+// WithReplayLease configures how long a replay claim is protected before it can be reclaimed.
+func WithReplayLease(lease time.Duration) DurableOption {
+	return func(b *DurableBus) {
+		if lease > 0 {
+			b.replayLease = lease
 		}
 	}
 }
@@ -74,7 +83,9 @@ type poolAwareBus interface {
 	PoolManager() *pool.PoolManager
 }
 
-// DurableBus wraps an event bus with outbox-backed durability guarantees.
+// DurableBus wraps an event bus with outbox-backed at-least-once handoff into
+// the inner bus/outbox pipeline. It does not make inner-bus subscriber fan-out
+// durable; MemoryBus subscribers remain best-effort under backpressure.
 type DurableBus struct {
 	inner Bus
 	store outboxstore.Store
@@ -82,6 +93,7 @@ type DurableBus struct {
 	logger          *log.Logger
 	replayInterval  time.Duration
 	replayBatchSize int
+	replayLease     time.Duration
 	replayDisabled  bool
 
 	pools *pool.PoolManager
@@ -96,6 +108,7 @@ type DurableBus struct {
 const (
 	defaultReplayInterval  = 5 * time.Second
 	defaultReplayBatchSize = 128
+	defaultReplayLease     = 2 * time.Minute
 )
 
 // NewDurableBus wraps the provided bus with outbox persistence. When store is nil the
@@ -113,6 +126,7 @@ func NewDurableBus(inner Bus, store outboxstore.Store, opts ...DurableOption) Bu
 		logger:                   log.New(os.Stdout, "eventbus/durable ", log.LstdFlags|log.Lmicroseconds),
 		replayInterval:           defaultReplayInterval,
 		replayBatchSize:          defaultReplayBatchSize,
+		replayLease:              defaultReplayLease,
 		replayDisabled:           false,
 		pools:                    nil,
 		extensionPayloadCapBytes: DefaultExtensionPayloadCapBytes,
@@ -139,6 +153,9 @@ func NewDurableBus(inner Bus, store outboxstore.Store, opts ...DurableOption) Bu
 	if durable.replayInterval <= 0 {
 		durable.replayInterval = defaultReplayInterval
 	}
+	if durable.replayLease <= 0 {
+		durable.replayLease = defaultReplayLease
+	}
 	if !durable.replayDisabled {
 		durable.startReplayWorker()
 	}
@@ -146,6 +163,7 @@ func NewDurableBus(inner Bus, store outboxstore.Store, opts ...DurableOption) Bu
 }
 
 // Publish persists the event to the outbox before delegating to the inner bus.
+// Once called, DurableBus or its inner bus owns pooled-event reclamation on failure.
 func (b *DurableBus) Publish(ctx context.Context, evt *schema.Event) error {
 	if b == nil {
 		return nil
@@ -243,9 +261,9 @@ func (b *DurableBus) replayPendingEvents() {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	records, err := b.store.ListPending(ctx, b.replayBatchSize)
+	records, err := b.store.ClaimPending(ctx, b.replayBatchSize, b.replayLease)
 	if err != nil {
-		b.logf("outbox replay list failed: %v", err)
+		b.logf("outbox replay claim failed: %v", err)
 		return
 	}
 	for _, record := range records {

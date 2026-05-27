@@ -35,6 +35,8 @@ type EventsOutbox struct {
 	LastError     pgtype.Text        `db:"last_error" json:"last_error"`
 	Delivered     bool               `db:"delivered" json:"delivered"`
 	CreatedAt     pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	Status        string             `db:"status" json:"status"`
+	ClaimedAt     pgtype.Timestamptz `db:"claimed_at" json:"claimed_at"`
 }
 
 type Execution struct {

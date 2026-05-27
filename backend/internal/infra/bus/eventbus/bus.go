@@ -16,6 +16,8 @@ type SubscriptionID string
 
 // Bus delivers canonical events to interested subscribers.
 type Bus interface {
+	// Publish takes ownership of evt for pooled-event reclamation once called,
+	// including publish-failure paths.
 	Publish(ctx context.Context, evt *schema.Event) error
 	Subscribe(ctx context.Context, typ schema.EventType) (SubscriptionID, <-chan *schema.Event, error)
 	Unsubscribe(id SubscriptionID)
