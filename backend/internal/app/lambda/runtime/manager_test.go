@@ -16,6 +16,18 @@ import (
 	strategiestest "github.com/coachpo/meltica/internal/testutil/strategies"
 )
 
+func managerTestRiskConfig() config.RiskConfig {
+	return config.RiskConfig{
+		MaxPositionSize:     "10",
+		MaxNotionalValue:    "1000",
+		NotionalCurrency:    "USD",
+		OrderThrottle:       5,
+		OrderBurst:          1,
+		MaxConcurrentOrders: 0,
+		PriceBandPercent:    1,
+	}
+}
+
 func newTestManager(t *testing.T, opts ...Option) *Manager {
 	t.Helper()
 	dir := strategiestest.WriteStubStrategies(t)
@@ -23,6 +35,7 @@ func newTestManager(t *testing.T, opts ...Option) *Manager {
 		Strategies: config.StrategiesConfig{
 			Directory: dir,
 		},
+		Risk: managerTestRiskConfig(),
 	}
 	manager, err := NewManager(cfg, nil, nil, nil, log.New(io.Discard, "", 0), nil, opts...)
 	if err != nil {
@@ -78,13 +91,7 @@ func TestManagerRefreshJavaScriptStrategies(t *testing.T) {
 			Event:        config.ObjectPoolConfig{Size: 1, WaitQueueSize: 1},
 			OrderRequest: config.ObjectPoolConfig{Size: 1, WaitQueueSize: 1},
 		},
-		Risk: config.RiskConfig{
-			MaxPositionSize:  "1",
-			MaxNotionalValue: "1",
-			NotionalCurrency: "USD",
-			OrderThrottle:    1,
-			OrderBurst:       1,
-		},
+		Risk:      managerTestRiskConfig(),
 		Telemetry: config.TelemetryConfig{ServiceName: "test"},
 		APIServer: config.APIServerConfig{Addr: ":0"},
 		Strategies: config.StrategiesConfig{
@@ -197,7 +204,10 @@ func TestManagerAssignStrategyTag(t *testing.T) {
 	if _, err := loader.Store([]byte(managerTagModule), js.ModuleWriteOptions{PromoteLatest: true}); err != nil {
 		t.Fatalf("Store module: %v", err)
 	}
-	cfg := config.AppConfig{Strategies: config.StrategiesConfig{Directory: dir}}
+	cfg := config.AppConfig{
+		Strategies: config.StrategiesConfig{Directory: dir},
+		Risk:       managerTestRiskConfig(),
+	}
 	mgr, err := NewManager(cfg, nil, nil, nil, log.New(io.Discard, "", 0), nil)
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
@@ -233,7 +243,10 @@ func TestManagerDeleteStrategyTagForce(t *testing.T) {
 	if _, err := loader.Store([]byte(v2Source), js.ModuleWriteOptions{PromoteLatest: true}); err != nil {
 		t.Fatalf("Store v2: %v", err)
 	}
-	cfg := config.AppConfig{Strategies: config.StrategiesConfig{Directory: dir}}
+	cfg := config.AppConfig{
+		Strategies: config.StrategiesConfig{Directory: dir},
+		Risk:       managerTestRiskConfig(),
+	}
 	mgr, err := NewManager(cfg, nil, nil, nil, log.New(io.Discard, "", 0), nil)
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
@@ -496,4 +509,44 @@ func TestRemoveStrategyGuardedWhenHashInUse(t *testing.T) {
 	if err := mgr.RemoveStrategy("logging"); err == nil {
 		t.Fatalf("expected removal to fail for strategy in use")
 	}
+}
+
+func TestParseRiskLimitsRejectsInvalidRuntimeConfig(t *testing.T) {
+	t.Run("construction", func(t *testing.T) {
+		dir := strategiestest.WriteStubStrategies(t)
+		cfg := config.AppConfig{
+			Strategies: config.StrategiesConfig{Directory: dir},
+			Risk:       managerTestRiskConfig(),
+		}
+		cfg.Risk.MaxPositionSize = "not-a-decimal"
+		_, err := NewManager(cfg, nil, nil, nil, log.New(io.Discard, "", 0), nil)
+		if err == nil {
+			t.Fatal("expected NewManager to reject invalid risk config")
+		}
+		if !strings.Contains(err.Error(), "maxPositionSize") {
+			t.Fatalf("expected maxPositionSize error, got %v", err)
+		}
+	})
+
+	t.Run("runtime update", func(t *testing.T) {
+		mgr := newTestManager(t)
+		before := mgr.RiskLimits()
+		cfg := managerTestRiskConfig()
+		cfg.CircuitBreaker = config.CircuitBreakerConfig{
+			Enabled:   true,
+			Threshold: 1,
+			Cooldown:  "later",
+		}
+		_, err := mgr.ApplyRiskConfig(cfg)
+		if err == nil {
+			t.Fatal("expected ApplyRiskConfig to reject invalid risk config")
+		}
+		if !strings.Contains(err.Error(), "circuitBreaker.cooldown") {
+			t.Fatalf("expected cooldown error, got %v", err)
+		}
+		after := mgr.RiskLimits()
+		if after.CircuitBreaker.Cooldown != before.CircuitBreaker.Cooldown {
+			t.Fatalf("risk limits changed after rejected update: before=%s after=%s", before.CircuitBreaker.Cooldown, after.CircuitBreaker.Cooldown)
+		}
+	})
 }

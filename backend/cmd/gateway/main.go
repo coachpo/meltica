@@ -17,6 +17,7 @@ import (
 	"github.com/coachpo/meltica/internal/app/dispatcher"
 	lambdaruntime "github.com/coachpo/meltica/internal/app/lambda/runtime"
 	"github.com/coachpo/meltica/internal/app/provider"
+	"github.com/coachpo/meltica/internal/app/risk"
 	"github.com/coachpo/meltica/internal/domain/orderstore"
 	"github.com/coachpo/meltica/internal/domain/outboxstore"
 	"github.com/coachpo/meltica/internal/domain/providerstore"
@@ -51,29 +52,113 @@ const (
 	databaseShutdownTimeout      = 5 * time.Second
 )
 
+type gatewayRuntime struct {
+	composeGateway          composeGatewayFunc
+	startAPIServer          startAPIServerFunc
+	performGracefulShutdown gracefulShutdownFunc
+	newShutdownContext      shutdownContextFunc
+}
+
+type composeGatewayFunc func(context.Context, *log.Logger, string, context.CancelFunc) (gatewayComposition, error)
+type startAPIServerFunc func(*conc.WaitGroup, *log.Logger, apiServerStarter)
+type gracefulShutdownFunc func(context.Context, *log.Logger, gracefulShutdownConfig)
+type shutdownContextFunc func() (context.Context, context.CancelFunc)
+
+type gatewayComposition struct {
+	apiServer *http.Server
+	lifecycle *conc.WaitGroup
+	shutdown  gracefulShutdownConfig
+}
+
+func defaultGatewayRuntime() gatewayRuntime {
+	return gatewayRuntime{
+		composeGateway:          composeGateway,
+		startAPIServer:          startAPIServer,
+		performGracefulShutdown: performGracefulShutdown,
+		newShutdownContext:      newGatewayShutdownContext,
+	}
+}
+
+func (rt gatewayRuntime) withDefaults() gatewayRuntime {
+	if rt.composeGateway == nil {
+		rt.composeGateway = composeGateway
+	}
+	if rt.startAPIServer == nil {
+		rt.startAPIServer = startAPIServer
+	}
+	if rt.performGracefulShutdown == nil {
+		rt.performGracefulShutdown = performGracefulShutdown
+	}
+	if rt.newShutdownContext == nil {
+		rt.newShutdownContext = newGatewayShutdownContext
+	}
+	return rt
+}
+
 func main() {
 	cfgPathFlag := parseFlags()
 	ctx, cancel := newSignalContext()
 	defer cancel()
 
 	logger := newGatewayLogger()
+	if err := runGateway(ctx, cancel, logger, resolveConfigPath(cfgPathFlag), defaultGatewayRuntime()); err != nil {
+		logger.Fatal(err)
+	}
+}
 
-	appCfg, err := config.Load(ctx, resolveConfigPath(cfgPathFlag))
+func runGateway(ctx context.Context, cancel context.CancelFunc, logger *log.Logger, cfgPath string, runtime gatewayRuntime) error {
+	if cancel == nil {
+		cancel = func() {}
+	}
+	runtime = runtime.withDefaults()
+
+	composition, err := runtime.composeGateway(ctx, logger, cfgPath, cancel)
 	if err != nil {
-		logger.Fatalf("load config: %v", err)
+		return err
+	}
+
+	runtime.startAPIServer(composition.lifecycle, logger, composition.apiServer)
+	logger.Printf("control API listening on %s", composition.apiServer.Addr)
+
+	logger.Print("gateway started; awaiting shutdown signal")
+	<-ctx.Done()
+	logger.Print("shutdown signal received, initiating graceful shutdown")
+
+	shutdownCtx, shutdownCancel := runtime.newShutdownContext()
+	defer shutdownCancel()
+
+	shutdownStart := time.Now()
+	runtime.performGracefulShutdown(shutdownCtx, logger, composition.shutdown)
+
+	logger.Printf("shutdown completed in %v", time.Since(shutdownStart))
+	return nil
+}
+
+func newGatewayShutdownContext() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), shutdownTimeout)
+}
+
+func composeGateway(ctx context.Context, logger *log.Logger, cfgPath string, mainCancel context.CancelFunc) (gatewayComposition, error) {
+	appCfg, err := config.Load(ctx, cfgPath)
+	if err != nil {
+		return gatewayComposition{}, fmt.Errorf("load config: %w", err)
 	}
 	logger.Printf("configuration loaded: env=%s, providers=%d",
 		appCfg.Environment, len(appCfg.Providers))
 
+	if err := validateStartupRiskConfig(appCfg.Risk); err != nil {
+		return gatewayComposition{}, fmt.Errorf("validate risk config: %w", err)
+	}
+
 	logger.Printf("providers configured: %d", len(appCfg.Providers))
 
 	if err := runDatabaseMigrations(ctx, logger, appCfg.Database); err != nil {
-		logger.Fatalf("apply database migrations: %v", err)
+		return gatewayComposition{}, fmt.Errorf("apply database migrations: %w", err)
 	}
 
 	dbPool, err := initDatabase(ctx, logger, appCfg.Database)
 	if err != nil {
-		logger.Fatalf("connect database: %v", err)
+		return gatewayComposition{}, fmt.Errorf("connect database: %w", err)
 	}
 	providerStore := postgresstore.NewProviderStore(dbPool)
 	strategyStore := postgresstore.NewStrategyStore(dbPool)
@@ -82,55 +167,45 @@ func main() {
 
 	telemetryProvider, err := initTelemetry(ctx, logger, appCfg)
 	if err != nil {
-		logger.Fatalf("initialize telemetry: %v", err)
+		return gatewayComposition{}, fmt.Errorf("initialize telemetry: %w", err)
 	}
 
 	poolMgr, err := buildPoolManager(appCfg.Pools)
 	if err != nil {
-		logger.Fatalf("initialise pools: %v", err)
+		return gatewayComposition{}, fmt.Errorf("initialise pools: %w", err)
 	}
 
-	var lifecycle conc.WaitGroup
-
+	lifecycle := &conc.WaitGroup{}
 	bus := newEventBus(appCfg.Eventbus, poolMgr, outboxStore, logger)
 
 	table := dispatcher.NewTable()
 	providerManager, err := initProviders(ctx, logger, appCfg, poolMgr, table, bus, providerStore)
 	if err != nil {
-		logger.Fatalf("initialise providers: %v", err)
+		return gatewayComposition{}, fmt.Errorf("initialise providers: %w", err)
 	}
 
 	registrar := dispatcher.NewRegistrar(table, providerManager)
 
 	lambdaManager, err := startLambdaManager(ctx, appCfg, bus, poolMgr, providerManager, registrar, logger, strategyStore, orderStore)
 	if err != nil {
-		logger.Fatalf("initialise lambdas: %v", err)
+		return gatewayComposition{}, fmt.Errorf("initialise lambdas: %w", err)
 	}
 	logger.Printf("strategy instances registered: %d", len(lambdaManager.Instances()))
 
 	apiServer := buildAPIServer(appCfg, lambdaManager, providerManager, orderStore)
-	startAPIServer(&lifecycle, logger, apiServer)
-	logger.Printf("control API listening on %s", apiServer.Addr)
-
-	logger.Print("gateway started; awaiting shutdown signal")
-	<-ctx.Done()
-	logger.Print("shutdown signal received, initiating graceful shutdown")
-
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
-	defer shutdownCancel()
-
-	shutdownStart := time.Now()
-	performGracefulShutdown(shutdownCtx, logger, gracefulShutdownConfig{
-		server:     apiServer,
-		mainCancel: cancel,
-		lifecycle:  &lifecycle,
-		dataBus:    bus,
-		poolMgr:    poolMgr,
-		telemetry:  telemetryProvider,
-		dbPool:     dbPool,
-	})
-
-	logger.Printf("shutdown completed in %v", time.Since(shutdownStart))
+	return gatewayComposition{
+		apiServer: apiServer,
+		lifecycle: lifecycle,
+		shutdown: gracefulShutdownConfig{
+			server:     apiServer,
+			mainCancel: mainCancel,
+			lifecycle:  lifecycle,
+			dataBus:    bus,
+			poolMgr:    poolMgr,
+			telemetry:  telemetryProvider,
+			dbPool:     dbPool,
+		},
+	}, nil
 }
 
 func parseFlags() string {
@@ -145,6 +220,34 @@ func newSignalContext() (context.Context, context.CancelFunc) {
 
 func newGatewayLogger() *log.Logger {
 	return log.New(os.Stdout, gatewayLoggerPrefix, log.LstdFlags|log.Lmicroseconds)
+}
+
+func validateStartupRiskConfig(cfg config.RiskConfig) error {
+	_, err := risk.ParseLimits(riskLimitsConfigFromConfig(cfg))
+	if err != nil {
+		return fmt.Errorf("validate startup risk config: %w", err)
+	}
+	return nil
+}
+
+func riskLimitsConfigFromConfig(cfg config.RiskConfig) risk.LimitsConfig {
+	return risk.LimitsConfig{
+		MaxPositionSize:     cfg.MaxPositionSize,
+		MaxNotionalValue:    cfg.MaxNotionalValue,
+		NotionalCurrency:    cfg.NotionalCurrency,
+		OrderThrottle:       cfg.OrderThrottle,
+		OrderBurst:          cfg.OrderBurst,
+		MaxConcurrentOrders: cfg.MaxConcurrentOrders,
+		PriceBandPercent:    cfg.PriceBandPercent,
+		AllowedOrderTypes:   cfg.AllowedOrderTypes,
+		KillSwitchEnabled:   cfg.KillSwitchEnabled,
+		MaxRiskBreaches:     cfg.MaxRiskBreaches,
+		CircuitBreaker: risk.CircuitBreakerConfig{
+			Enabled:   cfg.CircuitBreaker.Enabled,
+			Threshold: cfg.CircuitBreaker.Threshold,
+			Cooldown:  cfg.CircuitBreaker.Cooldown,
+		},
+	}
 }
 
 func initTelemetry(ctx context.Context, logger *log.Logger, appCfg config.AppConfig) (*telemetry.Provider, error) {
@@ -355,7 +458,11 @@ func buildAPIServer(appCfg config.AppConfig, lambdaManager *lambdaruntime.Manage
 	}
 }
 
-func startAPIServer(lifecycle *conc.WaitGroup, logger *log.Logger, server *http.Server) {
+type apiServerStarter interface {
+	ListenAndServe() error
+}
+
+func startAPIServer(lifecycle *conc.WaitGroup, logger *log.Logger, server apiServerStarter) {
 	lifecycle.Go(func() {
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.Printf("control server: %v", err)
@@ -363,14 +470,38 @@ func startAPIServer(lifecycle *conc.WaitGroup, logger *log.Logger, server *http.
 	})
 }
 
+type gracefulServer interface {
+	Shutdown(context.Context) error
+}
+
+type lifecycleWaiter interface {
+	Wait()
+}
+
+type dataBusCloser interface {
+	Close()
+}
+
+type poolManagerShutdowner interface {
+	Shutdown(context.Context) error
+}
+
+type telemetryShutdowner interface {
+	Shutdown(context.Context) error
+}
+
+type databaseCloser interface {
+	Close()
+}
+
 type gracefulShutdownConfig struct {
-	server     *http.Server
+	server     gracefulServer
 	mainCancel context.CancelFunc
-	lifecycle  *conc.WaitGroup
-	dataBus    eventbus.Bus
-	poolMgr    *pool.PoolManager
-	telemetry  *telemetry.Provider
-	dbPool     *pgxpool.Pool
+	lifecycle  lifecycleWaiter
+	dataBus    dataBusCloser
+	poolMgr    poolManagerShutdowner
+	telemetry  telemetryShutdowner
+	dbPool     databaseCloser
 }
 
 func performGracefulShutdown(ctx context.Context, logger *log.Logger, cfg gracefulShutdownConfig) {

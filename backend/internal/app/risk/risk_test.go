@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -228,5 +229,94 @@ func TestManager_AllowedOrderTypesCaseInsensitive(t *testing.T) {
 	}
 	if breach.Type != BreachTypeOrderType {
 		t.Fatalf("expected breach type %s, got %s", BreachTypeOrderType, breach.Type)
+	}
+}
+
+func TestParseRiskLimitsValid(t *testing.T) {
+	limits, err := ParseLimits(LimitsConfig{
+		MaxPositionSize:     " 10.5 ",
+		MaxNotionalValue:    "1000.25",
+		NotionalCurrency:    " USDT ",
+		OrderThrottle:       5,
+		OrderBurst:          2,
+		MaxConcurrentOrders: 3,
+		PriceBandPercent:    1.5,
+		AllowedOrderTypes:   []string{" limit", "LIMIT", "Market "},
+		KillSwitchEnabled:   true,
+		MaxRiskBreaches:     4,
+		CircuitBreaker: CircuitBreakerConfig{
+			Enabled:   true,
+			Threshold: 2,
+			Cooldown:  "90s",
+		},
+	})
+	if err != nil {
+		t.Fatalf("ParseLimits returned error: %v", err)
+	}
+	if !limits.MaxPositionSize.Equal(decimal.RequireFromString("10.5")) {
+		t.Fatalf("unexpected max position size %s", limits.MaxPositionSize)
+	}
+	if !limits.MaxNotionalValue.Equal(decimal.RequireFromString("1000.25")) {
+		t.Fatalf("unexpected max notional value %s", limits.MaxNotionalValue)
+	}
+	if limits.NotionalCurrency != "USDT" {
+		t.Fatalf("unexpected currency %q", limits.NotionalCurrency)
+	}
+	expectedTypes := []schema.OrderType{"limit", "Market"}
+	if fmt.Sprint(limits.AllowedOrderTypes) != fmt.Sprint(expectedTypes) {
+		t.Fatalf("expected allowed order types %v, got %v", expectedTypes, limits.AllowedOrderTypes)
+	}
+	if limits.CircuitBreaker.Cooldown != 90*time.Second {
+		t.Fatalf("expected cooldown 90s, got %s", limits.CircuitBreaker.Cooldown)
+	}
+}
+
+func TestParseRiskLimitsRejectsInvalid(t *testing.T) {
+	base := LimitsConfig{
+		MaxPositionSize:  "10",
+		MaxNotionalValue: "1000",
+		NotionalCurrency: "USDT",
+		OrderThrottle:    5,
+		OrderBurst:       2,
+		CircuitBreaker: CircuitBreakerConfig{
+			Enabled:   true,
+			Threshold: 1,
+			Cooldown:  "30s",
+		},
+	}
+
+	tests := []struct {
+		name    string
+		mutate  func(*LimitsConfig)
+		wantErr string
+	}{
+		{
+			name: "invalid max position decimal",
+			mutate: func(cfg *LimitsConfig) {
+				cfg.MaxPositionSize = "ten"
+			},
+			wantErr: "maxPositionSize",
+		},
+		{
+			name: "invalid cooldown duration",
+			mutate: func(cfg *LimitsConfig) {
+				cfg.CircuitBreaker.Cooldown = "soon"
+			},
+			wantErr: "circuitBreaker.cooldown",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := base
+			tt.mutate(&cfg)
+			_, err := ParseLimits(cfg)
+			if err == nil {
+				t.Fatal("expected ParseLimits to reject invalid input")
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("expected error containing %q, got %v", tt.wantErr, err)
+			}
+		})
 	}
 }
