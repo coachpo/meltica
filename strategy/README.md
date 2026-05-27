@@ -1,6 +1,6 @@
 # Meltica Strategy Registry
 
-This repository stores versioned JavaScript strategy bundles for the Meltica gateway. The gateway and UI read the manifest in `registry.json` to discover which bundles are available, which tag is `latest`, and where to load the corresponding file.
+This directory stores versioned JavaScript strategy bundles for the Meltica gateway. It is the strategy subproject inside the combined Meltica mono-repo. The gateway and UI read the manifest in `registry.json` to discover which bundles are available, which tag is `latest`, and where to load the corresponding file.
 
 ## Layout
 
@@ -44,7 +44,7 @@ Use the existing strategies (e.g., `marketmaking`, `momentum`, `meanreversion`) 
 ## Notes for Operators
 
 - Tags in `registry.json` are how the control plane surfaces versions; `latest` should always point at the newest stable digest.
-- Keep this repo under version control and promote tags via PRs to keep history auditable.
+- Keep registry changes under version control and promote tags via PRs to keep history auditable.
 - After updating the registry, restart or reload the gateway so the new bundles are discovered.
 
 ## Current Catalog (from `registry.json`)
@@ -57,3 +57,7 @@ Use the existing strategies (e.g., `marketmaking`, `momentum`, `meanreversion`) 
 - meanreversion `1.0.0` (latest)
 - momentum `1.0.0` (latest)
 - noop `1.0.0` (latest)
+
+## License
+
+MIT License; see the root `../LICENSE`.
